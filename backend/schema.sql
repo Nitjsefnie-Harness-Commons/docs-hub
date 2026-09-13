@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS docs (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     latest_version  INT NOT NULL DEFAULT 0,
-    public          BOOLEAN NOT NULL DEFAULT false
+    public          BOOLEAN NOT NULL DEFAULT false,
+    expires_at      TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS doc_versions (
@@ -23,3 +24,5 @@ CREATE TABLE IF NOT EXISTS doc_versions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_docs_project ON docs(project);
+CREATE INDEX IF NOT EXISTS idx_docs_expires_at ON docs(expires_at)
+    WHERE expires_at IS NOT NULL;

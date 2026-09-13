@@ -91,6 +91,13 @@ def migrate() -> None:
             "ALTER TABLE docs ADD COLUMN IF NOT EXISTS "
             "public boolean NOT NULL DEFAULT false"
         )
+        c.execute(
+            "ALTER TABLE docs ADD COLUMN IF NOT EXISTS expires_at timestamptz"
+        )
+        c.execute(
+            "CREATE INDEX IF NOT EXISTS idx_docs_expires_at ON docs(expires_at) "
+            "WHERE expires_at IS NOT NULL"
+        )
         c.commit()
 
 
