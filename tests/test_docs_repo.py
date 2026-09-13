@@ -1,7 +1,9 @@
 # tests/test_docs_repo.py
 import os
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from backend import docs_repo
+from backend import db, docs_repo
 
 
 def test_publish_creates_v1():
@@ -120,3 +122,100 @@ def test_list_tags_scoped_to_project():
     docs_repo.publish("a/one", "One", ["spec"], "alpha", "analyst", b"<h1>1</h1>")
     docs_repo.publish("a/two", "Two", ["draft"], "beta", "kimi", b"<h1>2</h1>")
     assert docs_repo.list_tags(project="alpha") == [{"tag": "spec", "count": 1}]
+
+
+def _backdate(slug):
+    with db.docs_conn() as c:
+        c.execute("UPDATE docs SET expires_at = now() - interval '1 second' "
+                  "WHERE slug=%s", (slug,))
+        c.commit()
+
+
+def test_publish_with_ttl_sets_expires_at_in_the_future():
+    before = datetime.now(timezone.utc)
+    res = docs_repo.publish("e/one", "E", [], None, "analyst", b"<h1>1</h1>",
+                            ttl_seconds=3600)
+    assert res["expires_at"] is not None
+    assert before + timedelta(minutes=59) < res["expires_at"]
+    assert res["expires_at"] < before + timedelta(minutes=61)
+    d = next(x for x in docs_repo.list_docs() if x["slug"] == "e/one")
+    assert d["expires_at"] == res["expires_at"]
+
+
+def test_publish_without_ttl_is_permanent():
+    res = docs_repo.publish("e/perm", "E", [], None, "analyst", b"<h1>1</h1>")
+    assert res["expires_at"] is None
+    d = next(x for x in docs_repo.list_docs() if x["slug"] == "e/perm")
+    assert d["expires_at"] is None
+
+
+def test_republish_without_ttl_clears_expiry():
+    docs_repo.publish("e/clear", "E", [], None, "analyst", b"<h1>1</h1>",
+                      ttl_seconds=60)
+    res = docs_repo.publish("e/clear", "E", [], None, "analyst", b"<h1>2</h1>")
+    assert res["version"] == 2
+    assert res["expires_at"] is None
+
+
+def test_republish_with_ttl_resets_expiry_from_now():
+    docs_repo.publish("e/reset", "E", [], None, "analyst", b"<h1>1</h1>",
+                      ttl_seconds=60)
+    res = docs_repo.publish("e/reset", "E", [], None, "analyst", b"<h1>2</h1>",
+                            ttl_seconds=7200)
+    assert res["version"] == 2
+    assert res["expires_at"] > datetime.now(timezone.utc) + timedelta(hours=1)
+
+
+def test_expired_doc_is_invisible_on_every_read_path():
+    docs_repo.publish("e/gone", "Gone", ["t"], "proj", "analyst",
+                      b"<h1>1</h1>", ttl_seconds=60)
+    docs_repo.set_public("e/gone", True)
+    _backdate("e/gone")
+    assert docs_repo.get_latest("e/gone") is None
+    assert docs_repo.get_version("e/gone", 1) is None
+    assert docs_repo.list_versions("e/gone") == []
+    assert all(d["slug"] != "e/gone" for d in docs_repo.list_docs())
+    assert docs_repo.find_docs({"slug": "e/gone"}) == []
+    assert docs_repo.find_docs({"tag": "t"}) == []
+    assert docs_repo.list_tags() == []
+    assert docs_repo.is_public("e/gone") is False
+    assert docs_repo.set_public("e/gone", False) is False
+
+
+def test_live_ttl_doc_is_still_readable():
+    docs_repo.publish("e/live", "Live", [], None, "analyst", b"<h1>1</h1>",
+                      ttl_seconds=3600)
+    assert docs_repo.get_latest("e/live")["html"] == b"<h1>1</h1>"
+    assert [d["slug"] for d in docs_repo.list_docs()] == ["e/live"]
+
+
+def test_republish_of_expired_slug_starts_fresh_at_v1():
+    docs_repo.publish("e/again", "A", [], None, "analyst", b"<h1>old</h1>",
+                      ttl_seconds=60)
+    _backdate("e/again")
+    old_blob = os.path.join(os.environ["STORE_ROOT"], "e/again", "v1.html")
+    assert os.path.exists(old_blob)
+    res = docs_repo.publish("e/again", "A", [], None, "analyst", b"<h1>new</h1>")
+    assert res["version"] == 1
+    assert docs_repo.get_version("e/again", 1)["html"] == b"<h1>new</h1>"
+    assert docs_repo.list_versions("e/again")[0]["version"] == 1
+    assert len(docs_repo.list_versions("e/again")) == 1
+
+
+def test_purge_expired_removes_rows_and_blobs():
+    docs_repo.publish("e/p1", "P", [], None, "analyst", b"<h1>1</h1>",
+                      ttl_seconds=60)
+    docs_repo.publish("e/p1", "P", [], None, "analyst", b"<h1>2</h1>",
+                      ttl_seconds=60)
+    docs_repo.publish("e/keep", "K", [], None, "analyst", b"<h1>k</h1>",
+                      ttl_seconds=60)
+    docs_repo.publish("e/perm", "K", [], None, "analyst", b"<h1>k</h1>")
+    _backdate("e/p1")
+    assert docs_repo.purge_expired() == 1
+    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/p1"))
+    with db.docs_conn() as c:
+        assert c.execute("SELECT count(*) FROM docs WHERE slug='e/p1'"
+                         ).fetchone()[0] == 0
+        assert c.execute("SELECT count(*) FROM doc_versions").fetchone()[0] == 2
+    assert {d["slug"] for d in docs_repo.list_docs()} == {"e/keep", "e/perm"}
+    assert docs_repo.purge_expired() == 0

@@ -100,3 +100,17 @@ def test_publish_survives_server_side_disconnect():
     res = docs_repo.publish("t/reconnect", "Reconnect", [], None,
                             "tester", b"<p>hi</p>")
     assert res["version"] == 1
+
+
+def test_migrate_is_idempotent_and_adds_expires_at():
+    """migrate() runs at every startup, so it must be safe to re-apply; it is
+    what puts expires_at on a docs table created before the column existed."""
+    db.migrate()
+    db.migrate()
+    with db.docs_conn() as c:
+        row = c.execute(
+            "SELECT data_type FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='docs' "
+            "AND column_name='expires_at'"
+        ).fetchone()
+    assert row is not None and row[0] == "timestamp with time zone"
