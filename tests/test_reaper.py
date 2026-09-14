@@ -5,6 +5,7 @@ import asyncio
 import os
 import time
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend import db, docs_repo, reaper
@@ -85,3 +86,37 @@ def test_start_reads_the_interval_from_the_environment(monkeypatch):
 
     asyncio.run(run())
     assert seen["interval"] == 123.5
+
+
+@pytest.mark.parametrize("raw", ["0", "-5", "soon"])
+def test_start_rejects_a_non_positive_or_unparseable_interval(monkeypatch, raw):
+    """Zero or a negative interval turns asyncio.sleep into a bare yield, so
+    the reaper would spin on the DB forever; an unparseable one used to blow
+    up deep inside the lifespan. Both fail loudly at start()."""
+    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", raw)
+
+    async def fake_loop(interval):
+        seen.append(interval)
+
+    seen = []
+    monkeypatch.setattr(reaper, "loop", fake_loop)
+
+    async def run():
+        reaper.start()
+
+    with pytest.raises(ValueError, match="PURGE_INTERVAL_SECONDS"):
+        asyncio.run(run())
+    assert not seen
+
+
+def test_lifespan_closes_the_pools_when_the_interval_is_bad(monkeypatch):
+    """reaper.start() runs inside the lifespan's try, so a rejected interval
+    still unwinds through db.close_pools() instead of leaving the pools (and
+    their non-daemon worker threads) open."""
+    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "0")
+    with pytest.raises(ValueError, match="PURGE_INTERVAL_SECONDS"):
+        with TestClient(app):
+            pass
+    # The pool global is the only observable proof the finally ran.
+    # pylint: disable-next=protected-access
+    assert db._DOCS is None

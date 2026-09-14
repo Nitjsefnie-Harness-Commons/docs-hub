@@ -18,13 +18,17 @@ db.load_dotenv(str(_REPO_ROOT / ".env"))
 async def lifespan(_app: FastAPI):
     db.migrate()
     db.schema_check()
-    purge_task = reaper.start()
+    purge_task: asyncio.Task | None = None
     try:
+        purge_task = reaper.start()
         yield
     finally:
-        purge_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await purge_task
+        # start() rejects a bad PURGE_INTERVAL_SECONDS, so the task may never
+        # have been created -- the pools still have to be closed.
+        if purge_task is not None:
+            purge_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await purge_task
         db.close_pools()
 
 
