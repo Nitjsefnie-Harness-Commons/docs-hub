@@ -4,4 +4,4 @@
 # a developer installs to run the suite (see CONTRIBUTING.md). `coverage` is
 # only ever needed by the coverage job in .github/workflows/tests.yml, which
 # calls `coverage report --format=markdown` and `--fail-under` directly.
-coverage==7.15.4
+coverage==7.16.0
