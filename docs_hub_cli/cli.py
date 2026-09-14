@@ -156,6 +156,11 @@ def cmd_publish(args: argparse.Namespace) -> int:
     fields = {"slug": args.slug, "title": args.title,
               "tags": args.tags or "", "project": args.project or "",
               "from": getattr(args, "from")}
+    # Sent only when given: the absence of the field is what asks for a
+    # permanent document, and every publish restates the lifetime, so a
+    # republish without --ttl is how an expiring document becomes permanent.
+    if args.ttl:
+        fields["ttl"] = args.ttl
     body, ctype = _multipart(fields, "file", os.path.basename(args.file), html)
     status, raw = _request("POST", "/api/publish", data=body,
                            headers={"Content-Type": ctype})
@@ -171,8 +176,9 @@ def cmd_publish(args: argparse.Namespace) -> int:
     if status != 200 or not payload.get("ok"):
         print(f"ERROR: {payload.get('error', raw)}", file=sys.stderr)
         return 1
+    suffix = f" (expires {payload['expires_at']})" if payload.get("expires_at") else ""
     print(f"published {payload['slug']} v{payload['version']} "
-          f"-> {_base_url()}{payload['url']}")
+          f"-> {_base_url()}{payload['url']}{suffix}")
     return 0
 
 
@@ -208,8 +214,9 @@ def cmd_list(args: argparse.Namespace) -> int:
         docs = [d for d in docs if not d.get("tags")]
     for d in docs:
         tags = ",".join(d.get("tags") or []) or "-"
+        expires = f" expires {d['expires_at']}" if d.get("expires_at") else ""
         print(f"{d['slug']:<40} v{d['latest_version']:<3} "
-              f"{d['posted_by']:<14} [{tags}] {d['title']}")
+              f"{d['posted_by']:<14} [{tags}] {d['title']}{expires}")
     return 0
 
 
@@ -261,6 +268,9 @@ def main() -> int:
     p.add_argument("--tags", default="")
     p.add_argument("--project", default="")
     p.add_argument("--from", required=True, dest="from")
+    p.add_argument("--ttl", default="",
+                   help="lifetime after which the document vanishes, e.g. "
+                        "30m, 2h, 7d (bare number = seconds); omit = permanent")
     p.set_defaults(func=cmd_publish)
 
     p = sub.add_parser("get")

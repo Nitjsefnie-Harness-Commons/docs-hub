@@ -355,6 +355,46 @@ def test_publish_of_a_missing_file_reports_the_path_and_sends_nothing(
     assert not tr.calls
 
 
+def test_publish_sends_ttl_when_given(tmp_path, monkeypatch):
+    tr = _Transport((200, _json({"ok": True, "slug": "a", "version": 1,
+                                 "url": "/d/a"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a",
+                 "--title", "T", "--from", "analyst", "--ttl", "1h") == 0
+    assert b'name="ttl"\r\n\r\n1h\r\n' in tr.calls[0][2]
+
+
+def test_publish_omits_ttl_when_not_given(tmp_path, monkeypatch):
+    # Absent, not blank. The server reads a whitespace-only ttl as no ttl, so
+    # both spellings land the same today; sending nothing keeps "permanent"
+    # stated by the wire format rather than by a parse rule on the far side.
+    tr = _Transport((200, _json({"ok": True, "slug": "a", "version": 1,
+                                 "url": "/d/a"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a",
+                 "--title", "T", "--from", "analyst") == 0
+    assert b'name="ttl"' not in tr.calls[0][2]
+
+
+def test_publish_reports_the_expiry_when_the_server_returns_one(
+        tmp_path, monkeypatch, capsys):
+    tr = _Transport((200, _json({"ok": True, "slug": "a/b", "version": 1,
+                                 "url": "/d/a/b",
+                                 "expires_at": "2026-09-14T12:00:00+00:00"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a/b",
+                 "--title", "T", "--from", "analyst", "--ttl", "1h") == 0
+    assert capsys.readouterr().out == (
+        f"published a/b v1 -> {_DEAD_URL}/d/a/b"
+        " (expires 2026-09-14T12:00:00+00:00)\n")
+
+
+def test_publish_output_is_unchanged_without_an_expiry(
+        tmp_path, monkeypatch, capsys):
+    tr = _Transport((200, _json({"ok": True, "slug": "a/b", "version": 1,
+                                 "url": "/d/a/b", "expires_at": None})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a/b",
+                 "--title", "T", "--from", "analyst") == 0
+    assert capsys.readouterr().out == f"published a/b v1 -> {_DEAD_URL}/d/a/b\n"
+
+
 # --- get ----------------------------------------------------------------
 
 
@@ -459,6 +499,25 @@ def test_list_reports_an_http_error_status(monkeypatch, capsys):
     assert capsys.readouterr().err == "ERROR: HTTP 500\n"
 
 
+def test_list_appends_the_expiry_when_present(monkeypatch, capsys):
+    # Three shapes a server can return: an expiry set, an explicit null, and
+    # the key missing entirely (a server older than the ttl feature). Only
+    # the first prints a suffix.
+    tr = _Transport((200, _json({"docs": [
+        {"slug": "a/ttl", "latest_version": 1, "posted_by": "analyst",
+         "tags": [], "title": "Ttl", "expires_at": "2026-09-14T12:00:00+00:00"},
+        {"slug": "a/null", "latest_version": 1, "posted_by": "analyst",
+         "tags": [], "title": "Null", "expires_at": None},
+        {"slug": "a/old", "latest_version": 1, "posted_by": "analyst",
+         "tags": [], "title": "Old"},
+    ]})))
+    assert _main(monkeypatch, tr, "list") == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].endswith(" Ttl expires 2026-09-14T12:00:00+00:00")
+    assert lines[1].endswith(" Null")
+    assert lines[2].endswith(" Old")
+
+
 # --- versions -----------------------------------------------------------
 
 
@@ -519,6 +578,21 @@ def test_main_rejects_publish_without_its_required_options(monkeypatch, tmp_path
     with pytest.raises(SystemExit) as exc:
         cli.main()
     assert exc.value.code == 2
+
+
+def test_main_accepts_the_ttl_option(monkeypatch, tmp_path):
+    seen = {}
+
+    def _capture(args):
+        seen["ttl"] = args.ttl
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_publish", _capture)
+    monkeypatch.setattr(sys, "argv", [
+        "docs-hub", "publish", _doc(tmp_path), "--slug", "a/b",
+        "--title", "T", "--from", "analyst", "--ttl", "2d"])
+    assert cli.main() == 0
+    assert seen["ttl"] == "2d"
 
 
 # --- the vendored settings reader ---------------------------------------

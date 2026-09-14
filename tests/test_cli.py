@@ -85,6 +85,22 @@ def test_cli_publish_get_list(tmp_path):
     assert "cli/demo" in lst.stdout
 
 
+def test_cli_publish_with_a_ttl_reports_and_lists_the_expiry(tmp_path):
+    """`--ttl` through the real server: the timestamp is whatever the server
+    computed, so only the shape of the suffix is asserted."""
+    _spawn_server()
+    doc = tmp_path / "d.html"
+    doc.write_text("<h1>ttl</h1>", encoding="utf-8")
+    pub = _run("publish", str(doc), "--slug", "cli/ttl", "--title", "CLI Ttl",
+               "--from", "analyst", "--ttl", "1h")
+    assert pub.returncode == 0, pub.stderr
+    assert "(expires " in pub.stdout, pub.stdout
+    lst = _run("list")
+    row = [ln for ln in lst.stdout.splitlines() if ln.startswith("cli/ttl ")]
+    assert len(row) == 1, lst.stdout
+    assert " expires " in row[0], row[0]
+
+
 def test_cli_tags(tmp_path):
     _spawn_server()
     doc = tmp_path / "d.html"

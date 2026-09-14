@@ -9,4 +9,4 @@ The fleet setup bundle installs this as a wheel and keeps a thin wrapper at
 invocation keeps working unchanged.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
