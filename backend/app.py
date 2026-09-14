@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
@@ -12,6 +13,11 @@ from backend import api, db, login, reaper, session, views
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 db.load_dotenv(str(_REPO_ROOT / ".env"))
+# Without this the root logger's WARNING default swallows the reaper's INFO
+# line, so a purge leaves no trace in the journal. Bare on purpose: basicConfig
+# is a no-op once the root logger has handlers, so a uvicorn or test harness
+# that configured logging first keeps its own configuration.
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager

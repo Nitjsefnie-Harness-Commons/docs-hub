@@ -179,6 +179,12 @@ def cmd_publish(args: argparse.Namespace) -> int:
     if status != 200 or not payload.get("ok"):
         print(f"ERROR: {payload.get('error', raw)}", file=sys.stderr)
         return 1
+    if ttl and "expires_at" not in payload:
+        # The key is absent, not null: a server older than the ttl field,
+        # which accepted the publish and dropped the lifetime. Saying nothing
+        # would leave the operator believing the document expires.
+        print("WARNING: server did not confirm an expiry (it predates --ttl); "
+              "the document is permanent", file=sys.stderr)
     suffix = f" (expires {payload['expires_at']})" if payload.get("expires_at") else ""
     print(f"published {payload['slug']} v{payload['version']} "
           f"-> {_base_url()}{payload['url']}{suffix}")

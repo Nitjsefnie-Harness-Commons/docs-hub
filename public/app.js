@@ -101,7 +101,9 @@ function relTime(iso) {
 }
 
 function relUntil(iso) {
-  const d = new Date(iso).getTime() - Date.now();
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return '';
+  const d = t - Date.now();
   if (d <= 0) return 'expired';
   const mins = d / 60_000;
   if (mins < 1) return 'in <1m';

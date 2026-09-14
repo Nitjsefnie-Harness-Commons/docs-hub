@@ -405,6 +405,33 @@ def test_publish_output_is_unchanged_without_an_expiry(
     assert capsys.readouterr().out == f"published a/b v1 -> {_DEAD_URL}/d/a/b\n"
 
 
+def test_publish_warns_when_a_requested_ttl_is_not_confirmed(
+        tmp_path, monkeypatch, capsys):
+    # No `expires_at` key at all -- a server predating the ttl field, which
+    # ignored it and stored the document permanently. The publish succeeded,
+    # so this is a warning on stderr and rc 0, not a failure; without it the
+    # operator reads "published" and believes the document will expire.
+    tr = _Transport((200, _json({"ok": True, "slug": "a/b", "version": 1,
+                                 "url": "/d/a/b"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a/b",
+                 "--title", "T", "--from", "analyst", "--ttl", "1h") == 0
+    out, err = capsys.readouterr()
+    assert out == f"published a/b v1 -> {_DEAD_URL}/d/a/b\n"
+    assert err == ("WARNING: server did not confirm an expiry (it predates "
+                   "--ttl); the document is permanent\n")
+
+
+def test_publish_does_not_warn_about_an_expiry_nobody_asked_for(
+        tmp_path, monkeypatch, capsys):
+    # The same response, no --ttl: a permanent document is what was asked
+    # for, so the missing key says nothing and there is nothing to warn about.
+    tr = _Transport((200, _json({"ok": True, "slug": "a/b", "version": 1,
+                                 "url": "/d/a/b"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a/b",
+                 "--title", "T", "--from", "analyst") == 0
+    assert capsys.readouterr().err == ""
+
+
 # --- get ----------------------------------------------------------------
 
 
