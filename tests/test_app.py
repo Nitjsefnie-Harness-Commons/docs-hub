@@ -244,6 +244,14 @@ def test_publish_without_ttl_reports_null_expiry():
     assert r.json()["expires_at"] is None
     listed = c.get("/api/list", headers=KEY).json()["docs"]
     assert next(x for x in listed if x["slug"] == "ttl/none")["expires_at"] is None
+    # A whitespace-only ttl means "no ttl", not a parse error.
+    blank = c.post("/api/publish",
+                   data={"slug": "ttl/blank", "title": "T", "from": "analyst",
+                         "ttl": "  "},
+                   files={"file": ("d.html", b"<h1>x</h1>", "text/html")},
+                   headers=KEY)
+    assert blank.status_code == 200, blank.text
+    assert blank.json()["expires_at"] is None
 
 
 def test_publish_rejects_a_bad_ttl():
