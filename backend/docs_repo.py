@@ -22,8 +22,9 @@ def _slug_lock(c, slug: str) -> None:
     """Take the per-slug advisory lock for the rest of `c`'s transaction.
 
     Every writer that touches a slug's blob directory takes it, so a publish
-    writing v<n>.html can never interleave with a purge or a delete rmtree-ing
-    the directory under it. The lock is held to commit and released by it.
+    writing the version's file (v<n>.html or v<n>.md) can never interleave
+    with a purge or a delete rmtree-ing the directory under it. The lock is
+    held to commit and released by it.
     """
     c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
 
@@ -49,7 +50,8 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
     with db.docs_conn() as c:
         # Serialise against a concurrent purge_expired or delete_docs of the
         # same slug: without this either one can rmtree the directory between
-        # this publish writing v1.html and committing the row pointing at it.
+        # this publish writing the version's file (v1.html or v1.md) and
+        # committing the row pointing at it.
         _slug_lock(c, slug)
         stale = c.execute(
             f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} RETURNING id",

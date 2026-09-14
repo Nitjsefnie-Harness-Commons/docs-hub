@@ -68,7 +68,10 @@ async def get_doc(slug: str) -> Response:
     # Agents get the stored bytes verbatim in the format they were published
     # in; only the browser routes render Markdown.
     if doc["format"] == "markdown":
-        return Response(doc["html"], media_type="text/markdown; charset=utf-8")
+        # nosniff: a browser reaching this route must never sniff
+        # agent-authored bytes served as text/markdown into HTML.
+        return Response(doc["html"], media_type="text/markdown; charset=utf-8",
+                        headers={"X-Content-Type-Options": "nosniff"})
     return HTMLResponse(doc["html"])
 
 

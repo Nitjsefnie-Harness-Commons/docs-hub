@@ -42,3 +42,21 @@ def test_document_shell_has_charset_viewport_and_style():
     assert 'name="viewport"' in out
     assert "<style>" in out and "prefers-color-scheme: dark" in out
     assert '<main class="md">' in out
+
+
+def test_javascript_urls_are_dropped_from_links_and_images():
+    # markdown-it's default validateLink refuses the javascript: scheme, so
+    # neither an inline link nor an image is built at all: the source stays
+    # literal paragraph text and no attribute carries the URL.
+    out = render_markdown(b"[x](javascript:alert(1))\n\n"
+                          b"![i](javascript:alert(1))\n", "T")
+    body = out.split('<main class="md">')[1]
+    assert "<a " not in body and "<img" not in body
+    assert 'href="javascript:' not in out and 'src="javascript:' not in out
+    assert "<p>[x](javascript:alert(1))</p>" in body
+
+
+def test_raw_img_onerror_in_source_is_escaped():
+    out = render_markdown(b"<img src=x onerror=alert(1)>\n", "T")
+    assert "<img" not in out
+    assert "&lt;img src=x onerror=alert(1)&gt;" in out

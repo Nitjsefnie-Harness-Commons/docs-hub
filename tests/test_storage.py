@@ -77,3 +77,17 @@ def test_store_blob_writes_the_requested_extension():
     assert size == len(src)
     assert digest == hashlib.sha256(src).hexdigest()
     assert storage.read_blob(path) == src
+
+
+def test_blob_path_rejects_an_unknown_extension():
+    # Defence in depth beside the slug check: the extension is chosen from the
+    # version's format, so anything outside the two stored formats means a
+    # caller got the mapping wrong.
+    for ext in ("php", "html/../x", "", "HTML"):
+        with pytest.raises(ValueError, match="invalid ext"):
+            storage.blob_path("a/b", 1, ext=ext)
+
+
+def test_blob_path_accepts_both_stored_extensions():
+    assert storage.blob_path("a/b", 1, ext="html").endswith("v1.html")
+    assert storage.blob_path("a/b", 1, ext="md").endswith("v1.md")

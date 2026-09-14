@@ -294,6 +294,8 @@ def test_publish_infers_markdown_from_filename():
     raw = c.get("/api/doc/md/infer", headers=KEY)
     assert raw.status_code == 200
     assert raw.headers["content-type"].startswith("text/markdown")
+    # A browser must never sniff agent-authored bytes on this route into HTML.
+    assert raw.headers["x-content-type-options"] == "nosniff"
     assert raw.content == b"# hello\n\n<script>x</script>\n"
 
 
@@ -304,6 +306,7 @@ def test_explicit_format_overrides_filename():
                      "format": "markdown"},
                files={"file": ("d.html", b"# md in html name\n", "text/html")},
                headers=KEY)
+    assert r.status_code == 200, r.text
     assert r.json()["format"] == "markdown"
 
 
@@ -311,7 +314,7 @@ def test_publish_rejects_unknown_format():
     c = _client()
     r = _publish_md(c, "md/bad", format="rtf")
     assert r.status_code == 400
-    assert r.json()["error"].startswith("invalid format")
+    assert r.json()["error"] == "invalid format: 'rtf'"
 
 
 def test_browser_routes_render_markdown_and_escape_html():
@@ -344,3 +347,23 @@ def test_list_and_versions_carry_format():
     assert next(d for d in docs if d["slug"] == "md/fmt")["format"] == "markdown"
     vs = c.get("/api/versions/md/fmt", headers=KEY).json()["versions"]
     assert [(v["version"], v["format"]) for v in vs] == [(2, "markdown"), (1, "html")]
+
+
+def test_format_inference_edge_cases():
+    c = _client()
+    # The filename match is case-insensitive, in both the extension and the
+    # long spelling; an explicit `format` wins whatever case it arrives in;
+    # a filename with no extension at all falls back to HTML.
+    cases = [
+        ("md/up", "README.MD", {}, "markdown"),
+        ("md/long", "notes.Markdown", {}, "markdown"),
+        ("md/upper-explicit", "notes.md", {"format": "HTML"}, "html"),
+        ("md/noext", "body", {}, "html"),
+    ]
+    for slug, filename, extra, expected in cases:
+        r = c.post("/api/publish",
+                   data={"slug": slug, "title": slug, "from": "analyst", **extra},
+                   files={"file": (filename, b"<h1>x</h1>", "text/html")},
+                   headers=KEY)
+        assert r.status_code == 200, (filename, r.text)
+        assert r.json()["format"] == expected, (filename, extra)

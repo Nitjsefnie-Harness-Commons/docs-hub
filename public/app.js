@@ -135,7 +135,7 @@ function uniq(arr) { return [...new Set(arr)]; }
 // The chip marking a Markdown version. It takes a FORMAT rather than a doc
 // because a slug's history may mix formats: every caller passes the format of
 // the version actually on screen, which for the index row is the latest one.
-function fmtChip(format) {
+function formatChip(format) {
   return format === 'markdown'
     ? '<span class="fmt" title="Markdown source, rendered by the hub">md</span>'
     : '';
@@ -259,7 +259,7 @@ function renderIndex() {
     ? docs
         .map((d) => {
           const size = d.byte_size ? fmtBytes(d.byte_size) : '';
-          const fmt = fmtChip(d.format);
+          const fmt = formatChip(d.format);
           const ttl = d.expires_at
             ? `<span class="ttl" title="expires ${esc(absTime(d.expires_at))} UTC">⏳ ${esc(relUntil(d.expires_at))}</span>`
             : '';
@@ -414,7 +414,7 @@ function renderDocViewer(slug, requestedVersion) {
             ${doc.public ? '◉ public' : '○ private'}
           </button>
           ${doc.public ? `<button class="btn" id="copy-public" title="copy public direct URL">⎘ public url</button>` : ''}
-          ${fmtChip(v.format)}
+          ${formatChip(v.format)}
           ${doc.expires_at ? `<span class="ttl" title="expires ${esc(absTime(doc.expires_at))} UTC">⏳ expires ${esc(relUntil(doc.expires_at))}</span>` : ''}
         </div>
       </div>
@@ -499,7 +499,7 @@ function renderVersions(slug) {
       <div class="version-row" data-href="#/d/${esc(slug)}/v${v.version}">
         <div class="vtag ${v.version === latest ? 'latest' : ''}">v${v.version}</div>
         <div>
-          <div class="who">${esc(v.posted_by)}${fmtChip(v.format)}</div>
+          <div class="who">${esc(v.posted_by)}${formatChip(v.format)}</div>
           <div class="sha" title="${esc(v.sha256)}">sha ${esc(v.sha256.slice(0, 16))}…</div>
         </div>
         <div class="when">
