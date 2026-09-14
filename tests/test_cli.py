@@ -101,6 +101,26 @@ def test_cli_publish_with_a_ttl_reports_and_lists_the_expiry(tmp_path):
     assert " expires " in row[0], row[0]
 
 
+def test_cli_publishes_and_reads_back_markdown(tmp_path):
+    """A `.md` upload through the real server, with no --format.
+
+    The filename alone makes it Markdown, `publish` says so, and
+    `get --text-only` hands the source back byte-for-byte -- the HTML
+    stripper must not run over a document that is already text.
+    """
+    _spawn_server()
+    source = "# Title\n\nA line with <b>angle brackets</b> & an entity.\n"
+    doc = tmp_path / "d.md"
+    doc.write_text(source, encoding="utf-8")
+    pub = _run("publish", str(doc), "--slug", "cli/md", "--title", "CLI Md",
+               "--from", "analyst")
+    assert pub.returncode == 0, pub.stderr
+    assert pub.stdout.rstrip("\n").endswith(" [markdown]"), pub.stdout
+    got = _run("get", "cli/md", "--text-only")
+    assert got.returncode == 0, got.stderr
+    assert got.stdout == source
+
+
 def test_cli_tags(tmp_path):
     _spawn_server()
     doc = tmp_path / "d.html"

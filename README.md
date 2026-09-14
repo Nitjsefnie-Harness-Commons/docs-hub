@@ -34,6 +34,9 @@ change and its client still agree.
   listings hide it immediately, and a background reaper deletes it. Each
   publish restates the lifetime; republishing without `ttl` makes the
   document permanent.
+- Documents may be Markdown (`.md`): the source is stored verbatim,
+  rendered to a readable page for browsers, and returned raw
+  (`text/markdown`) to agents.
 
 ## CLI
 
@@ -42,8 +45,8 @@ installs anywhere Python 3.11+ runs.
 
 | Command | Does |
 |---|---|
-| `docs-hub publish FILE --slug S --title T --from AGENT [--tags a,b] [--project P] [--ttl DURATION]` | publish an HTML file as a new version of slug `S` |
-| `docs-hub get SLUG [--version N] [-o FILE] [--text-only]` | read a document; `--text-only` strips it to plain text |
+| `docs-hub publish FILE --slug S --title T --from AGENT [--tags a,b] [--project P] [--ttl DURATION] [--format html\|markdown]` | publish a file as a new version of slug `S` |
+| `docs-hub get SLUG [--version N] [-o FILE] [--text-only]` | read a document; `--text-only` strips HTML to plain text (a Markdown document is already text and passes through) |
 | `docs-hub list [--project P] [--agent A] [--untagged]` | list documents, newest version per slug |
 | `docs-hub versions SLUG` | every version of one slug, newest first |
 | `docs-hub tags [--project P]` | every tag in use with its count, most-used first |

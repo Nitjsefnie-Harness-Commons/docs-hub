@@ -55,7 +55,14 @@ class _Transport:
 
     One queued response is reused for every call; several are consumed in
     order, which is what the multi-request paths need.
+
+    A queued response is either a `(status, body)` pair or a full
+    `(status, body, content_type)` triple. The pair form is completed with
+    the content type the server sends for every HTML document, so only a
+    test that cares about the type -- the Markdown ones -- has to spell one.
     """
+
+    _DEFAULT_CONTENT_TYPE = "text/html; charset=utf-8"
 
     def __init__(self, *responses):
         self.responses = list(responses)
@@ -64,8 +71,12 @@ class _Transport:
     def __call__(self, method, path, *, data=None, headers=None):
         self.calls.append((method, path, data, headers or {}))
         if len(self.responses) > 1:
-            return self.responses.pop(0)
-        return self.responses[0]
+            response = self.responses.pop(0)
+        else:
+            response = self.responses[0]
+        if len(response) == 2:
+            return (*response, self._DEFAULT_CONTENT_TYPE)
+        return response
 
     @property
     def paths(self):
@@ -220,9 +231,10 @@ def test_api_key_without_a_key_exits_2(monkeypatch, capsys):
 
 
 class _Resp:
-    def __init__(self, status, body):
+    def __init__(self, status, body, headers=None):
         self.status = status
         self._body = body
+        self.headers = headers or {}
 
     def __enter__(self):
         return self
@@ -247,18 +259,31 @@ def test_request_sends_the_key_header_and_returns_the_body(monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
     assert cli._request("POST", "/api/publish", data=b"body",
-                        headers={"Content-Type": "text/plain"}) == (200, b"ok")
+                        headers={"Content-Type": "text/plain"}) == (200, b"ok", "")
     assert seen == {"url": _DEAD_URL + "/api/publish", "method": "POST",
                     "key": "test-api-key", "extra": "text/plain", "timeout": 30}
 
 
 def test_request_returns_the_body_of_an_http_error(monkeypatch):
     def fake_urlopen(req, timeout=None):
-        raise urllib.error.HTTPError(req.full_url, 503, "busy", {},
+        raise urllib.error.HTTPError(req.full_url, 503, "busy",
+                                     {"Content-Type": "text/html"},
                                      io.BytesIO(b"<html>502</html>"))
 
     monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
-    assert cli._request("GET", "/api/list") == (503, b"<html>502</html>")
+    assert cli._request("GET", "/api/list") == (503, b"<html>502</html>", "text/html")
+
+
+def test_request_returns_the_content_type_of_the_response(monkeypatch):
+    # How `get --text-only` learns a document is Markdown: the server states
+    # the format in the header, not in the body.
+    def fake_urlopen(req, timeout=None):
+        assert (req.full_url, timeout) == (_DEAD_URL + "/api/doc/a", 30)
+        return _Resp(200, b"# md", {"Content-Type": "text/markdown; charset=utf-8"})
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    assert cli._request("GET", "/api/doc/a") == (
+        200, b"# md", "text/markdown; charset=utf-8")
 
 
 def test_request_exits_1_when_the_connection_fails(monkeypatch, capsys):
@@ -432,6 +457,65 @@ def test_publish_does_not_warn_about_an_expiry_nobody_asked_for(
     assert capsys.readouterr().err == ""
 
 
+def test_publish_sends_the_format_when_given(tmp_path, monkeypatch):
+    tr = _Transport((200, _json({"ok": True, "slug": "a", "version": 1,
+                                 "url": "/d/a", "format": "markdown"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a",
+                 "--title", "T", "--from", "analyst",
+                 "--format", "markdown") == 0
+    assert b'name="format"\r\n\r\nmarkdown\r\n' in tr.calls[0][2]
+
+
+def test_publish_omits_the_format_when_not_given(tmp_path, monkeypatch):
+    # Absent, not "html". The multipart part already carries the filename, so
+    # the server infers the format from it -- publishing `notes.md` with no
+    # --format is what makes a Markdown document, and sending "html" by
+    # default would silently overrule that.
+    tr = _Transport((200, _json({"ok": True, "slug": "a", "version": 1,
+                                 "url": "/d/a", "format": "html"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a",
+                 "--title", "T", "--from", "analyst") == 0
+    assert b'name="format"' not in tr.calls[0][2]
+
+
+def test_publish_marks_a_markdown_document_in_its_output(
+        tmp_path, monkeypatch, capsys):
+    # The server decides the format, so the marker is read back off the
+    # response rather than off the flag: this is the operator's confirmation
+    # that the upload was taken as Markdown.
+    tr = _Transport((200, _json({"ok": True, "slug": "a/b", "version": 1,
+                                 "url": "/d/a/b", "format": "markdown"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a/b",
+                 "--title", "T", "--from", "analyst") == 0
+    assert capsys.readouterr().out == (
+        f"published a/b v1 -> {_DEAD_URL}/d/a/b [markdown]\n")
+
+
+def test_publish_output_is_unmarked_for_html_and_for_an_old_server(
+        tmp_path, monkeypatch, capsys):
+    # "html" and no key at all (a server predating the format field) both
+    # mean an HTML document, and neither prints a marker.
+    for payload in ({"ok": True, "slug": "a/b", "version": 1,
+                     "url": "/d/a/b", "format": "html"},
+                    {"ok": True, "slug": "a/b", "version": 1, "url": "/d/a/b"}):
+        tr = _Transport((200, _json(payload)))
+        assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug",
+                     "a/b", "--title", "T", "--from", "analyst") == 0
+        assert capsys.readouterr().out == (
+            f"published a/b v1 -> {_DEAD_URL}/d/a/b\n")
+
+
+def test_publish_marks_markdown_after_the_expiry(tmp_path, monkeypatch, capsys):
+    tr = _Transport((200, _json({"ok": True, "slug": "a/b", "version": 1,
+                                 "url": "/d/a/b", "format": "markdown",
+                                 "expires_at": "2026-09-14T12:00:00+00:00"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a/b",
+                 "--title", "T", "--from", "analyst", "--ttl", "1h") == 0
+    assert capsys.readouterr().out == (
+        f"published a/b v1 -> {_DEAD_URL}/d/a/b"
+        " (expires 2026-09-14T12:00:00+00:00) [markdown]\n")
+
+
 # --- get ----------------------------------------------------------------
 
 
@@ -465,6 +549,33 @@ def test_get_text_only_writes_the_stripped_text(tmp_path, monkeypatch):
     tr = _Transport((200, b"<h1>Head</h1><script>x()</script><p>Body</p>"))
     assert _main(monkeypatch, tr, "get", "a/b", "--text-only", "-o", str(out)) == 0
     assert out.read_bytes() == b"Head\n\nBody\n"
+
+
+def test_get_text_only_is_gated_on_the_content_type(tmp_path, monkeypatch):
+    """Markdown source is written through untouched; HTML is still stripped.
+
+    --text-only asks for readable text, and Markdown already is that. Running
+    the HTML stripper over it would swallow every `<` construct and drop the
+    punctuation that makes it readable.
+    """
+    md_out, html_out = tmp_path / "got.md", tmp_path / "got.txt"
+    source = b"# Head\n\nBody with <b>tags</b> and  spaces\n"
+    tr = _Transport((200, source, "text/markdown; charset=utf-8"))
+    assert _main(monkeypatch, tr, "get", "a/b", "--text-only",
+                 "-o", str(md_out)) == 0
+    assert md_out.read_bytes() == source
+    tr = _Transport((200, b"<h1>Head</h1><p>Body</p>", "text/html; charset=utf-8"))
+    assert _main(monkeypatch, tr, "get", "a/b", "--text-only",
+                 "-o", str(html_out)) == 0
+    assert html_out.read_bytes() == b"Head\n\nBody\n"
+
+
+def test_get_without_text_only_passes_markdown_through(monkeypatch):
+    fake = _Stdout()
+    monkeypatch.setattr(sys, "stdout", fake)
+    tr = _Transport((200, b"# md\n", "text/markdown; charset=utf-8"))
+    assert _main(monkeypatch, tr, "get", "a/b") == 0
+    assert fake.buffer.getvalue() == b"# md\n"
 
 
 def test_get_reports_an_http_error_status(monkeypatch, capsys):
@@ -555,6 +666,28 @@ def test_list_appends_the_expiry_when_present(monkeypatch, capsys):
     assert lines[2].endswith(" Old")
 
 
+def test_list_marks_markdown_docs(monkeypatch, capsys):
+    # The marker sits between the title and the expiry, so a Markdown doc
+    # that also expires shows both, in that order.
+    tr = _Transport((200, _json({"docs": [
+        {"slug": "a/md", "latest_version": 1, "posted_by": "analyst",
+         "tags": [], "title": "Md", "format": "markdown"},
+        {"slug": "a/html", "latest_version": 1, "posted_by": "analyst",
+         "tags": [], "title": "Html", "format": "html"},
+        {"slug": "a/old", "latest_version": 1, "posted_by": "analyst",
+         "tags": [], "title": "Old"},
+        {"slug": "a/both", "latest_version": 1, "posted_by": "analyst",
+         "tags": [], "title": "Both", "format": "markdown",
+         "expires_at": "2026-09-14T12:00:00+00:00"},
+    ]})))
+    assert _main(monkeypatch, tr, "list") == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].endswith(" Md [markdown]")
+    assert lines[1].endswith(" Html")
+    assert lines[2].endswith(" Old")
+    assert lines[3].endswith(" Both [markdown] expires 2026-09-14T12:00:00+00:00")
+
+
 # --- versions -----------------------------------------------------------
 
 
@@ -569,6 +702,20 @@ def test_versions_renders_a_row_per_version(monkeypatch, capsys):
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].split() == ["v2", "2026-08-23T00:00:00", "a", "44", "bytes"]
     assert lines[1].startswith("v1 ")
+
+
+def test_versions_marks_a_markdown_version(monkeypatch, capsys):
+    # Per version, not per slug: a slug republished as Markdown keeps its
+    # older HTML versions, and the list is where that shows.
+    tr = _Transport((200, _json({"versions": [
+        {"version": 2, "created_at": "2026-08-23T00:00:00", "posted_by": "a",
+         "byte_size": 44, "format": "markdown"},
+        {"version": 1, "created_at": "2026-08-22T00:00:00", "posted_by": "a",
+         "byte_size": 12, "format": "html"}]})))
+    assert _main(monkeypatch, tr, "versions", "a/b") == 0
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0].endswith("44 bytes markdown")
+    assert lines[1].endswith("12 bytes")
 
 
 def test_versions_reports_an_http_error_status(monkeypatch, capsys):
@@ -630,6 +777,45 @@ def test_main_accepts_the_ttl_option(monkeypatch, tmp_path):
         "--title", "T", "--from", "analyst", "--ttl", "2d"])
     assert cli.main() == 0
     assert seen["ttl"] == "2d"
+
+
+def test_main_accepts_the_format_option(monkeypatch, tmp_path):
+    seen = {}
+
+    def _capture(args):
+        seen["format"] = args.format
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_publish", _capture)
+    monkeypatch.setattr(sys, "argv", [
+        "docs-hub", "publish", _doc(tmp_path), "--slug", "a/b",
+        "--title", "T", "--from", "analyst", "--format", "markdown"])
+    assert cli.main() == 0
+    assert seen["format"] == "markdown"
+
+
+def test_main_defaults_the_format_to_the_empty_string(monkeypatch, tmp_path):
+    seen = {}
+
+    def _capture(args):
+        seen["format"] = args.format
+        return 0
+
+    monkeypatch.setattr(cli, "cmd_publish", _capture)
+    monkeypatch.setattr(sys, "argv", [
+        "docs-hub", "publish", _doc(tmp_path), "--slug", "a/b",
+        "--title", "T", "--from", "analyst"])
+    assert cli.main() == 0
+    assert seen["format"] == ""
+
+
+def test_main_rejects_an_unknown_format(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "argv", [
+        "docs-hub", "publish", _doc(tmp_path), "--slug", "a/b",
+        "--title", "T", "--from", "analyst", "--format", "rst"])
+    with pytest.raises(SystemExit) as exc:
+        cli.main()
+    assert exc.value.code == 2
 
 
 # --- the vendored settings reader ---------------------------------------

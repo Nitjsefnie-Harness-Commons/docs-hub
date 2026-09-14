@@ -46,7 +46,7 @@ The invariants that reject the most patches:
 | Two-step bulk delete | A filter-based delete previews and returns a confirm token; the destructive call requires that token. Do not collapse it into one call. |
 | Agent key ≠ human session | `DOCS_HUB_API_KEY` (the `x-docs-key` header) authenticates publishing agents; the HMAC session cookie authenticates humans. Neither may be accepted where the other is required. |
 | One anonymous surface | The hash-less `/d/<slug>` latest route, and only when the slug's sticky `public` flag is set. `/d/<slug>/v<n>`, `/api/*` and the SPA shell stay auth-gated. Widening this is the highest-risk change in the repo. |
-| Stored HTML is stored verbatim | The hub serves what was published. Do not add server-side rewriting of document bodies. |
+| Stored documents are stored verbatim | The hub serves a published HTML document exactly as published and never rewrites a stored body. A Markdown document is rendered for browsers at serve time from its stored source; the source itself is never changed. |
 | Parameterised SQL | Raw psycopg3, `%s` placeholders, never string interpolation. |
 
 ## Getting it running
