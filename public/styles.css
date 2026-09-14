@@ -265,7 +265,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
 }
 .docs-table td.ver .hist:hover { color: var(--text); }
 .docs-table td.tags { white-space: nowrap; }
-.tag, .ttl {
+.tag, .ttl, .fmt {
   display: inline-block;
   font-size: 10.5px;
   letter-spacing: 0.02em;
@@ -283,7 +283,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
   border-color: var(--accent-line);
   color: var(--accent);
 }
-.docs-table .title-cell .slug .ttl { margin-left: 6px; }
+.docs-table .title-cell .slug .ttl,
+.docs-table .title-cell .slug .fmt { margin-left: 6px; }
 
 /* ── Version history page ── */
 .version-head {
@@ -374,6 +375,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
   font-weight: 500;
 }
 .version-row .who { color: var(--text); font-size: 12.5px; }
+.version-row .who .fmt { margin-left: 6px; }
 .version-row .when { color: var(--text-dim); font-size: 12px; }
 .version-row .when .abs { color: var(--text-faint); font-size: 10.5px; display: block; }
 .version-row .size { color: var(--text-faint); font-size: 12px; text-align: right; }
