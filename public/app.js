@@ -100,6 +100,19 @@ function relTime(iso) {
   return Math.round(days / 30) + 'mo ago';
 }
 
+function relUntil(iso) {
+  const d = new Date(iso).getTime() - Date.now();
+  if (d <= 0) return 'expired';
+  const mins = d / 60_000;
+  if (mins < 1) return 'in <1m';
+  if (mins < 60) return 'in ' + Math.round(mins) + 'm';
+  const hours = mins / 60;
+  if (hours < 24) return 'in ' + Math.round(hours) + 'h';
+  const days = hours / 24;
+  if (days < 14) return 'in ' + Math.round(days) + 'd';
+  return 'in ' + Math.round(days / 7) + 'w';
+}
+
 function absTime(iso) {
   const d = new Date(iso);
   const pad = (n) => String(n).padStart(2, '0');
@@ -239,7 +252,7 @@ function renderIndex() {
             <tr>
               <td class="title-cell">
                 <a class="t" href="#/d/${esc(d.slug)}">${esc(d.title)}</a>
-                <div class="slug"><span class="prompt">›</span>${esc(d.slug)}</div>
+                <div class="slug"><span class="prompt">›</span>${esc(d.slug)}${d.expires_at ? `<span class="ttl" title="expires ${esc(absTime(d.expires_at))} UTC">⏳ ${esc(relUntil(d.expires_at))}</span>` : ''}</div>
               </td>
               <td class="proj">${esc(d.project || '—')}</td>
               <td class="tags">${d.tags.map((t) => `<span class="tag" data-tag="${esc(t)}">${esc(t)}</span>`).join('')}</td>
@@ -386,6 +399,7 @@ function renderDocViewer(slug, requestedVersion) {
             ${doc.public ? '◉ public' : '○ private'}
           </button>
           ${doc.public ? `<button class="btn" id="copy-public" title="copy public direct URL">⎘ public url</button>` : ''}
+          ${doc.expires_at ? `<span class="ttl" title="expires ${esc(absTime(doc.expires_at))} UTC">⏳ expires ${esc(relUntil(doc.expires_at))}</span>` : ''}
         </div>
       </div>
       <div class="artifact-frame">
@@ -554,7 +568,8 @@ function renderError(err) {
 function sigIndex() {
   // '|' / '\n' are safe delimiters: slugs and ISO timestamps never contain them.
   return (_docs || [])
-    .map((d) => d.slug + '|' + d.latest_version + '|' + d.updated_at)
+    .map((d) => d.slug + '|' + d.latest_version + '|' + d.updated_at +
+                '|' + (d.expires_at || ''))
     .join('\n');
 }
 
