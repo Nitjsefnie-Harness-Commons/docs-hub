@@ -248,11 +248,14 @@ function renderIndex() {
     ? docs
         .map((d) => {
           const size = d.byte_size ? fmtBytes(d.byte_size) : '';
+          const ttl = d.expires_at
+            ? `<span class="ttl" title="expires ${esc(absTime(d.expires_at))} UTC">⏳ ${esc(relUntil(d.expires_at))}</span>`
+            : '';
           return `
             <tr>
               <td class="title-cell">
                 <a class="t" href="#/d/${esc(d.slug)}">${esc(d.title)}</a>
-                <div class="slug"><span class="prompt">›</span>${esc(d.slug)}${d.expires_at ? `<span class="ttl" title="expires ${esc(absTime(d.expires_at))} UTC">⏳ ${esc(relUntil(d.expires_at))}</span>` : ''}</div>
+                <div class="slug"><span class="prompt">›</span>${esc(d.slug)}${ttl}</div>
               </td>
               <td class="proj">${esc(d.project || '—')}</td>
               <td class="tags">${d.tags.map((t) => `<span class="tag" data-tag="${esc(t)}">${esc(t)}</span>`).join('')}</td>

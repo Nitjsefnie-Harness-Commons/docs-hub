@@ -265,7 +265,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
 }
 .docs-table td.ver .hist:hover { color: var(--text); }
 .docs-table td.tags { white-space: nowrap; }
-.tag {
+.tag, .ttl {
   display: inline-block;
   font-size: 10.5px;
   letter-spacing: 0.02em;
@@ -274,25 +274,14 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
   background: var(--elev-2);
   color: var(--text-dim);
   border: 1px solid var(--border-2);
-  margin-right: 4px;
 }
+.tag { margin-right: 4px; }
+.ttl { white-space: nowrap; cursor: default; }
 .tag.before::before { content: "#"; color: var(--text-faint); margin-right: 1px; }
 .tag.active {
   background: var(--accent-soft);
   border-color: var(--accent-line);
   color: var(--accent);
-}
-.ttl {
-  display: inline-block;
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
-  padding: 1px 6px;
-  border-radius: 3px;
-  background: var(--elev-2);
-  color: var(--text-dim);
-  border: 1px solid var(--border-2);
-  white-space: nowrap;
-  cursor: default;
 }
 .docs-table .title-cell .slug .ttl { margin-left: 6px; }
 

@@ -374,6 +374,16 @@ def test_publish_omits_ttl_when_not_given(tmp_path, monkeypatch):
     assert b'name="ttl"' not in tr.calls[0][2]
 
 
+def test_publish_omits_a_whitespace_only_ttl(tmp_path, monkeypatch):
+    # `--ttl "  "` is a fumbled shell quote, not a lifetime. Stating it blank
+    # on the wire would ask the server to parse its way back to "permanent".
+    tr = _Transport((200, _json({"ok": True, "slug": "a", "version": 1,
+                                 "url": "/d/a"})))
+    assert _main(monkeypatch, tr, "publish", _doc(tmp_path), "--slug", "a",
+                 "--title", "T", "--from", "analyst", "--ttl", "   ") == 0
+    assert b'name="ttl"' not in tr.calls[0][2]
+
+
 def test_publish_reports_the_expiry_when_the_server_returns_one(
         tmp_path, monkeypatch, capsys):
     tr = _Transport((200, _json({"ok": True, "slug": "a/b", "version": 1,
