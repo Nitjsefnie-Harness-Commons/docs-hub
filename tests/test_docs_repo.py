@@ -245,3 +245,24 @@ def test_purge_expired_waits_for_the_per_slug_lock():
     assert done.wait(10), "purge_expired never finished once the lock was freed"
     assert purged == [1]
     assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/lock"))
+
+
+def test_delete_docs_waits_for_the_per_slug_lock():
+    """delete_docs rmtrees a slug's directory too, so it needs the same lock
+    for the same reason: a publish mid-flight would write v1.html into a
+    directory this call is about to remove."""
+    docs_repo.publish("e/dlock", "D", [], None, "analyst", b"<h1>1</h1>")
+    done, deleted = threading.Event(), []
+
+    def run():
+        deleted.append(docs_repo.delete_docs(["e/dlock"]))
+        done.set()
+
+    with psycopg.connect(os.environ["DATABASE_URL_DOCS"]) as holder:
+        holder.execute("SELECT pg_advisory_xact_lock(hashtext('e/dlock'))")
+        threading.Thread(target=run, daemon=True).start()
+        assert not done.wait(0.3), "delete_docs ignored the per-slug lock"
+    # Leaving the block ends holder's transaction, dropping the lock.
+    assert done.wait(10), "delete_docs never finished once the lock was freed"
+    assert deleted == [1]
+    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/dlock"))

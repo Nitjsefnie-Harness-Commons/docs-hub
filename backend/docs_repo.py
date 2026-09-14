@@ -14,6 +14,16 @@ _LIVE: LiteralString = "(d.expires_at IS NULL OR d.expires_at > now())"
 _EXPIRED: LiteralString = "(d.expires_at IS NOT NULL AND d.expires_at <= now())"
 
 
+def _slug_lock(c, slug: str) -> None:
+    """Take the per-slug advisory lock for the rest of `c`'s transaction.
+
+    Every writer that touches a slug's blob directory takes it, so a publish
+    writing v<n>.html can never interleave with a purge or a delete rmtree-ing
+    the directory under it. The lock is held to commit and released by it.
+    """
+    c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
+
+
 def publish(slug: str, title: str, tags: list[str], project: str | None,
             posted_by: str, html: bytes,
             ttl_seconds: int | None = None) -> dict:
@@ -26,10 +36,10 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
     if not storage.is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
     with db.docs_conn() as c:
-        # Serialise against a concurrent purge_expired of the same slug:
-        # without this the reaper can rmtree the directory between this
-        # publish writing v1.html and committing the row that points at it.
-        c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
+        # Serialise against a concurrent purge_expired or delete_docs of the
+        # same slug: without this either one can rmtree the directory between
+        # this publish writing v1.html and committing the row pointing at it.
+        _slug_lock(c, slug)
         stale = c.execute(
             f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} RETURNING id",
             (slug,)).fetchone()
@@ -202,17 +212,25 @@ def find_docs(filters: dict) -> list[dict]:
 def delete_docs(slugs: list[str]) -> int:
     """Delete the named docs (versions cascade via the doc_versions FK) and
     their blob directories. Returns the count of doc rows actually deleted.
-    The DB delete commits before blob removal, so a crash leaves orphan
-    blobs (harmless) rather than orphan rows."""
+
+    One transaction per slug, holding the same per-slug advisory lock publish
+    takes, with the blobs going while the lock is still held — otherwise a
+    concurrent publish of the slug could write v<n>.html into the directory
+    this call is about to remove. The crash story is purge's: a crash between
+    the rmtree and the commit rolls the row back, leaving a doc row whose
+    blobs are gone, so that slug reads as a broken document until it is
+    re-published (which starts a fresh directory) or deleted again.
+    """
     deleted = 0
     for slug in slugs:
         with db.docs_conn() as c:
+            _slug_lock(c, slug)
             row = c.execute("DELETE FROM docs WHERE slug=%s RETURNING id",
                             (slug,)).fetchone()
+            if row is not None:
+                storage.delete_doc(slug)
+                deleted += 1
             c.commit()
-        if row is not None:
-            deleted += 1
-            storage.delete_doc(slug)
     return deleted
 
 
@@ -235,7 +253,7 @@ def purge_expired() -> int:
     purged = 0
     for slug in slugs:
         with db.docs_conn() as c:
-            c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
+            _slug_lock(c, slug)
             row = c.execute(
                 f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} "
                 "RETURNING id", (slug,)).fetchone()

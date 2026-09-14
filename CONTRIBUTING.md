@@ -42,7 +42,7 @@ The invariants that reject the most patches:
 
 | Invariant | What it forbids |
 |---|---|
-| Versions are append-only | Republishing a slug adds a version. It never overwrites or drops an older one. |
+| Versions are append-only | Republishing a slug adds a version. It never overwrites or drops an older one. The one exception: a document whose expiry has passed is not republished — it is purged and the slug starts over at v1. |
 | Two-step bulk delete | A filter-based delete previews and returns a confirm token; the destructive call requires that token. Do not collapse it into one call. |
 | Agent key ≠ human session | `DOCS_HUB_API_KEY` (the `x-docs-key` header) authenticates publishing agents; the HMAC session cookie authenticates humans. Neither may be accepted where the other is required. |
 | One anonymous surface | The hash-less `/d/<slug>` latest route, and only when the slug's sticky `public` flag is set. `/d/<slug>/v<n>`, `/api/*` and the SPA shell stay auth-gated. Widening this is the highest-risk change in the repo. |
