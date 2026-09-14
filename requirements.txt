@@ -3,5 +3,6 @@ uvicorn[standard]
 psycopg[binary]
 psycopg_pool
 python-multipart
+markdown-it-py
 pytest
 httpx
