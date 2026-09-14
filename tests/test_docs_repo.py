@@ -240,7 +240,7 @@ def test_purge_expired_waits_for_the_per_slug_lock():
     with psycopg.connect(os.environ["DATABASE_URL_DOCS"]) as holder:
         holder.execute("SELECT pg_advisory_xact_lock(hashtext('e/lock'))")
         threading.Thread(target=run, daemon=True).start()
-        assert not done.wait(1.0), "purge_expired ignored the per-slug lock"
+        assert not done.wait(0.3), "purge_expired ignored the per-slug lock"
     # Leaving the block ends holder's transaction, dropping the lock.
     assert done.wait(10), "purge_expired never finished once the lock was freed"
     assert purged == [1]

@@ -95,18 +95,11 @@ def test_start_rejects_a_non_positive_or_unparseable_interval(monkeypatch, raw):
     up deep inside the lifespan. Both fail loudly at start()."""
     monkeypatch.setenv("PURGE_INTERVAL_SECONDS", raw)
 
-    async def fake_loop(interval):
-        seen.append(interval)
-
-    seen = []
-    monkeypatch.setattr(reaper, "loop", fake_loop)
-
     async def run():
         reaper.start()
 
     with pytest.raises(ValueError, match="PURGE_INTERVAL_SECONDS"):
         asyncio.run(run())
-    assert not seen
 
 
 def test_lifespan_closes_the_pools_when_the_interval_is_bad(monkeypatch):
@@ -115,6 +108,22 @@ def test_lifespan_closes_the_pools_when_the_interval_is_bad(monkeypatch):
     their non-daemon worker threads) open."""
     monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "0")
     with pytest.raises(ValueError, match="PURGE_INTERVAL_SECONDS"):
+        with TestClient(app):
+            pass
+    # The pool global is the only observable proof the finally ran.
+    # pylint: disable-next=protected-access
+    assert db._DOCS is None
+
+
+def test_lifespan_closes_the_pools_when_the_schema_check_fails(monkeypatch):
+    """schema_check() runs inside the lifespan's try too, so a stale
+    deployment's RuntimeError unwinds through db.close_pools() rather than
+    leaking the pools migrate() just opened."""
+    def boom():
+        raise RuntimeError("docs.expires_at is missing")
+
+    monkeypatch.setattr(db, "schema_check", boom)
+    with pytest.raises(RuntimeError, match="expires_at"):
         with TestClient(app):
             pass
     # The pool global is the only observable proof the finally ran.

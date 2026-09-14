@@ -159,8 +159,11 @@ def cmd_publish(args: argparse.Namespace) -> int:
     # Sent only when given: the absence of the field is what asks for a
     # permanent document, and every publish restates the lifetime, so a
     # republish without --ttl is how an expiring document becomes permanent.
-    if args.ttl:
-        fields["ttl"] = args.ttl
+    # Stripped first: `--ttl "  "` is the same request as no --ttl at all,
+    # and sending it blank would state a lifetime the wire format does not.
+    ttl = args.ttl.strip()
+    if ttl:
+        fields["ttl"] = ttl
     body, ctype = _multipart(fields, "file", os.path.basename(args.file), html)
     status, raw = _request("POST", "/api/publish", data=body,
                            headers={"Content-Type": ctype})
@@ -270,7 +273,8 @@ def main() -> int:
     p.add_argument("--from", required=True, dest="from")
     p.add_argument("--ttl", default="",
                    help="lifetime after which the document vanishes, e.g. "
-                        "30m, 2h, 7d (bare number = seconds); omit = permanent")
+                        "30m, 2h, 7d, 2w (bare number = seconds, must be "
+                        "≥ 1); omit = permanent")
     p.set_defaults(func=cmd_publish)
 
     p = sub.add_parser("get")

@@ -16,15 +16,18 @@ db.load_dotenv(str(_REPO_ROOT / ".env"))
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    db.migrate()
-    db.schema_check()
     purge_task: asyncio.Task | None = None
     try:
+        # Inside the try: schema_check() raises on a stale deployment, and
+        # that unwind still has to close the pools it just opened.
+        db.migrate()
+        db.schema_check()
         purge_task = reaper.start()
         yield
     finally:
-        # start() rejects a bad PURGE_INTERVAL_SECONDS, so the task may never
-        # have been created -- the pools still have to be closed.
+        # Startup can fail before the task exists -- a rejected
+        # PURGE_INTERVAL_SECONDS, or a failed schema check -- and the pools
+        # still have to be closed.
         if purge_task is not None:
             purge_task.cancel()
             with suppress(asyncio.CancelledError):
