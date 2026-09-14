@@ -236,11 +236,12 @@ def delete_docs(slugs: list[str]) -> int:
 
     One transaction per slug, holding the same per-slug advisory lock publish
     takes, with the blobs going while the lock is still held — otherwise a
-    concurrent publish of the slug could write v<n>.html into the directory
-    this call is about to remove. The crash story is purge's: a crash between
-    the rmtree and the commit rolls the row back, leaving a doc row whose
-    blobs are gone, so that slug reads as a broken document until it is
-    re-published (which starts a fresh directory) or deleted again.
+    concurrent publish of the slug could write the version's file (v<n>.html
+    or v<n>.md) into the directory this call is about to remove. The crash
+    story is purge's: a crash between the rmtree and the commit rolls the row
+    back, leaving a doc row whose blobs are gone, so that slug reads as a
+    broken document until it is re-published (which starts a fresh directory)
+    or deleted again.
     """
     deleted = 0
     for slug in slugs:
