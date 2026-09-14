@@ -9,6 +9,9 @@ from backend import db, storage
 # that returns or mutates a doc applies this so an expired doc is gone the
 # moment its time passes, whether or not the reaper has run yet.
 _LIVE: LiteralString = "(d.expires_at IS NULL OR d.expires_at > now())"
+# Its exact complement, so the boundary a reader sees and the boundary a
+# deleter acts on cannot drift apart.
+_EXPIRED: LiteralString = "(d.expires_at IS NOT NULL AND d.expires_at <= now())"
 
 
 def publish(slug: str, title: str, tags: list[str], project: str | None,
@@ -23,9 +26,13 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
     if not storage.is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
     with db.docs_conn() as c:
+        # Serialise against a concurrent purge_expired of the same slug:
+        # without this the reaper can rmtree the directory between this
+        # publish writing v1.html and committing the row that points at it.
+        c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
         stale = c.execute(
-            "DELETE FROM docs WHERE slug=%s AND expires_at IS NOT NULL "
-            "AND expires_at <= now() RETURNING id", (slug,)).fetchone()
+            f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} RETURNING id",
+            (slug,)).fetchone()
         if stale is not None:
             storage.delete_doc(slug)
         row = c.execute("SELECT id, latest_version FROM docs WHERE slug=%s",
@@ -56,10 +63,12 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             "WHERE id=%s RETURNING expires_at",
             (version, title, tags, project, ttl_seconds, doc_id),
         ).fetchone()
+        if updated is None:
+            raise RuntimeError(
+                "UPDATE ... RETURNING expires_at yielded no row")
         c.commit()
-    expires_at = updated[0] if updated is not None else None
     return {"slug": slug, "version": version, "doc_id": doc_id,
-            "expires_at": expires_at}
+            "expires_at": updated[0]}
 
 
 def _version_row(slug: str, version: int) -> dict | None:
@@ -209,17 +218,32 @@ def delete_docs(slugs: list[str]) -> int:
 
 def purge_expired() -> int:
     """Delete every doc whose expiry has passed (versions cascade) and its
-    blob directory. Returns the number of docs removed. Same crash ordering
-    as delete_docs: rows go first, so a crash leaves orphan blobs, never
-    orphan rows that a later publish would trip over."""
+    blob directory. Returns the number of docs removed.
+
+    One transaction per slug, holding the same per-slug advisory lock that
+    publish takes, and the blobs go while the lock is still held: a publish
+    of the same slug either waits and then finds no stale row, or got there
+    first and the re-checked _EXPIRED no longer matches. A crash between
+    the rmtree and the commit rolls the row back, but that row is expired,
+    `_LIVE` hides it from every reader, and the next purge deletes it again.
+    """
     with db.docs_conn() as c:
-        rows = c.execute(
-            "DELETE FROM docs WHERE expires_at IS NOT NULL "
-            "AND expires_at <= now() RETURNING slug").fetchall()
+        slugs = [r[0] for r in
+                 c.execute(f"SELECT d.slug FROM docs d WHERE {_EXPIRED}"
+                           ).fetchall()]
         c.commit()
-    for (slug,) in rows:
-        storage.delete_doc(slug)
-    return len(rows)
+    purged = 0
+    for slug in slugs:
+        with db.docs_conn() as c:
+            c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
+            row = c.execute(
+                f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} "
+                "RETURNING id", (slug,)).fetchone()
+            if row is not None:
+                storage.delete_doc(slug)
+                purged += 1
+            c.commit()
+    return purged
 
 
 def list_versions(slug: str) -> list[dict]:

@@ -1,7 +1,9 @@
 # tests/test_docs_repo.py
 import os
+import threading
 from datetime import datetime, timedelta, timezone
 
+import psycopg
 import pytest
 from backend import db, docs_repo
 
@@ -219,3 +221,27 @@ def test_purge_expired_removes_rows_and_blobs():
         assert c.execute("SELECT count(*) FROM doc_versions").fetchone()[0] == 2
     assert {d["slug"] for d in docs_repo.list_docs()} == {"e/keep", "e/perm"}
     assert docs_repo.purge_expired() == 0
+
+
+def test_purge_expired_waits_for_the_per_slug_lock():
+    """The reaper removes a slug's blob directory, so it must not run while a
+    publish of that slug is mid-flight — the publish would write v1.html and
+    the rmtree would take it away. Both sides take the same per-slug advisory
+    lock; here a third connection holds it and purge_expired has to wait."""
+    docs_repo.publish("e/lock", "L", [], None, "analyst", b"<h1>1</h1>",
+                      ttl_seconds=60)
+    _backdate("e/lock")
+    done, purged = threading.Event(), []
+
+    def run():
+        purged.append(docs_repo.purge_expired())
+        done.set()
+
+    with psycopg.connect(os.environ["DATABASE_URL_DOCS"]) as holder:
+        holder.execute("SELECT pg_advisory_xact_lock(hashtext('e/lock'))")
+        threading.Thread(target=run, daemon=True).start()
+        assert not done.wait(1.0), "purge_expired ignored the per-slug lock"
+    # Leaving the block ends holder's transaction, dropping the lock.
+    assert done.wait(10), "purge_expired never finished once the lock was freed"
+    assert purged == [1]
+    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/lock"))
