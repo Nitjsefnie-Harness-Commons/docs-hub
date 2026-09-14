@@ -22,7 +22,7 @@ def _require_agent(request: Request) -> JSONResponse | None:
 async def publish(request: Request, file: UploadFile,
                   slug: str = Form(...), title: str = Form(...),
                   tags: str = Form(""), project: str = Form(""),
-                  ttl: str = Form(""),
+                  ttl: str = Form(""), fmt: str = Form("", alias="format"),
                   from_: str = Form(..., alias="from")) -> Response:
     denied = _require_agent(request)
     if denied is not None:
@@ -30,6 +30,16 @@ async def publish(request: Request, file: UploadFile,
     html = await file.read()
     if not html:
         return JSONResponse({"ok": False, "error": "empty file"}, status_code=400)
+    # An explicit `format` field wins; otherwise the upload's filename decides,
+    # so an older client that never sends one keeps publishing HTML.
+    if fmt.strip():
+        fmt = fmt.strip().lower()
+        if fmt not in docs_repo.FORMATS:
+            return JSONResponse({"ok": False, "error": f"invalid format: {fmt!r}"},
+                                status_code=400)
+    else:
+        name = (file.filename or "").lower()
+        fmt = "markdown" if name.endswith((".md", ".markdown")) else "html"
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
     ttl_seconds: int | None = None
     if ttl.strip():
@@ -39,12 +49,12 @@ async def publish(request: Request, file: UploadFile,
             return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     try:
         res = docs_repo.publish(slug, title, tag_list, project or None,
-                                from_, html, ttl_seconds=ttl_seconds)
+                                from_, html, ttl_seconds=ttl_seconds, fmt=fmt)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     return JSONResponse({
         "ok": True, "slug": res["slug"], "version": res["version"],
-        "url": f"/d/{res['slug']}",
+        "url": f"/d/{res['slug']}", "format": res["format"],
         "expires_at": (res["expires_at"].isoformat()
                        if res["expires_at"] is not None else None),
     })
@@ -55,6 +65,10 @@ async def get_doc(slug: str) -> Response:
     doc = docs_repo.get_latest(slug)
     if doc is None:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
+    # Agents get the stored bytes verbatim in the format they were published
+    # in; only the browser routes render Markdown.
+    if doc["format"] == "markdown":
+        return Response(doc["html"], media_type="text/markdown; charset=utf-8")
     return HTMLResponse(doc["html"])
 
 

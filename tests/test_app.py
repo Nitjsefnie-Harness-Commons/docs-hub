@@ -278,3 +278,69 @@ def test_expired_doc_is_404_everywhere():
     assert c.get("/api/versions/ttl/exp", headers=KEY).status_code == 404
     assert all(d["slug"] != "ttl/exp"
                for d in c.get("/api/list", headers=KEY).json()["docs"])
+
+
+def _publish_md(c, slug, body=b"# hello\n\n<script>x</script>\n", **extra):
+    return c.post("/api/publish",
+                  data={"slug": slug, "title": slug, "from": "analyst", **extra},
+                  files={"file": ("d.md", body, "text/markdown")}, headers=KEY)
+
+
+def test_publish_infers_markdown_from_filename():
+    c = _client()
+    r = _publish_md(c, "md/infer")
+    assert r.status_code == 200, r.text
+    assert r.json()["format"] == "markdown"
+    raw = c.get("/api/doc/md/infer", headers=KEY)
+    assert raw.status_code == 200
+    assert raw.headers["content-type"].startswith("text/markdown")
+    assert raw.content == b"# hello\n\n<script>x</script>\n"
+
+
+def test_explicit_format_overrides_filename():
+    c = _client()
+    r = c.post("/api/publish",
+               data={"slug": "md/explicit", "title": "E", "from": "analyst",
+                     "format": "markdown"},
+               files={"file": ("d.html", b"# md in html name\n", "text/html")},
+               headers=KEY)
+    assert r.json()["format"] == "markdown"
+
+
+def test_publish_rejects_unknown_format():
+    c = _client()
+    r = _publish_md(c, "md/bad", format="rtf")
+    assert r.status_code == 400
+    assert r.json()["error"].startswith("invalid format")
+
+
+def test_browser_routes_render_markdown_and_escape_html():
+    c = _client()
+    _publish_md(c, "md/render")
+    for path in ("/d/md/render", "/d/md/render/v1"):
+        r = c.get(path, headers=KEY)
+        assert r.status_code == 200
+        assert r.headers["content-type"].startswith("text/html")
+        assert "<h1>hello</h1>" in r.text
+        assert "<script>" not in r.text
+        assert "&lt;script&gt;" in r.text
+        assert "<title>md/render</title>" in r.text
+
+
+def test_html_docs_are_still_served_verbatim():
+    c = _client()
+    _publish(c, "md/html", body=b"<h1>raw</h1><script>ok()</script>")
+    r = c.get("/d/md/html", headers=KEY)
+    assert r.content == b"<h1>raw</h1><script>ok()</script>"
+    assert c.get("/api/doc/md/html",
+                 headers=KEY).headers["content-type"].startswith("text/html")
+
+
+def test_list_and_versions_carry_format():
+    c = _client()
+    _publish(c, "md/fmt", body=b"<h1>1</h1>")
+    _publish_md(c, "md/fmt")
+    docs = c.get("/api/list", headers=KEY).json()["docs"]
+    assert next(d for d in docs if d["slug"] == "md/fmt")["format"] == "markdown"
+    vs = c.get("/api/versions/md/fmt", headers=KEY).json()["versions"]
+    assert [(v["version"], v["format"]) for v in vs] == [(2, "markdown"), (1, "html")]
