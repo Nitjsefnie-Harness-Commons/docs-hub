@@ -130,3 +130,97 @@ def test_migrate_adds_format_to_doc_versions():
         ).fetchone()
     assert row is not None
     assert row[0] == "text" and row[1] == "'html'::text" and row[2] == "NO"
+
+
+def _column(table: str, column: str):
+    """(data_type, column_default, is_nullable) for one column, or None."""
+    with db.docs_conn() as c:
+        return c.execute(
+            "SELECT data_type, column_default, is_nullable "
+            "FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name=%s AND column_name=%s",
+            (table, column),
+        ).fetchone()
+
+
+# The two tests below drop a column, which the autouse _clean_tables fixture
+# does NOT restore -- it truncates rows, not schema. What restores it is
+# migrate() itself, which each test calls in a finally: before its assertions,
+# so the table is whole again by the time the test ends and every later test
+# sees the full schema. The finally is what makes that unconditional -- a
+# failure between the DROP and the migrate() would otherwise hand every
+# following test a table missing its column, turning one real failure into a
+# cascade of unrelated ones.
+
+
+def test_migrate_backfills_format_on_a_table_that_already_has_rows():
+    """The upgrade path the idempotency tests cannot reach: schema.sql builds
+    doc_versions with `format` already on it, so re-running migrate() against
+    it proves only that ADD COLUMN IF NOT EXISTS is a no-op. A deployed
+    instance instead has a table that predates the column and already holds
+    rows, and the NOT NULL DEFAULT has to backfill them -- that is what makes
+    every version published before the upgrade read as HTML afterwards."""
+    with db.docs_conn() as c:
+        c.execute("ALTER TABLE doc_versions DROP COLUMN format")
+        c.commit()
+    try:
+        # Raw SQL rather than publish(): the publishing code writes `format`,
+        # so it cannot insert into the pre-migration shape at all.
+        with db.docs_conn() as c:
+            doc_id = c.execute(
+                "INSERT INTO docs (slug, title, latest_version) "
+                "VALUES ('m/legacy', 'Legacy', 1) RETURNING id").fetchone()[0]
+            c.execute(
+                "INSERT INTO doc_versions "
+                "(doc_id, version, posted_by, file_path, byte_size, sha256) "
+                "VALUES (%s, 1, 'analyst', '/store/m/legacy/v1.html', 3, "
+                "'abc123')",
+                (doc_id,))
+            c.commit()
+    finally:
+        # In a finally so a failure above still hands the next test a whole
+        # table; twice because migrate() re-runs at every startup.
+        db.migrate()
+        db.migrate()
+
+    assert _column("doc_versions", "format") == ("text", "'html'::text", "NO")
+    with db.docs_conn() as c:
+        row = c.execute("SELECT format FROM doc_versions WHERE doc_id=%s",
+                        (doc_id,)).fetchone()
+    assert row is not None and row[0] == "html"
+
+
+def test_migrate_adds_expires_at_to_a_table_that_already_has_rows():
+    """Same upgrade path for the docs table: a row that predates expires_at
+    has to come out permanent (NULL), not expired -- a non-NULL backfill here
+    would make every pre-upgrade document vanish the moment the reaper ran."""
+    with db.docs_conn() as c:
+        c.execute("ALTER TABLE docs DROP COLUMN expires_at")
+        c.commit()
+    try:
+        with db.docs_conn() as c:
+            doc_id = c.execute(
+                "INSERT INTO docs (slug, title, latest_version) "
+                "VALUES ('m/preexisting', 'Preexisting', 0) RETURNING id"
+            ).fetchone()[0]
+            c.commit()
+    finally:
+        # In a finally so a failure above still hands the next test a whole
+        # table; twice because migrate() re-runs at every startup.
+        db.migrate()
+        db.migrate()
+
+    assert _column("docs", "expires_at") == (
+        "timestamp with time zone", None, "YES")
+    with db.docs_conn() as c:
+        row = c.execute("SELECT expires_at FROM docs WHERE id=%s",
+                        (doc_id,)).fetchone()
+    assert row is not None and row[0] is None
+    # DROP COLUMN takes the partial index with it, so this is the only place
+    # migrate()'s CREATE INDEX IF NOT EXISTS is reachable rather than a no-op.
+    with db.docs_conn() as c:
+        idx = c.execute(
+            "SELECT indexname FROM pg_indexes WHERE schemaname='public' "
+            "AND tablename='docs' AND indexname='idx_docs_expires_at'"
+        ).fetchone()
+    assert idx is not None
