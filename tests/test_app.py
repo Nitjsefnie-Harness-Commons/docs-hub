@@ -1,6 +1,8 @@
+from datetime import datetime, timezone
+
 from fastapi.testclient import TestClient
 from backend.app import app
-from backend import docs_repo, session
+from backend import db, docs_repo, session
 
 KEY = {"x-docs-key": "test-api-key"}
 
@@ -189,3 +191,23 @@ def test_api_tags():
 
 def test_api_tags_requires_auth():
     assert _client().get("/api/tags").status_code == 401
+
+
+def test_api_list_serialises_expires_at():
+    """A doc with an expiry carries a datetime out of list_docs; JSONResponse
+    cannot dump one, so /api/list must render it as an ISO string — and null
+    for a permanent doc. Set the column directly: the publish endpoint grows
+    its own ttl field later, and this must not wait for it."""
+    c = _client()
+    _publish(c, "exp/soon")
+    _publish(c, "exp/never")
+    with db.docs_conn() as conn:
+        conn.execute("UPDATE docs SET expires_at = now() + interval '1 hour' "
+                     "WHERE slug=%s", ("exp/soon",))
+        conn.commit()
+    r = c.get("/api/list", headers=KEY)
+    assert r.status_code == 200, r.text
+    by = {d["slug"]: d["expires_at"] for d in r.json()["docs"]}
+    assert by["exp/never"] is None
+    assert isinstance(by["exp/soon"], str)
+    assert datetime.fromisoformat(by["exp/soon"]) > datetime.now(timezone.utc)

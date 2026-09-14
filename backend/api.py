@@ -68,6 +68,7 @@ async def api_list(project: str = "", agent: str = "") -> JSONResponse:
     docs = docs_repo.list_docs(project or None, agent or None)
     for d in docs:
         d["updated_at"] = d["updated_at"].isoformat()
+        d["expires_at"] = d["expires_at"].isoformat() if d["expires_at"] else None
     return JSONResponse({"ok": True, "docs": docs})
 
 
