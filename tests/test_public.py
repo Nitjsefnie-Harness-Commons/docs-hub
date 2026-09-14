@@ -152,3 +152,14 @@ def test_expired_public_doc_is_not_served_anonymously():
     r = _client().get("/d/pub/ttl", follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == "/login"
+
+
+def test_public_markdown_doc_renders_anonymously():
+    c = _client()
+    c.post("/api/publish",
+           data={"slug": "pub/md", "title": "Pub MD", "from": "analyst"},
+           files={"file": ("d.md", b"# open\n", "text/markdown")}, headers=KEY)
+    _set_public(c, "pub/md", True)
+    r = _client().get("/d/pub/md")
+    assert r.status_code == 200
+    assert "<h1>open</h1>" in r.text

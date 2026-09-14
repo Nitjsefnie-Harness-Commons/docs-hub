@@ -117,6 +117,9 @@ Optional environment:
 - `PURGE_INTERVAL_SECONDS` — how often the reaper deletes expired
   documents (default `60`).
 
+After pulling a version that changes `requirements.txt`, run
+`.venv/bin/pip install -r requirements.txt` before restarting the unit.
+
 ## Conventions
 
 - TDD: write the failing test first, then the minimal implementation.

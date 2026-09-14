@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from starlette.responses import HTMLResponse, Response
 
-from backend import docs_repo
+from backend import docs_repo, render
 
 router = APIRouter()
 
@@ -24,12 +24,23 @@ async def index() -> HTMLResponse:
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
+def _serve(doc: dict) -> HTMLResponse:
+    """A browser-facing page for one stored version.
+
+    An HTML document is served verbatim -- it is trusted agent output. A
+    Markdown one is rendered at serve time; the stored source is untouched.
+    """
+    if doc["format"] == "markdown":
+        return HTMLResponse(render.render_markdown(doc["html"], doc["title"]))
+    return HTMLResponse(doc["html"])
+
+
 @router.get("/d/{slug:path}/v{version}")
 async def render_version(slug: str, version: int) -> Response:
     doc = docs_repo.get_version(slug, version)
     if doc is None:
         return Response("Not found", status_code=404, media_type="text/plain")
-    return HTMLResponse(doc["html"])
+    return _serve(doc)
 
 
 @router.get("/d/{slug:path}")
@@ -37,4 +48,4 @@ async def render_latest(slug: str) -> Response:
     doc = docs_repo.get_latest(slug)
     if doc is None:
         return Response("Not found", status_code=404, media_type="text/plain")
-    return HTMLResponse(doc["html"])
+    return _serve(doc)
