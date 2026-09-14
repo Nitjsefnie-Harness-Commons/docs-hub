@@ -23,7 +23,7 @@ body { margin: 0; background: var(--bg); color: var(--fg);
        font-family: system-ui, -apple-system, "Segoe UI", Roboto,
                     "Helvetica Neue", Arial, sans-serif;
        line-height: 1.55; }
-main.md { max-width: 80ch; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+main.md { padding: 2rem 1.25rem 4rem; }
 main.md > :first-child { margin-top: 0; }
 h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 2rem 0 0.75rem; }
 h1 { font-size: 1.9rem; }
