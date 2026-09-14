@@ -6,6 +6,7 @@ from fastapi import APIRouter, Body, Form, Request, UploadFile
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from backend import docs_repo, session
+from backend.ttl import parse_ttl
 
 router = APIRouter(prefix="/api")
 
@@ -21,6 +22,7 @@ def _require_agent(request: Request) -> JSONResponse | None:
 async def publish(request: Request, file: UploadFile,
                   slug: str = Form(...), title: str = Form(...),
                   tags: str = Form(""), project: str = Form(""),
+                  ttl: str = Form(""),
                   from_: str = Form(..., alias="from")) -> Response:
     denied = _require_agent(request)
     if denied is not None:
@@ -29,14 +31,22 @@ async def publish(request: Request, file: UploadFile,
     if not html:
         return JSONResponse({"ok": False, "error": "empty file"}, status_code=400)
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    ttl_seconds: int | None = None
+    if ttl.strip():
+        try:
+            ttl_seconds = parse_ttl(ttl)
+        except ValueError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     try:
         res = docs_repo.publish(slug, title, tag_list, project or None,
-                                from_, html)
+                                from_, html, ttl_seconds=ttl_seconds)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     return JSONResponse({
         "ok": True, "slug": res["slug"], "version": res["version"],
         "url": f"/d/{res['slug']}",
+        "expires_at": (res["expires_at"].isoformat()
+                       if res["expires_at"] is not None else None),
     })
 
 
@@ -68,7 +78,8 @@ async def api_list(project: str = "", agent: str = "") -> JSONResponse:
     docs = docs_repo.list_docs(project or None, agent or None)
     for d in docs:
         d["updated_at"] = d["updated_at"].isoformat()
-        d["expires_at"] = d["expires_at"].isoformat() if d["expires_at"] else None
+        if d["expires_at"] is not None:
+            d["expires_at"] = d["expires_at"].isoformat()
     return JSONResponse({"ok": True, "docs": docs})
 
 

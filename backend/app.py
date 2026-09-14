@@ -1,13 +1,14 @@
 """FastAPI entrypoint for docs-hub."""
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from backend import api, db, login, session, views
+from backend import api, db, login, reaper, session, views
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 db.load_dotenv(str(_REPO_ROOT / ".env"))
@@ -17,8 +18,14 @@ db.load_dotenv(str(_REPO_ROOT / ".env"))
 async def lifespan(_app: FastAPI):
     db.migrate()
     db.schema_check()
-    yield
-    db.close_pools()
+    purge_task = reaper.start()
+    try:
+        yield
+    finally:
+        purge_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await purge_task
+        db.close_pools()
 
 
 app = FastAPI(title="docs-hub", docs_url=None, redoc_url=None, lifespan=lifespan)

@@ -135,3 +135,20 @@ def test_list_includes_public_flag():
     docs = c.get("/api/list", headers=KEY).json()["docs"]
     d = next(x for x in docs if x["slug"] == "pub/listed")
     assert d["public"] is True
+
+
+def test_expired_public_doc_is_not_served_anonymously():
+    c = _client()
+    c.post("/api/publish",
+           data={"slug": "pub/ttl", "title": "T", "from": "analyst", "ttl": "1h"},
+           files={"file": ("d.html", b"<h1>x</h1>", "text/html")}, headers=KEY)
+    _set_public(c, "pub/ttl", True)
+    assert _client().get("/d/pub/ttl").status_code == 200
+    from backend import db
+    with db.docs_conn() as conn:
+        conn.execute("UPDATE docs SET expires_at = now() - interval '1 second' "
+                     "WHERE slug=%s", ("pub/ttl",))
+        conn.commit()
+    r = _client().get("/d/pub/ttl", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/login"
