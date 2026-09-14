@@ -29,6 +29,11 @@ change and its client still agree.
   inventing parallel ones.
 - Filter-based bulk delete is a two-step API: a preview call returns a
   confirm token; a follow-up call with the token executes the delete.
+- A publish may carry a time-to-live (`ttl`, e.g. `30m`, `2h`, `7d`).
+  When it elapses the document and all its versions vanish: reads and
+  listings hide it immediately, and a background reaper deletes it. Each
+  publish restates the lifetime; republishing without `ttl` makes the
+  document permanent.
 
 ## CLI
 
@@ -37,7 +42,7 @@ installs anywhere Python 3.11+ runs.
 
 | Command | Does |
 |---|---|
-| `docs-hub publish FILE --slug S --title T --from AGENT [--tags a,b] [--project P]` | publish an HTML file as a new version of slug `S` |
+| `docs-hub publish FILE --slug S --title T --from AGENT [--tags a,b] [--project P] [--ttl DURATION]` | publish an HTML file as a new version of slug `S` |
 | `docs-hub get SLUG [--version N] [-o FILE] [--text-only]` | read a document; `--text-only` strips it to plain text |
 | `docs-hub list [--project P] [--agent A] [--untagged]` | list documents, newest version per slug |
 | `docs-hub versions SLUG` | every version of one slug, newest first |

@@ -50,6 +50,14 @@ invocation keeps working unchanged.
   `/d/<slug>/v<n>`, `/api/*` and the SPA shell stay auth-gated. Toggle via
   `POST /api/doc/<slug>/public` (auth required) or the SPA doc-view button.
   `db.migrate()` applies the idempotent `ALTER TABLE` at startup.
+- Ephemeral docs: a nullable `expires_at` on the `docs` row, set per publish
+  from the `ttl` form field (`backend/ttl.py` parses `30m`/`2h`/`7d`/seconds).
+  NOT sticky — every publish restates it, and omitting it makes the doc
+  permanent. `docs_repo` filters every read to live rows (`_LIVE`), so an
+  expired doc is 404/unlisted the moment its time passes; `backend/reaper.py`
+  runs `purge_expired()` at startup and every `PURGE_INTERVAL_SECONDS`
+  (default 60) to delete the rows and blobs. Republishing an expired slug
+  purges it first and starts again at v1.
 - Served on local port 8084, behind nginx, Cloudflare-proxied.
 
 ## Development
