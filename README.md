@@ -106,6 +106,8 @@ Required environment for the running service:
 - `STORE_ROOT` — path to the blob store directory.
 - `COOKIE_SECURE` — `1` (default) to mark the session cookie `Secure`;
   set to `0` for local non-HTTPS development.
+- `PURGE_INTERVAL_SECONDS` — how often the reaper deletes expired
+  documents (default `60`). Optional.
 
 ## Conventions
 

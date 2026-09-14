@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from backend.app import app
@@ -211,3 +211,62 @@ def test_api_list_serialises_expires_at():
     assert by["exp/never"] is None
     assert isinstance(by["exp/soon"], str)
     assert datetime.fromisoformat(by["exp/soon"]) > datetime.now(timezone.utc)
+
+
+def _backdate(slug):
+    with db.docs_conn() as c:
+        c.execute("UPDATE docs SET expires_at = now() - interval '1 second' "
+                  "WHERE slug=%s", (slug,))
+        c.commit()
+
+
+def test_publish_with_ttl_returns_expires_at():
+    c = _client()
+    r = c.post("/api/publish",
+               data={"slug": "ttl/one", "title": "T", "from": "analyst",
+                     "ttl": "2h"},
+               files={"file": ("d.html", b"<h1>x</h1>", "text/html")},
+               headers=KEY)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["expires_at"] is not None
+    exp = datetime.fromisoformat(body["expires_at"])
+    assert exp > datetime.now(timezone.utc) + timedelta(minutes=110)
+    listed = c.get("/api/list", headers=KEY).json()["docs"]
+    d = next(x for x in listed if x["slug"] == "ttl/one")
+    assert d["expires_at"] == body["expires_at"]
+
+
+def test_publish_without_ttl_reports_null_expiry():
+    c = _client()
+    r = _publish(c, "ttl/none")
+    assert r.json()["expires_at"] is None
+    listed = c.get("/api/list", headers=KEY).json()["docs"]
+    assert next(x for x in listed if x["slug"] == "ttl/none")["expires_at"] is None
+
+
+def test_publish_rejects_a_bad_ttl():
+    c = _client()
+    r = c.post("/api/publish",
+               data={"slug": "ttl/bad", "title": "T", "from": "analyst",
+                     "ttl": "soon"},
+               files={"file": ("d.html", b"<h1>x</h1>", "text/html")},
+               headers=KEY)
+    assert r.status_code == 400
+    assert r.json()["error"].startswith("invalid ttl")
+    assert c.get("/api/doc/ttl/bad", headers=KEY).status_code == 404
+
+
+def test_expired_doc_is_404_everywhere():
+    c = _client()
+    c.post("/api/publish",
+           data={"slug": "ttl/exp", "title": "T", "from": "analyst", "ttl": "1h"},
+           files={"file": ("d.html", b"<h1>x</h1>", "text/html")}, headers=KEY)
+    _backdate("ttl/exp")
+    assert c.get("/api/doc/ttl/exp", headers=KEY).status_code == 404
+    assert c.get("/d/ttl/exp", headers=KEY).status_code == 404
+    assert c.get("/d/ttl/exp/v1", headers=KEY).status_code == 404
+    assert c.get("/api/versions/ttl/exp", headers=KEY).status_code == 404
+    assert all(d["slug"] != "ttl/exp"
+               for d in c.get("/api/list", headers=KEY).json()["docs"])
