@@ -15,6 +15,11 @@ import shutil
 _SEGMENT = r"[a-z0-9]([a-z0-9_-]*[a-z0-9])?"
 _SLUG_RE = re.compile(rf"^{_SEGMENT}(/{_SEGMENT})*$")
 
+# The extensions a version may be stored under, one per stored format.
+# Checked alongside the slug so a caller that derives the extension wrongly
+# cannot name a path outside that pair.
+_EXTS = ("html", "md")
+
 
 def is_valid_slug(slug: str) -> bool:
     return bool(slug) and len(slug) <= 200 and _SLUG_RE.fullmatch(slug) is not None
@@ -25,9 +30,13 @@ def _store_root() -> str:
 
 
 def blob_path(slug: str, version: int, ext: str = "html") -> str:
-    """Absolute path for a version's file. Raises ValueError on bad slug."""
+    """Absolute path for a version's file.
+
+    Raises ValueError on a bad slug or an extension outside `_EXTS`."""
     if not is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
+    if ext not in _EXTS:
+        raise ValueError(f"invalid ext: {ext!r}")
     return os.path.join(_store_root(), slug, f"v{version}.{ext}")
 
 

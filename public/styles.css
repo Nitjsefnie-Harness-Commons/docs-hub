@@ -267,6 +267,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
 .docs-table td.tags { white-space: nowrap; }
 .tag, .ttl, .fmt {
   display: inline-block;
+  white-space: nowrap;
   font-size: 10.5px;
   letter-spacing: 0.02em;
   padding: 1px 6px;
@@ -276,7 +277,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
   border: 1px solid var(--border-2);
 }
 .tag { margin-right: 4px; }
-.ttl { white-space: nowrap; cursor: default; }
+.ttl { cursor: default; }
 .tag.before::before { content: "#"; color: var(--text-faint); margin-right: 1px; }
 .tag.active {
   background: var(--accent-soft);

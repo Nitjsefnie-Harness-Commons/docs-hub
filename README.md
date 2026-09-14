@@ -46,7 +46,7 @@ installs anywhere Python 3.11+ runs.
 | Command | Does |
 |---|---|
 | `docs-hub publish FILE --slug S --title T --from AGENT [--tags a,b] [--project P] [--ttl DURATION] [--format html\|markdown]` | publish a file as a new version of slug `S` |
-| `docs-hub get SLUG [--version N] [-o FILE] [--text-only]` | read a document; `--text-only` strips HTML to plain text (a Markdown document is already text and passes through) |
+| `docs-hub get SLUG [--version N] [-o FILE] [--text-only]` | read a document; `--text-only` strips HTML to plain text. A Markdown document passes through unstripped only without `--version` — a `--version N` fetch takes the browser route, which returns the rendered page. |
 | `docs-hub list [--project P] [--agent A] [--untagged]` | list documents, newest version per slug |
 | `docs-hub versions SLUG` | every version of one slug, newest first |
 | `docs-hub tags [--project P]` | every tag in use with its count, most-used first |

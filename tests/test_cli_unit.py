@@ -464,6 +464,15 @@ def test_publish_sends_the_format_when_given(tmp_path, monkeypatch):
                  "--title", "T", "--from", "analyst",
                  "--format", "markdown") == 0
     assert b'name="format"\r\n\r\nmarkdown\r\n' in tr.calls[0][2]
+    # The other direction too: --format html on a .md file has to reach the
+    # wire, since that is the only thing overruling the filename's inference.
+    tr = _Transport((200, _json({"ok": True, "slug": "a", "version": 1,
+                                 "url": "/d/a", "format": "html"})))
+    md = tmp_path / "n.md"
+    md.write_bytes(b"# x\n")
+    assert _main(monkeypatch, tr, "publish", str(md), "--slug", "a",
+                 "--title", "T", "--from", "analyst", "--format", "html") == 0
+    assert b'name="format"\r\n\r\nhtml\r\n' in tr.calls[0][2]
 
 
 def test_publish_omits_the_format_when_not_given(tmp_path, monkeypatch):

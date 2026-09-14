@@ -216,7 +216,7 @@ def cmd_get(args: argparse.Namespace) -> int:
         return 1
     # Markdown source is already the readable text --text-only asks for;
     # stripping it as HTML would eat every `<` construct in it.
-    strip = args.text_only and not content_type.startswith("text/markdown")
+    strip = args.text_only and not content_type.lower().startswith("text/markdown")
     out = _html_to_text(raw).encode("utf-8") if strip else raw
     if args.output:
         with open(args.output, "wb") as f:

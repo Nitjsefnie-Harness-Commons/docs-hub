@@ -298,3 +298,7 @@ def test_versions_of_one_slug_may_differ_in_format():
 def test_publish_rejects_unknown_format():
     with pytest.raises(ValueError, match="invalid format"):
         docs_repo.publish("m/bad", "B", [], None, "analyst", b"x", fmt="rtf")
+    # The rejection happens before anything is written, so the slug is left
+    # with neither a doc row nor a blob directory.
+    assert docs_repo.get_latest("m/bad") is None
+    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "m", "bad"))
