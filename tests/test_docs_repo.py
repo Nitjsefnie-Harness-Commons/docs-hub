@@ -266,3 +266,35 @@ def test_delete_docs_waits_for_the_per_slug_lock():
     assert done.wait(10), "delete_docs never finished once the lock was freed"
     assert deleted == [1]
     assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/dlock"))
+
+
+def test_publish_markdown_stores_md_blob_and_format():
+    res = docs_repo.publish("m/one", "M", [], None, "analyst", b"# hi\n",
+                            fmt="markdown")
+    assert res["format"] == "markdown"
+    v = docs_repo.get_version("m/one", 1)
+    assert v["format"] == "markdown"
+    assert v["html"] == b"# hi\n"
+    assert v["file_path"].endswith("m/one/v1.md")
+    assert os.path.exists(v["file_path"])
+
+
+def test_publish_default_format_is_html():
+    docs_repo.publish("m/h", "H", [], None, "analyst", b"<h1>h</h1>")
+    v = docs_repo.get_latest("m/h")
+    assert v["format"] == "html"
+    assert v["file_path"].endswith("m/h/v1.html")
+
+
+def test_versions_of_one_slug_may_differ_in_format():
+    docs_repo.publish("m/mix", "X", [], None, "analyst", b"<h1>1</h1>")
+    docs_repo.publish("m/mix", "X", [], None, "analyst", b"# 2\n", fmt="markdown")
+    vs = docs_repo.list_versions("m/mix")
+    assert [(v["version"], v["format"]) for v in vs] == [(2, "markdown"), (1, "html")]
+    d = next(x for x in docs_repo.list_docs() if x["slug"] == "m/mix")
+    assert d["format"] == "markdown"
+
+
+def test_publish_rejects_unknown_format():
+    with pytest.raises(ValueError, match="invalid format"):
+        docs_repo.publish("m/bad", "B", [], None, "analyst", b"x", fmt="rtf")

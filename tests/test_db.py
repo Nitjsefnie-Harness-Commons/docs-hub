@@ -114,3 +114,19 @@ def test_migrate_is_idempotent_and_adds_expires_at():
             "AND column_name='expires_at'"
         ).fetchone()
     assert row is not None and row[0] == "timestamp with time zone"
+
+
+def test_migrate_adds_format_to_doc_versions():
+    """The format column is what tells a stored version apart as Markdown; a
+    doc_versions table created before it existed gets it from migrate()."""
+    db.migrate()
+    db.migrate()
+    with db.docs_conn() as c:
+        row = c.execute(
+            "SELECT data_type, column_default, is_nullable "
+            "FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name='doc_versions' "
+            "AND column_name='format'"
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "text" and row[1] == "'html'::text" and row[2] == "NO"

@@ -5,6 +5,10 @@ from typing import LiteralString
 
 from backend import db, storage
 
+# The two formats a version may be stored in. `html` is served verbatim;
+# `markdown` is stored verbatim and rendered at serve time (backend/render.py).
+FORMATS = ("html", "markdown")
+
 # A doc is live until its expiry passes; NULL means permanent. Every query
 # that returns or mutates a doc applies this so an expired doc is gone the
 # moment its time passes, whether or not the reaper has run yet.
@@ -26,15 +30,22 @@ def _slug_lock(c, slug: str) -> None:
 
 def publish(slug: str, title: str, tags: list[str], project: str | None,
             posted_by: str, html: bytes,
-            ttl_seconds: int | None = None) -> dict:
+            ttl_seconds: int | None = None, fmt: str = "html") -> dict:
     """Create a new version of `slug` (creating the doc on first publish).
+
+    `html` is the version's raw bytes in whichever format `fmt` names — the
+    parameter keeps its original name so every caller and stored dict key
+    stays put. `fmt` is one of FORMATS and decides the blob's extension
+    (`markdown` stores `v<N>.md`); the bytes are written verbatim either way.
 
     `ttl_seconds` states the doc's lifetime from now; None makes it
     permanent. Each publish restates it — the expiry is not sticky. A slug
     whose previous life has expired is purged first and starts over at v1.
-    Returns {slug, version, doc_id, expires_at}."""
+    Returns {slug, version, doc_id, expires_at, format}."""
     if not storage.is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
+    if fmt not in FORMATS:
+        raise ValueError(f"invalid format: {fmt!r}")
     with db.docs_conn() as c:
         # Serialise against a concurrent purge_expired or delete_docs of the
         # same slug: without this either one can rmtree the directory between
@@ -60,12 +71,13 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
         else:
             doc_id, latest = row
             version = latest + 1
-        path, size, digest = storage.store_blob(slug, version, html)
+        ext = "md" if fmt == "markdown" else "html"
+        path, size, digest = storage.store_blob(slug, version, html, ext=ext)
         c.execute(
             "INSERT INTO doc_versions "
-            "(doc_id, version, posted_by, file_path, byte_size, sha256) "
-            "VALUES (%s,%s,%s,%s,%s,%s)",
-            (doc_id, version, posted_by, path, size, digest),
+            "(doc_id, version, posted_by, file_path, byte_size, sha256, format) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (doc_id, version, posted_by, path, size, digest, fmt),
         )
         updated = c.execute(
             "UPDATE docs SET latest_version=%s, title=%s, tags=%s, project=%s, "
@@ -78,14 +90,14 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
                 "UPDATE ... RETURNING expires_at yielded no row")
         c.commit()
     return {"slug": slug, "version": version, "doc_id": doc_id,
-            "expires_at": updated[0]}
+            "expires_at": updated[0], "format": fmt}
 
 
 def _version_row(slug: str, version: int) -> dict | None:
     with db.docs_conn() as c:
         row = c.execute(
             "SELECT v.version, v.posted_by, v.created_at, v.file_path, "
-            "v.byte_size, v.sha256, d.title "
+            "v.byte_size, v.sha256, d.title, v.format "
             "FROM doc_versions v JOIN docs d ON d.id=v.doc_id "
             f"WHERE d.slug=%s AND v.version=%s AND {_LIVE}",
             (slug, version),
@@ -95,11 +107,16 @@ def _version_row(slug: str, version: int) -> dict | None:
     return {
         "version": row[0], "posted_by": row[1], "created_at": row[2],
         "file_path": row[3], "byte_size": row[4], "sha256": row[5],
-        "title": row[6],
+        "title": row[6], "format": row[7],
     }
 
 
 def get_version(slug: str, version: int) -> dict | None:
+    """The version's metadata plus its raw bytes under the key "html".
+
+    That key holds the stored blob whatever "format" says — it predates
+    Markdown support and renaming it would ripple through views, api and
+    the CLI for nothing."""
     meta = _version_row(slug, version)
     if meta is None:
         return None
@@ -142,7 +159,8 @@ def list_docs(project: str | None = None, agent: str | None = None) -> list[dict
     """Newest-updated first. `agent` filters by the poster of the latest version."""
     sql = (
         "SELECT d.slug, d.title, d.tags, d.project, d.updated_at, "
-        "d.latest_version, v.posted_by, v.byte_size, d.public, d.expires_at "
+        "d.latest_version, v.posted_by, v.byte_size, d.public, d.expires_at, "
+        "v.format "
         "FROM docs d JOIN doc_versions v "
         "ON v.doc_id=d.id AND v.version=d.latest_version"
     )
@@ -161,7 +179,8 @@ def list_docs(project: str | None = None, agent: str | None = None) -> list[dict
     return [
         {"slug": r[0], "title": r[1], "tags": r[2], "project": r[3],
          "updated_at": r[4], "latest_version": r[5], "posted_by": r[6],
-         "byte_size": r[7], "public": r[8], "expires_at": r[9]}
+         "byte_size": r[7], "public": r[8], "expires_at": r[9],
+         "format": r[10]}
         for r in rows
     ]
 
@@ -268,14 +287,15 @@ def list_versions(slug: str) -> list[dict]:
     """Version history for a slug, newest first."""
     with db.docs_conn() as c:
         rows = c.execute(
-            "SELECT v.version, v.posted_by, v.created_at, v.byte_size, v.sha256 "
+            "SELECT v.version, v.posted_by, v.created_at, v.byte_size, "
+            "v.sha256, v.format "
             "FROM doc_versions v JOIN docs d ON d.id=v.doc_id "
             f"WHERE d.slug=%s AND {_LIVE} ORDER BY v.version DESC",
             (slug,),
         ).fetchall()
     return [
         {"version": r[0], "posted_by": r[1], "created_at": r[2],
-         "byte_size": r[3], "sha256": r[4]}
+         "byte_size": r[3], "sha256": r[4], "format": r[5]}
         for r in rows
     ]
 

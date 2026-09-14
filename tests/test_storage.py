@@ -60,3 +60,20 @@ def test_delete_doc_missing_is_noop():
 def test_delete_doc_rejects_bad_slug():
     with pytest.raises(ValueError):
         storage.delete_doc("../evil")
+
+
+def test_blob_path_uses_the_requested_extension():
+    assert storage.blob_path("a/b", 3, ext="md").endswith("a/b/v3.md")
+
+
+def test_blob_path_defaults_to_html():
+    assert storage.blob_path("a/b", 3).endswith("a/b/v3.html")
+
+
+def test_store_blob_writes_the_requested_extension():
+    src = b"# hi\n"
+    path, size, digest = storage.store_blob("analyst/md", 1, src, ext="md")
+    assert path.endswith("analyst/md/v1.md")
+    assert size == len(src)
+    assert digest == hashlib.sha256(src).hexdigest()
+    assert storage.read_blob(path) == src

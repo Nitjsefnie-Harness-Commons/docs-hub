@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS doc_versions (
     file_path   TEXT NOT NULL,
     byte_size   INT NOT NULL,
     sha256      TEXT NOT NULL,
+    format      TEXT NOT NULL DEFAULT 'html',
     UNIQUE (doc_id, version)
 );
 
