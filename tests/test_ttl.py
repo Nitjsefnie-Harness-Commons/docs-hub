@@ -25,8 +25,18 @@ def test_parse_ttl_rejects_bad_input(text):
         parse_ttl(text)
 
 
+def test_parse_ttl_rejects_a_long_trailing_space_run_without_backtracking():
+    # A digit followed by a huge run of spaces is the shape CodeQL flagged:
+    # the old pattern's two ambiguous `\s*` runs backtracked quadratically
+    # over it, and the value arrives straight from a publish form field. The
+    # length guard rejects it before the regex ever sees it.
+    with pytest.raises(ValueError, match="^invalid ttl"):
+        parse_ttl("9" + " " * 20000)
+
+
 def test_parse_ttl_rejects_an_absurdly_long_digit_string():
-    # Past CPython's 4300-digit int()-from-str limit the conversion itself
-    # raises ValueError, whose message is about digits, not about a ttl.
+    # The length guard, from the other side: a digit string long enough to
+    # trip CPython's own 4300-digit int()-from-str limit never reaches int()
+    # at all, so the rejection is the ttl contract's message either way.
     with pytest.raises(ValueError, match="^invalid ttl"):
         parse_ttl("9" * 5000)
