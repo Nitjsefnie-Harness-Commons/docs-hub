@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs-hub CLI — publish HTML artifacts to docs.nitjsefni.eu and read them.
+"""docs-hub CLI — publish documents to docs.nitjsefni.eu and read them.
 
 Auth: DOCS_HUB_API_KEY from the environment; if absent, falls back to
 reading env.DOCS_HUB_API_KEY out of ~/.agent-bundle/settings.json directly.
@@ -100,16 +100,23 @@ def _api_key() -> str:
 
 
 def _request(method: str, path: str, *, data: bytes | None = None,
-             headers: dict | None = None) -> tuple[int, bytes]:
+             headers: dict | None = None) -> tuple[int, bytes, str]:
+    """Issue one request and return (status, body, content type).
+
+    The content type is part of the answer because the body alone does not
+    say what it is: /api/doc serves a Markdown document as text/markdown and
+    an HTML one as text/html, and that header is how `get --text-only` knows
+    not to run the HTML stripper over Markdown source.
+    """
     req = urllib.request.Request(_base_url() + path, data=data, method=method)
     req.add_header("x-docs-key", _api_key())
     for k, v in (headers or {}).items():
         req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return resp.status, resp.read()
+            return resp.status, resp.read(), resp.headers.get("Content-Type", "")
     except urllib.error.HTTPError as e:
-        return e.code, e.read()
+        return e.code, e.read(), e.headers.get("Content-Type", "")
     except urllib.error.URLError as e:
         # Connection refused / DNS failure / timeout — clean message, not a
         # traceback (URLError is the non-HTTP failure superclass).
@@ -146,7 +153,7 @@ def _multipart(fields: dict, file_field: str, filename: str,
 def cmd_publish(args: argparse.Namespace) -> int:
     try:
         with open(args.file, "rb") as f:
-            html = f.read()
+            blob = f.read()
     except OSError as e:
         # One line, like every other failure here — a traceback for a
         # mistyped path tells the operator nothing the message does not.
@@ -164,9 +171,14 @@ def cmd_publish(args: argparse.Namespace) -> int:
     ttl = args.ttl.strip()
     if ttl:
         fields["ttl"] = ttl
-    body, ctype = _multipart(fields, "file", os.path.basename(args.file), html)
-    status, raw = _request("POST", "/api/publish", data=body,
-                           headers={"Content-Type": ctype})
+    # Also sent only when given: the multipart part already carries the
+    # filename, and the server reads `.md`/`.markdown` off it, so publishing
+    # notes.md needs no flag. Sending a default would overrule that guess.
+    if args.format:
+        fields["format"] = args.format
+    body, ctype = _multipart(fields, "file", os.path.basename(args.file), blob)
+    status, raw, _ = _request("POST", "/api/publish", data=body,
+                              headers={"Content-Type": ctype})
     try:
         payload = json.loads(raw)
     except ValueError:
@@ -186,6 +198,11 @@ def cmd_publish(args: argparse.Namespace) -> int:
         print("WARNING: server did not confirm an expiry (it predates --ttl); "
               "the document is permanent", file=sys.stderr)
     suffix = f" (expires {payload['expires_at']})" if payload.get("expires_at") else ""
+    # Read off the response, not off --format: the server decides, and with
+    # no flag the decision came from the filename. A server predating the
+    # field omits it, which is an HTML document and gets no marker.
+    if payload.get("format") == "markdown":
+        suffix += " [markdown]"
     print(f"published {payload['slug']} v{payload['version']} "
           f"-> {_base_url()}{payload['url']}{suffix}")
     return 0
@@ -193,11 +210,14 @@ def cmd_publish(args: argparse.Namespace) -> int:
 
 def cmd_get(args: argparse.Namespace) -> int:
     path = f"/d/{args.slug}/v{args.version}" if args.version else f"/api/doc/{args.slug}"
-    status, raw = _request("GET", path)
+    status, raw, content_type = _request("GET", path)
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
-    out = _html_to_text(raw).encode("utf-8") if args.text_only else raw
+    # Markdown source is already the readable text --text-only asks for;
+    # stripping it as HTML would eat every `<` construct in it.
+    strip = args.text_only and not content_type.startswith("text/markdown")
+    out = _html_to_text(raw).encode("utf-8") if strip else raw
     if args.output:
         with open(args.output, "wb") as f:
             f.write(out)
@@ -214,7 +234,7 @@ def cmd_list(args: argparse.Namespace) -> int:
     if args.agent:
         q.append(f"agent={args.agent}")
     path = "/api/list" + ("?" + "&".join(q) if q else "")
-    status, raw = _request("GET", path)
+    status, raw, _ = _request("GET", path)
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
@@ -223,20 +243,24 @@ def cmd_list(args: argparse.Namespace) -> int:
         docs = [d for d in docs if not d.get("tags")]
     for d in docs:
         tags = ",".join(d.get("tags") or []) or "-"
+        fmt = " [markdown]" if d.get("format") == "markdown" else ""
         expires = f" expires {d['expires_at']}" if d.get("expires_at") else ""
         print(f"{d['slug']:<40} v{d['latest_version']:<3} "
-              f"{d['posted_by']:<14} [{tags}] {d['title']}{expires}")
+              f"{d['posted_by']:<14} [{tags}] {d['title']}{fmt}{expires}")
     return 0
 
 
 def cmd_versions(args: argparse.Namespace) -> int:
-    status, raw = _request("GET", f"/api/versions/{args.slug}")
+    status, raw, _ = _request("GET", f"/api/versions/{args.slug}")
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
     for v in json.loads(raw)["versions"]:
+        # Per version: republishing a slug as Markdown leaves its earlier
+        # HTML versions exactly as they were.
+        fmt = " markdown" if v.get("format") == "markdown" else ""
         print(f"v{v['version']:<3} {v['created_at']} {v['posted_by']:<12} "
-              f"{v['byte_size']} bytes")
+              f"{v['byte_size']} bytes{fmt}")
     return 0
 
 
@@ -245,7 +269,7 @@ def cmd_tags(args: argparse.Namespace) -> int:
     this before `publish` so they pick from the established tag set instead
     of inventing parallel ones."""
     path = "/api/tags" + (f"?project={args.project}" if args.project else "")
-    status, raw = _request("GET", path)
+    status, raw, _ = _request("GET", path)
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
@@ -281,6 +305,9 @@ def main() -> int:
                    help="lifetime after which the document vanishes, e.g. "
                         "30m, 2h, 7d, 2w (bare number = seconds, must be "
                         "≥ 1); omit = permanent")
+    p.add_argument("--format", choices=["html", "markdown"], default="",
+                   help="document format; omit to infer from the file "
+                        "extension (.md/.markdown → markdown)")
     p.set_defaults(func=cmd_publish)
 
     p = sub.add_parser("get")
@@ -288,7 +315,8 @@ def main() -> int:
     p.add_argument("--version", type=int, default=0)
     p.add_argument("-o", "--output", default="")
     p.add_argument("--text-only", action="store_true",
-                   help="strip HTML tags and output plain text")
+                   help="strip HTML tags and output plain text (a Markdown "
+                        "document is already text and passes through)")
     p.set_defaults(func=cmd_get)
 
     p = sub.add_parser("list")

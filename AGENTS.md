@@ -58,6 +58,11 @@ invocation keeps working unchanged.
   runs `purge_expired()` at startup and every `PURGE_INTERVAL_SECONDS`
   (default 60) to delete the rows and blobs. Republishing an expired slug
   purges it first and starts again at v1.
+- Markdown docs: `doc_versions.format` (`html` | `markdown`), inferred from
+  the upload filename unless the `format` field says otherwise; stored
+  verbatim as `v<N>.md`; `backend/render.py` (markdown-it-py, raw HTML
+  escaped) renders it on `/d/…` at serve time; `/api/doc/<slug>` returns the
+  raw source as `text/markdown`.
 - Served on local port 8084, behind nginx, Cloudflare-proxied.
 
 ## Development
