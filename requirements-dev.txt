@@ -4,4 +4,4 @@
 # in CI, because both pylint and pyright resolve `import fastapi` for real.
 pycodestyle==2.14.0
 pylint==4.0.7
-pyright==1.1.411
+pyright==1.1.414
