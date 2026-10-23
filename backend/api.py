@@ -7,6 +7,7 @@ from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from backend import docs_repo, session
 from backend.ttl import parse_ttl
+from backend.views import ARTIFACT_CSP
 
 router = APIRouter(prefix="/api")
 
@@ -72,7 +73,7 @@ async def get_doc(slug: str) -> Response:
         # agent-authored bytes served as text/markdown into HTML.
         return Response(doc["html"], media_type="text/markdown; charset=utf-8",
                         headers={"X-Content-Type-Options": "nosniff"})
-    return HTMLResponse(doc["html"])
+    return HTMLResponse(doc["html"], headers={"Content-Security-Policy": ARTIFACT_CSP})
 
 
 @router.post("/doc/{slug:path}/public")
