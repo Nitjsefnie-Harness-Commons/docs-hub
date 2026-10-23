@@ -13,6 +13,7 @@ import re
 import secrets
 import time
 
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 
@@ -97,7 +98,7 @@ async def auth_middleware(request: Request, call_next):
     # route opens. Everything else — /d/<slug>/v<n>, /api/*, the SPA shell —
     # falls through to the normal denial below.
     if path.startswith("/d/") and not _VERSION_PATH.match(path):
-        if docs_repo.is_public(path[len("/d/"):]):
+        if await run_in_threadpool(docs_repo.is_public, path[len("/d/"):]):
             request.state.principal = "anonymous"
             request.state.user_id = None
             return await call_next(request)
