@@ -306,8 +306,8 @@ def _assert_removal_error(caplog, slug, path):
     assert len(records) == 1
     assert records[0].levelno == logging.ERROR
     message = records[0].getMessage()
-    assert f"for {slug} at " in message
-    assert f"at {os.path.dirname(path)}:" in message
+    assert f"for {slug!r} at " in message
+    assert f"at {os.path.dirname(path)!r}:" in message
     assert path in message
     assert "[Errno 13] Permission denied" in message
 

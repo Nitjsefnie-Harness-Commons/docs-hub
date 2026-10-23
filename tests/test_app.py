@@ -138,8 +138,8 @@ def test_delete_reports_partial_failure_and_keeps_row(monkeypatch, caplog):
     records = [r for r in caplog.records if r.name == "backend.docs_repo"]
     assert len(records) == 1
     assert records[0].levelno == logging.ERROR
-    assert "for failure/d2 at " in records[0].getMessage()
-    assert f"at {os.path.dirname(path)}:" in records[0].getMessage()
+    assert "for 'failure/d2' at " in records[0].getMessage()
+    assert f"at {os.path.dirname(path)!r}:" in records[0].getMessage()
     assert path in records[0].getMessage()
     assert "[Errno 13] Permission denied" in records[0].getMessage()
 
@@ -302,8 +302,8 @@ def test_expired_publish_removal_failure_returns_500(monkeypatch, caplog):
     records = [r for r in caplog.records if r.name == "backend.docs_repo"]
     assert len(records) == 1
     assert records[0].levelno == logging.ERROR
-    assert f"for {slug} at " in records[0].getMessage()
-    assert f"at {os.path.dirname(path)}:" in records[0].getMessage()
+    assert f"for {slug!r} at " in records[0].getMessage()
+    assert f"at {os.path.dirname(path)!r}:" in records[0].getMessage()
     assert path in records[0].getMessage()
     assert "[Errno 13] Permission denied" in records[0].getMessage()
 
