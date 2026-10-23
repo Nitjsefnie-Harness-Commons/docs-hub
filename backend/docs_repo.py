@@ -1,9 +1,13 @@
 """Document + version operations against the docs DB and the blob store."""
 from __future__ import annotations
 
+import logging
+import os
 from typing import LiteralString
 
 from backend import db, storage
+
+_log = logging.getLogger(__name__)
 
 # The two formats a version may be stored in. `html` is served verbatim;
 # `markdown` is stored verbatim and rendered at serve time (backend/render.py).
@@ -42,6 +46,8 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
     `ttl_seconds` states the doc's lifetime from now; None makes it
     permanent. Each publish restates it — the expiry is not sticky. A slug
     whose previous life has expired is purged first and starts over at v1.
+    If its old files cannot be removed, OSError fails the request, preserving
+    the expired row for retry without writing a new version.
     Returns {slug, version, doc_id, expires_at, format}."""
     if not storage.is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
@@ -57,7 +63,12 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} RETURNING id",
             (slug,)).fetchone()
         if stale is not None:
-            storage.delete_doc(slug)
+            try:
+                storage.delete_doc(slug)
+            except OSError as e:
+                _log.error("failed to remove stored files for %s at %s: %s",
+                           slug, os.path.dirname(storage.blob_path(slug, 1)), e)
+                raise
         row = c.execute("SELECT id, latest_version FROM docs WHERE slug=%s",
                         (slug,)).fetchone()
         if row is None:
@@ -230,10 +241,12 @@ def find_docs(filters: dict) -> list[dict]:
     return [{"slug": r[0], "title": r[1], "latest_version": r[2]} for r in rows]
 
 
-def delete_docs(slugs: list[str]) -> int:
+def delete_docs(slugs: list[str]) -> tuple[int, list[str]]:
     """Delete the named docs (versions cascade via the doc_versions FK) and
-    their version files, preserving child slugs' files. Returns the count of
-    doc rows actually deleted.
+    their version files, preserving child slugs' files. Returns (deleted,
+    failed): the count of fully removed docs and the slugs whose file removal
+    raises OSError. Each failure is logged, its row rolls back for retry, and
+    the remaining slugs are processed.
 
     One transaction per slug, holding the same per-slug advisory lock publish
     takes, with the blobs going while the lock is still held — otherwise a
@@ -245,22 +258,30 @@ def delete_docs(slugs: list[str]) -> int:
     or deleted again.
     """
     deleted = 0
+    failed: list[str] = []
     for slug in slugs:
-        with db.docs_conn() as c:
-            _slug_lock(c, slug)
-            row = c.execute("DELETE FROM docs WHERE slug=%s RETURNING id",
-                            (slug,)).fetchone()
+        try:
+            with db.docs_conn() as c:
+                _slug_lock(c, slug)
+                row = c.execute("DELETE FROM docs WHERE slug=%s RETURNING id",
+                                (slug,)).fetchone()
+                if row is not None:
+                    storage.delete_doc(slug)
+                c.commit()
             if row is not None:
-                storage.delete_doc(slug)
                 deleted += 1
-            c.commit()
-    return deleted
+        except OSError as e:
+            _log.error("failed to remove stored files for %s at %s: %s",
+                       slug, os.path.dirname(storage.blob_path(slug, 1)), e)
+            failed.append(slug)
+    return deleted, failed
 
 
 def purge_expired() -> int:
     """Delete every doc whose expiry has passed (versions cascade) and its
     version files, preserving child slugs' files. Returns the number of docs
-    removed.
+    fully removed. File-removal OSErrors are logged per slug; its row rolls
+    back for the next cycle, and the remaining slugs are processed.
 
     One transaction per slug, holding the same per-slug advisory lock that
     publish takes, and the blobs go while the lock is still held: a publish
@@ -276,15 +297,20 @@ def purge_expired() -> int:
         c.commit()
     purged = 0
     for slug in slugs:
-        with db.docs_conn() as c:
-            _slug_lock(c, slug)
-            row = c.execute(
-                f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} "
-                "RETURNING id", (slug,)).fetchone()
+        try:
+            with db.docs_conn() as c:
+                _slug_lock(c, slug)
+                row = c.execute(
+                    f"DELETE FROM docs d WHERE d.slug=%s AND {_EXPIRED} "
+                    "RETURNING id", (slug,)).fetchone()
+                if row is not None:
+                    storage.delete_doc(slug)
+                c.commit()
             if row is not None:
-                storage.delete_doc(slug)
                 purged += 1
-            c.commit()
+        except OSError as e:
+            _log.error("failed to remove stored files for %s at %s: %s",
+                       slug, os.path.dirname(storage.blob_path(slug, 1)), e)
     return purged
 
 
