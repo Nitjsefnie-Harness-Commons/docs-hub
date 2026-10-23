@@ -296,21 +296,21 @@ function renderIndex() {
           <input id="f-q" placeholder="title or slug…" value="${esc(FILTER.q)}" autocomplete="off">
         </div>
         <div class="field select">
-          <span class="label">project</span>
+          <label class="label" for="f-project">project</label>
           <select id="f-project">
             <option value="">all</option>
             ${allProjects.map((p) => opt(p, p, FILTER.project)).join('')}
           </select>
         </div>
         <div class="field select">
-          <span class="label">agent</span>
+          <label class="label" for="f-agent">agent</label>
           <select id="f-agent">
             <option value="">all</option>
             ${allAgents.map((a) => opt(a, a, FILTER.agent)).join('')}
           </select>
         </div>
         <div class="field select">
-          <span class="label">tag</span>
+          <label class="label" for="f-tag">tag</label>
           <select id="f-tag">
             <option value="">all</option>
             ${allTags.map((t) => opt(t, '#' + t, FILTER.tag)).join('')}

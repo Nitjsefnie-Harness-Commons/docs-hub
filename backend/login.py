@@ -64,10 +64,10 @@ _LOGIN_HTML = """<!DOCTYPE html>
 </style></head><body>
 <form method="post" action="/login">
  <h1>docs.nitjsefni.eu</h1>
- <label>User ID</label>
- <input name="user_id" required inputmode="numeric" pattern="[0-9]+">
- <label>Password</label>
- <input name="password" type="password" required>
+ <label for="user_id">User ID</label>
+ <input id="user_id" name="user_id" required inputmode="numeric" pattern="[0-9]+">
+ <label for="password">Password</label>
+ <input id="password" name="password" type="password" required>
  <button type="submit">Sign in</button>
  <div class="err">{err}</div>
 </form></body></html>
