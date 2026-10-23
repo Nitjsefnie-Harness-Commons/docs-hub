@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import stat
 from typing import LiteralString
 
 from backend import db, storage
@@ -31,6 +32,28 @@ def _slug_lock(c, slug: str) -> None:
     held to commit and released by it.
     """
     c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
+
+
+def _cleanup_failed_version(slug: str, version: int, ext: str, cause: BaseException) -> None:
+    """Remove a regular uncommitted version; leave non-regular entries intact."""
+    path = os.path.join(os.environ["STORE_ROOT"], slug, f"v{version}.{ext}")
+    try:
+        root = os.path.realpath(os.environ["STORE_ROOT"])
+        path = os.path.normpath(os.path.join(root, slug, f"v{version}.{ext}"))
+        if not path.startswith(root + os.sep):
+            raise ValueError(f"path escapes store: {path!r}") from cause
+        st = os.lstat(path)
+        if stat.S_ISREG(st.st_mode):
+            path = os.path.realpath(path)
+            if not path.startswith(root + os.sep):
+                raise ValueError(f"path escapes store: {path!r}") from cause
+            os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        _log.error("failed to remove uncommitted version file %r: %r",
+                   path.replace("\r", "").replace("\n", ""),
+                   str(e).replace("\r", "").replace("\n", ""))
 
 
 def publish(slug: str, title: str, tags: list[str], project: str | None,
@@ -68,9 +91,9 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             except OSError as e:
                 blob_dir = os.path.dirname(storage.blob_path(slug, 1))
                 _log.error("failed to remove stored files for %r at %r: %r",
-                           slug.replace("\r\n", "").replace("\n", ""),
-                           blob_dir.replace("\r\n", "").replace("\n", ""),
-                           str(e).replace("\r\n", "").replace("\n", ""))
+                           slug.replace("\r", "").replace("\n", ""),
+                           blob_dir.replace("\r", "").replace("\n", ""),
+                           str(e).replace("\r", "").replace("\n", ""))
                 raise
         row = c.execute("SELECT id, latest_version FROM docs WHERE slug=%s",
                         (slug,)).fetchone()
@@ -108,18 +131,7 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
                 raise RuntimeError(
                     "UPDATE ... RETURNING expires_at yielded no row")
         except BaseException as exc:
-            try:
-                root = os.path.realpath(os.environ["STORE_ROOT"])
-                path = os.path.realpath(path)
-                if not path.startswith(root + os.sep):
-                    raise ValueError(f"path escapes store: {path!r}") from exc
-                os.unlink(path)
-            except FileNotFoundError:
-                pass
-            except OSError as e:
-                _log.error("failed to remove uncommitted version file %r: %r",
-                           path.replace("\r\n", "").replace("\n", ""),
-                           str(e).replace("\r\n", "").replace("\n", ""))
+            _cleanup_failed_version(slug, version, ext, exc)
             raise
         c.commit()
     return {"slug": slug, "version": version, "doc_id": doc_id,
@@ -297,9 +309,9 @@ def delete_docs(slugs: list[str]) -> tuple[int, list[str]]:
         except OSError as e:
             blob_dir = os.path.dirname(storage.blob_path(slug, 1))
             _log.error("failed to remove stored files for %r at %r: %r",
-                       slug.replace("\r\n", "").replace("\n", ""),
-                       blob_dir.replace("\r\n", "").replace("\n", ""),
-                       str(e).replace("\r\n", "").replace("\n", ""))
+                       slug.replace("\r", "").replace("\n", ""),
+                       blob_dir.replace("\r", "").replace("\n", ""),
+                       str(e).replace("\r", "").replace("\n", ""))
             failed.append(slug)
     return deleted, failed
 
@@ -338,9 +350,9 @@ def purge_expired() -> int:
         except OSError as e:
             blob_dir = os.path.dirname(storage.blob_path(slug, 1))
             _log.error("failed to remove stored files for %r at %r: %r",
-                       slug.replace("\r\n", "").replace("\n", ""),
-                       blob_dir.replace("\r\n", "").replace("\n", ""),
-                       str(e).replace("\r\n", "").replace("\n", ""))
+                       slug.replace("\r", "").replace("\n", ""),
+                       blob_dir.replace("\r", "").replace("\n", ""),
+                       str(e).replace("\r", "").replace("\n", ""))
     return purged
 
 
