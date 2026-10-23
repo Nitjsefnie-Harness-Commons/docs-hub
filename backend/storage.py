@@ -9,6 +9,7 @@ import errno
 import hashlib
 import os
 import re
+import stat
 
 # slug: lowercase alnum segments joined by '/'; segment chars [a-z0-9_-];
 # each segment starts and ends alphanumeric; no '..', no leading/trailing '/'.
@@ -63,7 +64,8 @@ def delete_doc(slug: str) -> None:
     ENOTEMPTY is allowed because child slug directories or other entries
     remain. The row's data is its version files: a surviving version file is
     a deletion failure, while an empty directory that cannot be removed is
-    inert. Unlink errors and rmdir errors other than ENOTEMPTY propagate.
+    inert. Stat and unlink errors, and rmdir errors other than ENOTEMPTY,
+    propagate.
     """
     if not is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
@@ -74,7 +76,7 @@ def delete_doc(slug: str) -> None:
         return
     for name in names:
         file_path = os.path.join(path, name)
-        if _VERSION_FILE_RE.fullmatch(name) and os.path.isfile(file_path):
+        if _VERSION_FILE_RE.fullmatch(name) and stat.S_ISREG(os.stat(file_path).st_mode):
             os.unlink(file_path)
     try:
         os.rmdir(path)
