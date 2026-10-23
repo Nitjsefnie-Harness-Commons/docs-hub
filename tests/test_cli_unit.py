@@ -126,11 +126,46 @@ def test_text_only_breaks_at_block_tags():
     # blocks are separated by a blank line; runs of three or more collapse to
     # two. That is the rendered shape --text-only actually produces.
     html = b"<h1>one</h1><p>two</p><ul><li>three</li><li>four</li></ul>"
-    assert cli._html_to_text(html) == "one\n\ntwo\n\nthree\n\nfour\n"
+    assert cli._html_to_text(html) == "# one\n\ntwo\n\nthree\n\nfour\n"
 
 
 def test_text_only_keeps_inline_tags_on_one_line():
-    assert cli._html_to_text(b"<p>a <b>bold</b> word</p>") == "a bold word\n"
+    assert cli._html_to_text(b"<p>a <b>bold</b> word</p>") == "a **bold** word\n"
+
+
+@pytest.mark.parametrize("html, expected", [
+    (b"<h1>one</h1>", "# one\n"),
+    (b"<h2>two</h2>", "## two\n"),
+    (b"<h3>three</h3>", "### three\n"),
+    (b"<h4>four</h4>", "#### four\n"),
+    (b"<h5>five</h5>", "##### five\n"),
+    (b"<h6>six &amp; <em>more</em></h6>", "###### six & more\n"),
+])
+def test_text_only_marks_heading_levels(html, expected):
+    assert cli._html_to_text(html) == expected
+
+
+@pytest.mark.parametrize("html, expected", [
+    (b"<strong>label</strong>", "**label**\n"),
+    (b"<p>a <strong>bold</strong> word</p>", "a **bold** word\n"),
+    (b"<b>outer <strong>inner</strong> end</b>", "**outer inner end**\n"),
+    (b"<strong>outer <b>inner</b> end</strong>", "**outer inner end**\n"),
+    (b"<b>one</b><strong>two</strong>", "**onetwo**\n"),
+    (b"<strong>one</strong><strong>two</strong>", "**onetwo**\n"),
+    (b"<b>one</b> <b>two</b>", "**one** **two**\n"),
+    (b"<p>**<b>bold</b></p>", "****bold**\n"),
+    (b"<b>one</b>**<b>two</b>", "**one******two**\n"),
+    (b"<h2>a <b>bold</b> heading</h2>", "## a **bold** heading\n"),
+    (b"</b><strong>kept</strong>", "**kept**\n"),
+])
+def test_text_only_marks_bold_runs(html, expected):
+    assert cli._html_to_text(html) == expected
+
+
+def test_text_only_drops_markers_inside_skipped_content():
+    html = (b"<head><h1>hidden</h1><b>hidden</b></head>"
+            b"<b>kept<template><strong>hidden</strong></template> text</b>")
+    assert cli._html_to_text(html) == "**kept text**\n"
 
 
 def test_text_only_unescapes_entities():
@@ -557,7 +592,7 @@ def test_get_text_only_writes_the_stripped_text(tmp_path, monkeypatch):
     out = tmp_path / "got.txt"
     tr = _Transport((200, b"<h1>Head</h1><script>x()</script><p>Body</p>"))
     assert _main(monkeypatch, tr, "get", "a/b", "--text-only", "-o", str(out)) == 0
-    assert out.read_bytes() == b"Head\n\nBody\n"
+    assert out.read_bytes() == b"# Head\n\nBody\n"
 
 
 def test_get_text_only_is_gated_on_the_content_type(tmp_path, monkeypatch):
@@ -576,7 +611,7 @@ def test_get_text_only_is_gated_on_the_content_type(tmp_path, monkeypatch):
     tr = _Transport((200, b"<h1>Head</h1><p>Body</p>", "text/html; charset=utf-8"))
     assert _main(monkeypatch, tr, "get", "a/b", "--text-only",
                  "-o", str(html_out)) == 0
-    assert html_out.read_bytes() == b"Head\n\nBody\n"
+    assert html_out.read_bytes() == b"# Head\n\nBody\n"
 
 
 def test_get_without_text_only_passes_markdown_through(monkeypatch):

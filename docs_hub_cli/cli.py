@@ -45,18 +45,36 @@ class _TextExtractor(HTMLParser):
         super().__init__()
         self._parts: list[str] = []
         self._skip_depth = 0
+        self._bold_depth = 0
+        self._bold_end = -1
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
         elif tag in _BLOCK_TAGS:
             self._parts.append("\n")
+            if self._skip_depth == 0 and tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+                self._parts.append("#" * int(tag[1]) + " ")
+        elif self._skip_depth == 0 and tag in {"strong", "b"}:
+            if self._bold_depth == 0:
+                # Merge touching runs without mistaking literal ** for a closing marker.
+                if self._parts and self._bold_end == len(self._parts) - 1:
+                    self._parts.pop()
+                else:
+                    self._parts.append("**")
+                self._bold_end = -1
+            self._bold_depth += 1
 
     def handle_endtag(self, tag: str) -> None:
         if tag in _SKIP_TAGS and self._skip_depth:
             self._skip_depth -= 1
         elif tag in _BLOCK_TAGS:
             self._parts.append("\n")
+        elif self._skip_depth == 0 and tag in {"strong", "b"} and self._bold_depth:
+            self._bold_depth -= 1
+            if self._bold_depth == 0:
+                self._parts.append("**")
+                self._bold_end = len(self._parts) - 1
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth == 0:
@@ -67,8 +85,8 @@ class _TextExtractor(HTMLParser):
 
 
 def _html_to_text(raw: bytes) -> str:
-    """Strip HTML to readable plain text: drop markup-noise tags, break at
-    block boundaries, collapse intra-line whitespace and blank-line runs."""
+    """Strip HTML to text with heading and bold markers: drop markup-noise tags,
+    break at block boundaries, collapse intra-line whitespace and blank-line runs."""
     parser = _TextExtractor()
     parser.feed(raw.decode("utf-8", "replace"))
     parser.close()
