@@ -115,14 +115,15 @@ def test_index_sort_buttons_inherit_the_heading_style() -> None:
     assert len(rules) == 1
     declarations = dict(re.findall(r"([\w-]+):\s*([^;]+);", rules[0]))
     expected = {
-        "background": "transparent", "border": "0", "padding": "0",
+        "background": "transparent", "border": "0", "padding": "10px var(--row-pad-x)",
         "font": "inherit", "color": "inherit", "width": "100%",
-        "text-align": "inherit", "cursor": "pointer",
+        "text-align": "inherit", "cursor": "pointer", "display": "block",
     }
     assert {name: declarations.get(name) for name in expected} == expected
     heading = re.search(r"^\.docs-table thead th\s*\{([^}]+)\}", styles, re.M)
     assert heading is not None
-    assert "padding: 10px var(--row-pad-x);" in heading[1]
+    heading_declarations = dict(re.findall(r"([\w-]+):\s*([^;]+);", heading[1]))
+    assert heading_declarations.get("padding") == "0"
 
 
 def test_index_sort_buttons_have_an_accent_focus_outline() -> None:

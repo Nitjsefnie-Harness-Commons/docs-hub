@@ -200,7 +200,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-faint);
-  padding: 10px var(--row-pad-x);
+  padding: 0;
   border-bottom: 1px solid var(--border);
   background: var(--elev);
   white-space: nowrap;
@@ -210,7 +210,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 0; }
 .docs-table thead th button {
   display: block;
   width: 100%;
-  padding: 0;
+  padding: 10px var(--row-pad-x);
   border: 0;
   background: transparent;
   font: inherit;
