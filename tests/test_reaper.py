@@ -47,6 +47,8 @@ def test_lifespan_reaper_purges_expired_docs(monkeypatch):
 
 
 @pytest.mark.parametrize("purge_fails", [False, True])
+# Keep the thread handshakes and shutdown-order verdict together in one regression.
+# pylint: disable-next=too-many-statements
 def test_lifespan_waits_for_purge_before_closing_pools(
         monkeypatch: pytest.MonkeyPatch, purge_fails: bool) -> None:
     """Cancelling the await cannot stop its worker thread: shutdown must
