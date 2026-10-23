@@ -2,6 +2,7 @@
 import errno
 import logging
 import os
+import stat
 
 import pytest
 from fastapi.testclient import TestClient
@@ -185,7 +186,7 @@ def test_failed_publish_cleanup_refuses_retargeted_path(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("leftover", ["symlink", "directory"])
 def test_failed_publish_cleanup_skips_non_regular_entry(tmp_path, monkeypatch, caplog, leftover):
-    root = tmp_path / "store"
+    root = tmp_path / "store\r\nforged path"
     root.mkdir()
     target = root / "other.html"
     target.write_bytes(b"keep target")
@@ -211,7 +212,17 @@ def test_failed_publish_cleanup_skips_non_regular_entry(tmp_path, monkeypatch, c
     assert exc.value is error
     assert target.read_bytes() == b"keep target"
     assert entry.is_symlink() if leftover == "symlink" else entry.is_dir()
-    assert [r for r in caplog.records if r.name == "backend.docs_repo"] == []
+    records = [r for r in caplog.records if r.name == "backend.docs_repo"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    message = records[0].getMessage()
+    kind = stat.S_IFLNK if leftover == "symlink" else stat.S_IFDIR
+    assert records[0].args[-1] == kind
+    assert repr("cleanup") in message
+    assert repr(str(entry).replace("\r", "").replace("\n", "")) in message
+    assert f"file kind {kind!r}" in message
+    assert "\r" not in message
+    assert "\n" not in message
 
 
 def test_failed_publish_cleanup_propagates_lstat_error(tmp_path, monkeypatch):

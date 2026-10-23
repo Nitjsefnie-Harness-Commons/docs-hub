@@ -35,7 +35,7 @@ def _slug_lock(c, slug: str) -> None:
 
 
 def _cleanup_failed_version(slug: str, version: int, ext: str, cause: BaseException) -> None:
-    """Remove regular versions; skip nonregular entries and propagate lstat errors."""
+    """Remove regular versions; log and retain nonregular leftovers; propagate lstat errors."""
     root = os.path.realpath(os.environ["STORE_ROOT"])
     path = os.path.normpath(os.path.join(root, slug, f"v{version}.{ext}"))
     if not path.startswith(root + os.sep):
@@ -45,6 +45,11 @@ def _cleanup_failed_version(slug: str, version: int, ext: str, cause: BaseExcept
     except FileNotFoundError:
         return
     if not stat.S_ISREG(st.st_mode):
+        _log.error("nonregular leftover for slug %r at %r (file kind %r) "
+                   "left in place during publish cleanup",
+                   slug.replace("\r", "").replace("\n", ""),
+                   path.replace("\r", "").replace("\n", ""),
+                   stat.S_IFMT(st.st_mode))
         return
     try:
         path = os.path.realpath(path)
