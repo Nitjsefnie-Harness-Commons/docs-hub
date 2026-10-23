@@ -248,8 +248,13 @@ def cmd_get(args: argparse.Namespace) -> int:
     strip = args.text_only and not content_type.lower().startswith("text/markdown")
     out = _html_to_text(raw).encode("utf-8") if strip else raw
     if args.output:
-        with open(args.output, "wb") as f:
-            f.write(out)
+        try:
+            with open(args.output, "wb") as f:
+                f.write(out)
+        except OSError as e:
+            print(f"ERROR: cannot write {args.output}: {e.strerror}",
+                  file=sys.stderr)
+            return 1
         print(f"wrote {args.output} ({len(out)} bytes)")
     else:
         sys.stdout.buffer.write(out)
@@ -267,7 +272,13 @@ def cmd_list(args: argparse.Namespace) -> int:
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
-    docs = json.loads(raw)["docs"]
+    try:
+        docs = json.loads(raw)["docs"]
+    except (ValueError, KeyError, TypeError):
+        preview = " ".join(raw[:200].decode("utf-8", "replace").splitlines())
+        print(f"ERROR: HTTP {status}: invalid response: {preview}",
+              file=sys.stderr)
+        return 1
     if args.untagged:
         docs = [d for d in docs if not d.get("tags")]
     for d in docs:
@@ -284,7 +295,14 @@ def cmd_versions(args: argparse.Namespace) -> int:
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
-    for v in json.loads(raw)["versions"]:
+    try:
+        versions = json.loads(raw)["versions"]
+    except (ValueError, KeyError, TypeError):
+        preview = " ".join(raw[:200].decode("utf-8", "replace").splitlines())
+        print(f"ERROR: HTTP {status}: invalid response: {preview}",
+              file=sys.stderr)
+        return 1
+    for v in versions:
         # Per version: republishing a slug as Markdown leaves its earlier
         # HTML versions exactly as they were.
         fmt = " markdown" if v.get("format") == "markdown" else ""
@@ -303,7 +321,14 @@ def cmd_tags(args: argparse.Namespace) -> int:
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
-    for t in json.loads(raw)["tags"]:
+    try:
+        tags = json.loads(raw)["tags"]
+    except (ValueError, KeyError, TypeError):
+        preview = " ".join(raw[:200].decode("utf-8", "replace").splitlines())
+        print(f"ERROR: HTTP {status}: invalid response: {preview}",
+              file=sys.stderr)
+        return 1
+    for t in tags:
         print(f"{t['count']:>5}  {t['tag']}")
     return 0
 
