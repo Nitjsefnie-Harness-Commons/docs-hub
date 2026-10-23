@@ -97,12 +97,13 @@ def test_get_version_refuses_stored_path_outside_store(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("operation", ["delete", "purge", "expired-publish", "cleanup"])
+@pytest.mark.parametrize("linebreak", ["\n", "\r\n", "\r"])
 def test_removal_error_log_quotes_paths_and_escapes_newlines(
-        tmp_path, monkeypatch, caplog, operation):
-    root = tmp_path / "store\nforged path"
+        tmp_path, monkeypatch, caplog, operation, linebreak):
+    root = tmp_path / f"store{linebreak}forged path"
     monkeypatch.setenv("STORE_ROOT", str(root))
     slug = "safe/log"
-    error = OSError(errno.EACCES, "Permission denied\r\nforged error", "/store/x\ny")
+    error = OSError(errno.EACCES, f"Permission denied{linebreak}forged error", "/store/x\ny")
     docs_repo.publish(slug, "Log", [], None, "analyst", b"old")
     assert docs_repo.get_latest(slug)["html"] == b"old"
     if operation in ("purge", "expired-publish"):
@@ -128,6 +129,9 @@ def test_removal_error_log_quotes_paths_and_escapes_newlines(
             original = RuntimeError("write failed")
 
             def fail_write(*_args, **_kwargs):
+                partial = root / slug / "v2.html"
+                partial.write_bytes(b"partial")
+                assert partial.read_bytes() == b"partial"
                 raise original
 
             monkeypatch.setattr(storage, "store_blob", fail_write)
@@ -141,8 +145,9 @@ def test_removal_error_log_quotes_paths_and_escapes_newlines(
     assert records[0].levelno == logging.ERROR
     message = records[0].getMessage()
     path = root / slug / "v2.html" if operation == "cleanup" else root / slug
-    assert repr(str(path).replace("\n", "")) in message
-    assert repr(str(error).replace("\r\n", "").replace("\n", "")) in message
+    assert repr(str(path).replace("\r", "").replace("\n", "")) in message
+    assert repr(str(error).replace("\r", "").replace("\n", "")) in message
+    assert "\r" not in records[0].args[-2]
     assert "\n" not in records[0].args[-2]
     assert "\r" not in records[0].args[-1]
     assert "\n" not in records[0].args[-1]
@@ -171,3 +176,34 @@ def test_failed_publish_cleanup_refuses_retargeted_path(tmp_path, monkeypatch):
         docs_repo.publish("link", "Unsafe", [], None, "analyst", b"new")
 
     assert sentinel.read_bytes() == b"outside version"
+
+
+@pytest.mark.parametrize("leftover", ["symlink", "directory"])
+def test_failed_publish_cleanup_skips_non_regular_entry(tmp_path, monkeypatch, caplog, leftover):
+    root = tmp_path / "store"
+    root.mkdir()
+    target = root / "other.html"
+    target.write_bytes(b"keep target")
+    assert target.read_bytes() == b"keep target"
+    monkeypatch.setenv("STORE_ROOT", str(root))
+    entry = root / "cleanup" / "v1.html"
+    error = RuntimeError("injected write failure")
+
+    def fail_write(*_args, **_kwargs):
+        entry.parent.mkdir()
+        if leftover == "symlink":
+            entry.symlink_to(target)
+            assert entry.is_symlink()
+        else:
+            entry.mkdir()
+            assert entry.is_dir()
+        raise error
+
+    monkeypatch.setattr(storage, "store_blob", fail_write)
+    with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+        with pytest.raises(RuntimeError) as exc:
+            docs_repo.publish("cleanup", "Cleanup", [], None, "analyst", b"new")
+    assert exc.value is error
+    assert target.read_bytes() == b"keep target"
+    assert entry.is_symlink() if leftover == "symlink" else entry.is_dir()
+    assert [r for r in caplog.records if r.name == "backend.docs_repo"] == []
