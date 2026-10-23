@@ -96,18 +96,19 @@ def test_delete_doc_preserves_non_version_entries():
         assert storage.read_blob(os.path.join(root, name)) == b"keep"
 
 
-def test_delete_doc_propagates_stat_failure(monkeypatch):
+@pytest.mark.parametrize("error_number", [errno.EACCES, errno.ENOENT])
+def test_delete_doc_propagates_lstat_failure(monkeypatch, error_number):
     path, _, _ = storage.store_blob("stat-error", 1, b"keep")
     assert os.path.isfile(path)
-    real_stat = os.stat
-    error = OSError(errno.EACCES, "Permission denied", path)
+    real_stat = os.lstat
+    error = OSError(error_number, "injected lstat failure", path)
 
     def fail_version_stat(file_path, *args, **kwargs):
         if file_path == path:
             raise error
         return real_stat(file_path, *args, **kwargs)
 
-    monkeypatch.setattr(os, "stat", fail_version_stat)
+    monkeypatch.setattr(os, "lstat", fail_version_stat)
     with pytest.raises(OSError) as exc:
         storage.delete_doc("stat-error")
     assert exc.value is error

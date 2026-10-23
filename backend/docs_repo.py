@@ -92,7 +92,7 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             try:
                 storage.delete_doc(slug)
             except OSError as e:
-                blob_dir = os.path.dirname(storage.blob_path(slug, 1))
+                blob_dir = os.path.join(os.environ["STORE_ROOT"], slug)
                 _log.error("failed to remove stored files for %r at %r: %r",
                            slug.replace("\r", "").replace("\n", ""),
                            blob_dir.replace("\r", "").replace("\n", ""),
@@ -309,7 +309,7 @@ def delete_docs(slugs: list[str]) -> tuple[int, list[str]]:
             if row is not None:
                 deleted += 1
         except OSError as e:
-            blob_dir = os.path.dirname(storage.blob_path(slug, 1))
+            blob_dir = os.path.join(os.environ["STORE_ROOT"], slug)
             _log.error("failed to remove stored files for %r at %r: %r",
                        slug.replace("\r", "").replace("\n", ""),
                        blob_dir.replace("\r", "").replace("\n", ""),
@@ -350,7 +350,7 @@ def purge_expired() -> int:
             if row is not None:
                 purged += 1
         except OSError as e:
-            blob_dir = os.path.dirname(storage.blob_path(slug, 1))
+            blob_dir = os.path.join(os.environ["STORE_ROOT"], slug)
             _log.error("failed to remove stored files for %r at %r: %r",
                        slug.replace("\r", "").replace("\n", ""),
                        blob_dir.replace("\r", "").replace("\n", ""),
