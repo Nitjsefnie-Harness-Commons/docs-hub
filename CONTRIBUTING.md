@@ -134,7 +134,10 @@ commit, pushes `v<version>`, and then dispatches `release` — which rebuilds,
 re-runs the suite and publishes the wheel with a `SHA256SUMS` file. The
 dispatch is not redundant: a tag pushed with the built-in `GITHUB_TOKEN`
 triggers no workflow at all, so without it the tag lands and no release is
-ever cut. Neither runs on a pull request; there is nothing to run locally.
+ever cut. After the release ships, its PR's author moves `master` to the next
+patch's `.dev0` version in a separate commit, right away. `tag.yml` skips
+`.dev` versions with a message; nothing is tagged and `release.yml` is not
+dispatched. Neither runs on a pull request; there is nothing to run locally.
 
 ## Pull requests
 

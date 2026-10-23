@@ -96,6 +96,24 @@ def _run_script(tmp_path: Path, script: str,
     )
 
 
+@pytest.mark.parametrize("version,skip", [("1.2.3.dev4", "true"), ("1.2.3", "false")])
+def test_tag_version_skips_development_versions(tmp_path: Path, version: str, skip: str):
+    package = tmp_path / "docs_hub_cli"
+    package.mkdir()
+    (package / "__init__.py").write_text(f'__version__ = "{version}"\n', encoding="utf-8")
+    output = tmp_path / "output"
+    sha = "a" * 40
+    step = _step("tag.yml", "release-readiness", "Read and validate the version")
+    result = _run_script(tmp_path, step["run"], {"GITHUB_OUTPUT": str(output), "SHA": sha})
+    assert result.returncode == 0, result.stdout + result.stderr
+    values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+    assert values == {"tag": f"v{version}", "sha": sha, "skip": skip}
+    assert version in result.stdout
+    if skip == "true":
+        assert "skip" in result.stdout.lower()
+        assert "development version" in result.stdout.lower()
+
+
 def _stub_gh(tmp_path: Path) -> Path:
     gh = tmp_path / "gh"
     gh.write_text("""#!/usr/bin/env python3
