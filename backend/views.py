@@ -27,12 +27,14 @@ async def index() -> HTMLResponse:
 def _serve(doc: dict) -> HTMLResponse:
     """A browser-facing page for one stored version.
 
-    An HTML document is served verbatim -- it is trusted agent output. A
-    Markdown one is rendered at serve time; the stored source is untouched.
+    HTML is served verbatim and trusted to render. The CSP sandbox removes
+    its authority to act with the viewer's session while allowing scripts.
+    Markdown is rendered at serve time; the stored source is untouched.
     """
+    headers = {"Content-Security-Policy": "sandbox allow-scripts"}
     if doc["format"] == "markdown":
-        return HTMLResponse(render.render_markdown(doc["html"], doc["title"]))
-    return HTMLResponse(doc["html"])
+        return HTMLResponse(render.render_markdown(doc["html"], doc["title"]), headers=headers)
+    return HTMLResponse(doc["html"], headers=headers)
 
 
 @router.get("/d/{slug:path}/v{version}")
