@@ -61,8 +61,8 @@ def auth_pool() -> ConnectionPool:
 def close_pools() -> None:
     """Close both pools and reset the globals so a later call rebuilds them.
 
-    Pool worker threads are non-daemon, so an unclosed pool stalls interpreter
-    shutdown 5s per thread, and its still-open connections block dropping the
+    Pool workers are daemon threads (psycopg_pool 3.3.3, _acompat.py:113-123),
+    so do not stall exit themselves; their open connections block dropping the
     database. Safe to call when no pool was ever opened.
     """
     global _DOCS, _AUTH
