@@ -71,36 +71,39 @@ def read_blob(path: str) -> bytes:
 
 
 def delete_doc(slug: str) -> None:
-    """Remove only the slug's top-level version files; absence is a no-op.
+    """Remove a slug's own regular version files; listdir absence is a no-op.
 
-    After every unlink succeeds, rmdir removes the directory if empty.
-    ENOTEMPTY is allowed because child slug directories or other entries
-    remain. The row's data is its version files: a surviving version file is
-    a deletion failure, while an empty directory that cannot be removed is
-    inert. Stat and unlink errors, and rmdir errors other than ENOTEMPTY,
-    propagate. Paths resolving outside the store raise ValueError.
+    Each matching entry is classified with lstat, whose errors propagate.
+    Directories are skipped; other nonregular entries raise OSError(EPERM).
+    Regular entries are realpath-guarded inside the store, then unlinked.
+    Escaping directory or regular-file paths raise OSError(EPERM).
+    Finally rmdir removes an empty directory; ENOTEMPTY preserves children
+    and other entries, while other rmdir errors propagate.
     """
     if not is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
     root = os.path.realpath(_store_root())
     path = os.path.realpath(os.path.join(_store_root(), slug))
     if not path.startswith(root + os.sep):
-        raise ValueError(f"path escapes store: {slug!r}")
+        raise OSError(errno.EPERM, "path escapes store", path)
     try:
         names = os.listdir(path)
     except FileNotFoundError:
         return
     for name in names:
         if _VERSION_FILE_RE.fullmatch(name):
-            file_path = os.path.realpath(os.path.join(path, name))
+            file_path = os.path.normpath(os.path.join(path, name))
             if not file_path.startswith(root + os.sep):
-                raise ValueError(f"path escapes store: {file_path!r}")
-            if stat.S_ISREG(os.stat(file_path).st_mode):
-                # Unlink the entry itself so an in-store symlink preserves its target.
-                entry_path = os.path.normpath(os.path.join(path, name))
-                if not entry_path.startswith(root + os.sep):
-                    raise ValueError(f"path escapes store: {entry_path!r}")
-                os.unlink(entry_path)
+                raise OSError(errno.EPERM, "path escapes store", file_path)
+            st = os.lstat(file_path)
+            if stat.S_ISDIR(st.st_mode):
+                continue
+            if not stat.S_ISREG(st.st_mode):
+                raise OSError(errno.EPERM, "not a regular file", file_path)
+            file_path = os.path.realpath(file_path)
+            if not file_path.startswith(root + os.sep):
+                raise OSError(errno.EPERM, "path escapes store", file_path)
+            os.unlink(file_path)
     try:
         os.rmdir(path)
     except OSError as exc:
