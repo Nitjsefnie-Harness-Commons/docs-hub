@@ -63,6 +63,20 @@ def test_version_has_artifact_sandbox():
     assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
 
 
+def test_html_api_has_artifact_sandbox_with_human_cookie():
+    c = _client()
+    body = b"<!doctype html><h1>raw</h1><script>ok()</script>\n"
+    assert _publish(c, "priv/api-sandbox", body=body).status_code == 200
+    c.cookies.set("session", session.make_session_token(1))
+    r = c.get("/api/doc/priv/api-sandbox")
+    assert r.status_code == 200
+    assert r.content == body
+    assert r.headers["content-type"].startswith("text/html")
+    assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
+    assert _set_public(c, "priv/api-sandbox", True, headers=None).status_code == 200
+    assert _client().get("/api/doc/priv/api-sandbox").status_code == 401
+
+
 def test_public_flag_survives_republish():
     c = _client()
     _publish(c, "pub/sticky", body=b"<h1>v1</h1>")

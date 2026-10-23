@@ -306,6 +306,19 @@ def test_publish_infers_markdown_from_filename():
     assert raw.content == b"# hello\n\n<script>x</script>\n"
 
 
+def test_markdown_api_with_human_cookie_keeps_raw_non_html_response():
+    c = _client()
+    body = b"# raw\n\n<script>ok()</script>\n"
+    assert _publish_md(c, "md/raw-cookie", body=body).status_code == 200
+    c.cookies.set("session", session.make_session_token(1))
+    r = c.get("/api/doc/md/raw-cookie")
+    assert r.status_code == 200
+    assert r.content == body
+    assert r.headers["content-type"] == "text/markdown; charset=utf-8"
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "content-security-policy" not in r.headers
+
+
 def test_explicit_format_overrides_filename():
     c = _client()
     r = c.post("/api/publish",

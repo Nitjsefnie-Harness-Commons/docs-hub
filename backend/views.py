@@ -10,6 +10,8 @@ from backend import docs_repo, render
 
 router = APIRouter()
 
+ARTIFACT_CSP = "sandbox allow-scripts"
+
 _PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
 
 
@@ -31,7 +33,7 @@ def _serve(doc: dict) -> HTMLResponse:
     its authority to act with the viewer's session while allowing scripts.
     Markdown is rendered at serve time; the stored source is untouched.
     """
-    headers = {"Content-Security-Policy": "sandbox allow-scripts"}
+    headers = {"Content-Security-Policy": ARTIFACT_CSP}
     if doc["format"] == "markdown":
         return HTMLResponse(render.render_markdown(doc["html"], doc["title"]), headers=headers)
     return HTMLResponse(doc["html"], headers=headers)
