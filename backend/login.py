@@ -63,13 +63,13 @@ _LOGIN_HTML = """<!DOCTYPE html>
 
 
 @router.get("/login")
-async def login_page() -> HTMLResponse:
+def login_page() -> HTMLResponse:
     return HTMLResponse(_LOGIN_HTML.format(err=""))
 
 
 @router.post("/login")
-async def login_post(request: Request, user_id: str = Form(""),
-                     password: str = Form("")) -> Response:
+def login_post(request: Request, user_id: str = Form(""),
+               password: str = Form("")) -> Response:
     ip = request.client.host if request.client else "unknown"
     if _rate_limited(ip):
         return HTMLResponse(_LOGIN_HTML.format(err="Too many attempts."),
@@ -95,7 +95,7 @@ async def login_post(request: Request, user_id: str = Form(""),
 
 
 @router.get("/logout")
-async def logout() -> Response:
+def logout() -> Response:
     resp = RedirectResponse("/login", status_code=303)
     resp.delete_cookie(session.SESSION_COOKIE_NAME, path="/")
     return resp

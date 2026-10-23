@@ -51,7 +51,7 @@ _PUBLIC_DIR = _REPO_ROOT / "public"
 
 
 @app.get("/health")
-def health() -> dict:
+async def health() -> dict:
     return {"ok": True}
 
 

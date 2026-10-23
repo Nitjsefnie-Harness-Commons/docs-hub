@@ -3,6 +3,7 @@ key or a human cookie (the middleware already enforced one of the two)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Form, Request, UploadFile
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from backend import docs_repo, session
@@ -49,8 +50,9 @@ async def publish(request: Request, file: UploadFile,
         except ValueError as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     try:
-        res = docs_repo.publish(slug, title, tag_list, project or None,
-                                from_, html, ttl_seconds=ttl_seconds, fmt=fmt)
+        res = await run_in_threadpool(
+            docs_repo.publish, slug, title, tag_list, project or None,
+            from_, html, ttl_seconds=ttl_seconds, fmt=fmt)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     return JSONResponse({
@@ -62,7 +64,7 @@ async def publish(request: Request, file: UploadFile,
 
 
 @router.get("/doc/{slug:path}")
-async def get_doc(slug: str) -> Response:
+def get_doc(slug: str) -> Response:
     doc = docs_repo.get_latest(slug)
     if doc is None:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
@@ -77,7 +79,7 @@ async def get_doc(slug: str) -> Response:
 
 
 @router.post("/doc/{slug:path}/public")
-async def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
+def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
     """Flip a slug's public flag. Auth is enforced by the middleware (agent
     key or human cookie); an anonymous caller never reaches this handler.
     Public docs are readable by anyone at /d/<slug>; everything else stays
@@ -92,7 +94,7 @@ async def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
 
 
 @router.get("/list")
-async def api_list(project: str = "", agent: str = "") -> JSONResponse:
+def api_list(project: str = "", agent: str = "") -> JSONResponse:
     docs = docs_repo.list_docs(project or None, agent or None)
     for d in docs:
         d["updated_at"] = d["updated_at"].isoformat()
@@ -102,7 +104,7 @@ async def api_list(project: str = "", agent: str = "") -> JSONResponse:
 
 
 @router.get("/versions/{slug:path}")
-async def api_versions(slug: str) -> JSONResponse:
+def api_versions(slug: str) -> JSONResponse:
     vs = docs_repo.list_versions(slug)
     if not vs:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
@@ -116,8 +118,8 @@ _FILTER_KEYS = ("slug", "project", "author", "tag", "q",
 
 
 @router.post("/delete")
-async def delete(_request: Request,
-                 body: dict = Body(default={})) -> JSONResponse:
+def delete(_request: Request,
+           body: dict = Body(default={})) -> JSONResponse:
     """Delete whole docs by filter. Two-step: a call with no `confirm_token`
     previews and returns a token; a call echoing a valid token executes.
     Accepts the agent API key or a human session cookie (the middleware has
@@ -160,7 +162,7 @@ async def whoami(request: Request) -> JSONResponse:
 
 
 @router.get("/tags")
-async def api_tags(project: str = "") -> JSONResponse:
+def api_tags(project: str = "") -> JSONResponse:
     """Distinct tags in use with their counts (most-used first), so agents
     can pick from established tags instead of inventing new ones."""
     tags = docs_repo.list_tags(project or None)
