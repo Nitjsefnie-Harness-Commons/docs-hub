@@ -16,16 +16,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    permissions:
+      contents: read
 
     # The suite below is not unit-testable in isolation: tests/conftest.py
     # drops and recreates a real `docs_test` database from backend/schema.sql
@@ -120,9 +123,32 @@ jobs:
         # an option (shellcheck SC2035).
         run: sha256sum -- *.whl > SHA256SUMS
 
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Verify the downloaded artifact against its checksums
+        run: (cd dist && sha256sum -c SHA256SUMS)
+
       - name: Attach the wheel and its checksums to the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         # `gh`, not a third-party action. This is the one job here holding
         # contents: write, so every action it runs is code with permission
         # to publish under this repo's name — and `gh` is preinstalled on

@@ -5,4 +5,5 @@ psycopg_pool
 python-multipart
 markdown-it-py
 pytest
+PyYAML
 httpx

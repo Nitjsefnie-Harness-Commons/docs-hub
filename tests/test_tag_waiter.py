@@ -24,7 +24,7 @@ def _run_waiter(tmp_path: Path, checks: list[dict[str, str | None]],
                 deadline: int = 1) -> subprocess.CompletedProcess[str]:
     with (_REPO / ".github/workflows/tag.yml").open(encoding="utf-8") as stream:
         workflow = yaml.safe_load(stream)
-    step = next(step for step in workflow["jobs"]["tag"]["steps"]
+    step = next(step for step in workflow["jobs"]["release-readiness"]["steps"]
                 if step.get("name") == "Wait for the other gates on this commit")
     script = tmp_path / "step.sh"
     script.write_text(step["run"], encoding="utf-8")
@@ -84,15 +84,33 @@ def test_previous_failed_tag_is_exempt(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.parametrize("include_tag", [False, True])
+def test_previous_failed_readiness_is_exempt(tmp_path: Path, include_tag: bool):
+    checks = [_check(name) for name in _REQUIRED]
+    checks.append(_check("release-readiness", "failure"))
+    if include_tag:
+        checks.append(_check("tag", "failure"))
+    result = _run_waiter(tmp_path, checks)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_additional_success_check_is_allowed(tmp_path: Path):
-    checks = [_check(name) for name in _REQUIRED] + [_check("release-readiness")]
+    checks = [_check(name) for name in _REQUIRED] + [_check("security-review")]
     result = _run_waiter(tmp_path, checks)
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out"])
 def test_additional_failed_check_refuses(tmp_path: Path, conclusion: str):
-    checks = [_check(name) for name in _REQUIRED] + [_check("release-readiness", conclusion)]
+    checks = [_check(name) for name in _REQUIRED] + [_check("security-review", conclusion)]
+    result = _run_waiter(tmp_path, checks)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Refusing to tag" in result.stderr
+
+
+def test_failed_readiness_prefix_is_not_exempt(tmp_path: Path):
+    checks = [_check(name) for name in _REQUIRED]
+    checks.append(_check("release-readiness-security", "failure"))
     result = _run_waiter(tmp_path, checks)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Refusing to tag" in result.stderr
