@@ -38,3 +38,71 @@ def test_index_labels_name_their_selects(name: str) -> None:
     assert target[1] == select_ids[0]
     assert f'<span class="label">{name}</span>' not in script
     assert '<span class="label">search</span>' in script
+
+
+@pytest.mark.parametrize("key, label", [
+    ("title", "Title / Slug"), ("project", "Project"), ("tags", "Tags"),
+    ("agent", "Agent"), ("updated", "Updated"), ("version", "Ver"), ("size", "Size"),
+])
+def test_index_sort_heading_has_a_native_button(key: str, label: str) -> None:
+    script = (Path(__file__).resolve().parent.parent / "public" / "app.js").read_text(
+        encoding="utf-8")
+    headers = script.split("const headers = [", 1)[1].split("];", 1)[0]
+    assert re.search(rf"key: '{key}',\s+label: '{label}'", headers)
+    template = script.split("const headHtml = headers", 1)[1].split("const rowHtml", 1)[0]
+    headings = re.findall(r"<th\b([^>]*)>(.*?)</th>", template, re.S)
+    assert len(headings) == 1
+    attributes, content = headings[0]
+    button = re.fullmatch(r'<button\b([^>]*)>(.*?)</button>', content, re.S)
+    assert button is not None, f"{label} needs a button inside its th"
+    assert 'data-sort="${h.key}"' in button[1]
+    assert 'type="button"' in button[1]
+    assert 'data-sort' not in attributes
+    assert button[2] == '${esc(h.label)}<span class="arrow">${glyph}</span>'
+
+
+def test_index_sort_listener_uses_only_the_buttons() -> None:
+    script = (Path(__file__).resolve().parent.parent / "public" / "app.js").read_text(
+        encoding="utf-8")
+    wire = script.split("function wireIndex(", 1)[1].split("function renderDocViewer", 1)[0]
+    selectors = re.findall(r"\$\$\('([^']*data-sort[^']*)'\)", wire)
+    assert selectors == ["button[data-sort]"]
+    assert re.search(
+        r"\$\$\('button\[data-sort\]'\)\.forEach\(\(button\) =>\s*"
+        r"button\.addEventListener\('click', \(\) => \{\s*"
+        r"setSort\(button\.dataset\.sort\);\s*reroute\(\);\s*\}\),\s*\);", wire)
+    assert "th.addEventListener" not in wire
+
+
+def test_index_sort_focus_is_captured_forwarded_and_restored() -> None:
+    script = (Path(__file__).resolve().parent.parent / "public" / "app.js").read_text(
+        encoding="utf-8")
+    render = script.split("async function render() {", 1)[1].split("// ─", 1)[0]
+    capture, after_replace = render.split("root.innerHTML = html;", 1)
+    assert re.search(
+        r"const sortWasFocused = document\.activeElement\?\.matches\('button\[data-sort\]'\)"
+        r"\s*\? document\.activeElement\.dataset\.sort : null;", capture)
+    assert "wireIndex(searchWasFocused, sortWasFocused)" in after_replace
+    wire = script.split("function wireIndex(", 1)[1].split("function renderDocViewer", 1)[0]
+    assert wire.startswith("searchWasFocused, sortWasFocused)")
+    assert re.search(
+        r'if \(sortWasFocused\) \{\s*'
+        r'\$\(`button\[data-sort="\$\{sortWasFocused\}"\]`\)\?\.focus\(\);\s*\}', wire)
+    assert "document.activeElement.id === 'f-q'" in capture
+    assert re.search(
+        r"if \(searchWasFocused\) \{\s*const inp = \$\('#f-q'\);\s*if \(inp\) \{\s*"
+        r"inp\.focus\(\);\s*inp\.setSelectionRange\(inp\.value\.length, inp\.value\.length\);",
+        wire)
+
+
+def test_index_sort_buttons_keep_the_arrow_and_empty_row_span() -> None:
+    script = (Path(__file__).resolve().parent.parent / "public" / "app.js").read_text(
+        encoding="utf-8")
+    headers = script.split("const headers = [", 1)[1].split("];", 1)[0]
+    assert len(re.findall(r"key: '([^']+)'", headers)) == 7
+    template = script.split("const headHtml = headers", 1)[1].split("const rowHtml", 1)[0]
+    assert re.search(r'<button\b[^>]*>.*<span class="arrow">\$\{glyph\}</span></button>',
+                     template)
+    assert "FILTER.sort === h.key" in template
+    assert "FILTER.sortDir === 'asc' ? '▲' : '▼'" in template
+    assert '<td colspan="${headers.length}">' in script
