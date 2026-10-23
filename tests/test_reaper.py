@@ -3,6 +3,9 @@ lifespan (TestClient as a context manager runs startup/shutdown) with a
 tiny interval, and through `loop` directly for the error path."""
 import asyncio
 import os
+import subprocess
+import sys
+import textwrap
 import threading
 import time
 from contextlib import suppress
@@ -47,10 +50,11 @@ def test_lifespan_reaper_purges_expired_docs(monkeypatch):
 
 
 @pytest.mark.parametrize("purge_fails", [False, True])
+@pytest.mark.parametrize("cancel_inner", [False, True])
 # Keep the thread handshakes and shutdown-order verdict together in one regression.
 # pylint: disable-next=too-many-statements
 def test_lifespan_waits_for_purge_before_closing_pools(
-        monkeypatch: pytest.MonkeyPatch, purge_fails: bool) -> None:
+        monkeypatch: pytest.MonkeyPatch, purge_fails: bool, cancel_inner: bool) -> None:
     """Cancelling the await cannot stop its worker thread: shutdown must
     drain it before closing pools, even if the purge fails while draining.
     Release follows observed cancellation, even when shutdown starts late.
@@ -102,6 +106,15 @@ def test_lifespan_waits_for_purge_before_closing_pools(
                 if task.cancelling() >= 1:
                     # Deliver cancellation before observing the live drain.
                     await asyncio.sleep(0)
+                    if cancel_inner:
+                        jobs = [pending for pending in asyncio.all_tasks()
+                                if getattr(pending.get_coro(), "cr_code", None)
+                                is asyncio.to_thread.__code__]
+                        assert len(jobs) == 1, "expected the blocked purge job"
+                        jobs[0].cancel()
+                        # Deliver job cancellation and its reaper wakeup before release.
+                        await asyncio.sleep(0)
+                        await asyncio.sleep(0)
                     if not task.done():
                         release.set()
                     return
@@ -184,6 +197,198 @@ def test_loop_drains_purge_through_repeated_cancellation(
                 await task
 
     asyncio.run(run())
+
+
+def _run_shutdown_probe(mode: str) -> subprocess.CompletedProcess[str]:
+    script = textwrap.dedent("""
+        import asyncio
+        import sys
+        import threading
+        import time
+        from concurrent.futures import ThreadPoolExecutor
+        from contextlib import suppress
+        from backend import docs_repo, reaper
+
+        mode = sys.argv[1]
+        queued = mode == "queued"
+        pre_entry = mode.startswith("pre-entry")
+        started = threading.Event()
+        submitted = threading.Event()
+        purge_queued = threading.Event()
+        before_entry = threading.Event()
+        decision_checked = threading.Event()
+        decision_continue = threading.Event()
+        release = threading.Event()
+        futures = []
+
+        def purge():
+            started.set()
+            print("purge-started", flush=True)
+            assert release.wait(10), "runner never cancelled both tasks"
+            print("purge-finished", flush=True)
+            return 0
+
+        def blocker():
+            assert release.wait(10), "queued job was not cancelled"
+            print("blocker-finished", flush=True)
+
+        class ObservedExecutor(ThreadPoolExecutor):
+            def submit(self, func, *args, **kwargs):
+                def invoke():
+                    if pre_entry:
+                        before_entry.set()
+                        assert release.wait(10), "wrapper was never released"
+                    return func(*args, **kwargs)
+
+                future = super().submit(invoke)
+                futures.append(future)
+                if queued and submitted.is_set():
+                    # Release the sole worker only after its queued purge is cancelled.
+                    future.add_done_callback(
+                        lambda done: release.set() if done.cancelled() else None)
+                    purge_queued.set()
+                    print("purge-queued", flush=True)
+                submitted.set()
+                return future
+
+        class PausedState(dict):
+            def __init__(self, state):
+                self.state = state
+
+            def __getitem__(self, key):
+                value = self.state[key]
+                if key == "skip":
+                    decision_checked.set()
+                    assert decision_continue.wait(10), "start decision never resumed"
+                return value
+
+            def __setitem__(self, key, value):
+                self.state[key] = value
+
+        class WitnessLock:
+            def __init__(self):
+                self.lock = threading.Lock()
+
+            def __enter__(self):
+                if not self.lock.acquire(blocking=False):
+                    decision_continue.set()
+                    self.lock.acquire()
+
+            def __exit__(self, *exc):
+                self.lock.release()
+
+        if mode == "decision":
+            real_purge = reaper._purge
+
+            def pause_decision(state, lock, done):
+                return real_purge(PausedState(state), lock, done)
+
+            reaper._purge = pause_decision
+            reaper.Lock = WitnessLock
+
+        def release_after_cancellation(tasks):
+            deadline = time.monotonic() + 2
+            while not all(task.cancelling() for task in tasks):
+                assert time.monotonic() < deadline, "runner did not cancel its tasks"
+                time.sleep(0.001)
+            release.set()
+
+        async def main():
+            loop = asyncio.get_running_loop()
+            executor = ObservedExecutor(max_workers=1)
+            loop.set_default_executor(executor)
+            if queued:
+                executor.submit(blocker)
+            docs_repo.purge_expired = purge
+            task = asyncio.create_task(reaper.loop(60))
+            # Observe submission itself, without queueing another executor job.
+            async with asyncio.timeout(2):
+                if queued:
+                    while not purge_queued.is_set():
+                        await asyncio.sleep(0.001)
+                elif pre_entry:
+                    while not before_entry.is_set():
+                        await asyncio.sleep(0.001)
+                elif mode == "decision":
+                    while not decision_checked.is_set():
+                        await asyncio.sleep(0.001)
+                else:
+                    while not started.is_set():
+                        await asyncio.sleep(0.001)
+            if pre_entry or mode == "decision":
+                assert futures[0].running(), "executor has not claimed the job"
+                if mode == "pre-entry-outer":
+                    task.cancel()
+                else:
+                    for pending in asyncio.all_tasks():
+                        if pending is not asyncio.current_task():
+                            pending.cancel()
+                try:
+                    if mode == "decision":
+                        async with asyncio.timeout(2):
+                            while not task.done() and not started.is_set():
+                                await asyncio.sleep(0.001)
+                        if task.done():
+                            print("reaper-finished", flush=True)
+                            decision_continue.set()
+                            release.set()
+                            return
+                        release.set()
+                    with suppress(asyncio.CancelledError):
+                        await asyncio.wait_for(asyncio.shield(task), 1)
+                    print("reaper-finished", flush=True)
+                finally:
+                    decision_continue.set()
+                    release.set()
+            elif not queued:
+                pending = [t for t in asyncio.all_tasks()
+                           if t is not asyncio.current_task()]
+                threading.Thread(target=release_after_cancellation, args=(pending,)).start()
+            # Returning makes asyncio.run cancel BOTH the reaper and its job.
+
+        asyncio.run(main())
+        if pre_entry and not started.is_set():
+            print("skipped", flush=True)
+        print("runner-finished", flush=True)
+    """)
+    return subprocess.run([sys.executable, "-c", script, mode],
+                          capture_output=True, text=True, check=False, timeout=5)
+
+
+@pytest.mark.parametrize("queued", [False, True])
+def test_runner_shutdown_drains_running_or_cancels_queued_purge(queued: bool) -> None:
+    """Runner shutdown cancels the inner task too; a subprocess bounds a
+    spinning drain, including when no purge thread ever started.
+    """
+    result = _run_shutdown_probe("queued" if queued else "running")
+    assert result.returncode == 0, result.stderr
+    assert "runner-finished" in result.stdout
+    if queued:
+        assert "purge-queued" in result.stdout
+        assert "blocker-finished" in result.stdout
+        assert "purge-started" not in result.stdout
+    else:
+        assert "purge-finished" in result.stdout
+
+
+@pytest.mark.parametrize("cancel_inner", [False, True])
+def test_cancellation_before_wrapper_entry_skips_purge(cancel_inner: bool) -> None:
+    """An executor future can be running before the wrapper enters: shutdown
+    must prevent that wrapper from touching a database after the reaper exits.
+    """
+    result = _run_shutdown_probe("pre-entry" if cancel_inner else "pre-entry-outer")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["reaper-finished", "skipped", "runner-finished"]
+
+
+def test_cancellation_during_start_decision_drains_purge() -> None:
+    """Pause after checking skip; lock contention lets the worker commit its
+    start before cancellation reads it, while a check-then-act mutant loses it.
+    """
+    result = _run_shutdown_probe("decision")
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "purge-started", "purge-finished", "reaper-finished", "runner-finished"]
 
 
 def test_loop_survives_a_failing_purge(monkeypatch):

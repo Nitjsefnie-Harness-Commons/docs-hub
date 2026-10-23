@@ -5,10 +5,10 @@ live filter); this loop is what actually removes the rows and the blobs.
 Runs once at startup, then every PURGE_INTERVAL_SECONDS (default 60). One
 failed purge is logged and the loop carries on — a transient DB outage must
 not leave the service without a reaper until the next restart.
-Cancellation keeps shielding and draining the current purge before unwinding,
-even through repeated cancellation: cancelling an await cannot stop its worker
-thread, which could otherwise reopen pools after shutdown closes them. A purge
-failure must not mask that shutdown unwind.
+Cancellation drains the purge's thread-completion signal before unwinding:
+runner shutdown can cancel every asyncio task, so a cancelled job alone cannot
+prove its worker has stopped. Otherwise it could reopen pools after shutdown
+closes them. Repeated cancellation and purge failures must not mask this drain.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ import logging
 import math
 import os
 from contextlib import suppress
+from threading import Event, Lock
 
 from backend import docs_repo
 
@@ -24,21 +25,40 @@ _log = logging.getLogger(__name__)
 DEFAULT_INTERVAL = 60.0
 
 
+def _purge(state: dict[str, bool], lock: Lock, done: Event) -> int:
+    # Under this lock, purge starts and drains or skips; it cannot run after reaper exit.
+    with lock:
+        if state["skip"]:
+            return 0
+        state["started"] = True
+    try:
+        return docs_repo.purge_expired()
+    finally:
+        done.set()
+
+
 async def loop(interval: float) -> None:
     while True:
-        job = asyncio.ensure_future(asyncio.to_thread(docs_repo.purge_expired))
+        lock = Lock()
+        state = {"started": False, "skip": False}
+        done = Event()
+        job = asyncio.ensure_future(asyncio.to_thread(_purge, state, lock, done))
         try:
             removed = await asyncio.shield(job)
             if removed:
                 _log.info("purged %d expired doc(s)", removed)
         except asyncio.CancelledError:
-            with suppress(Exception):
-                while True:
-                    try:
-                        await asyncio.shield(job)
-                        break
-                    except asyncio.CancelledError:
-                        continue
+            with lock:
+                if not state["started"]:
+                    state["skip"] = True
+                started = state["started"]
+            if not started:
+                job.cancel()
+            while started and not done.is_set():
+                with suppress(asyncio.CancelledError):
+                    await asyncio.sleep(0.05)
+            with suppress(Exception, asyncio.CancelledError):
+                await job
             raise
         except Exception:  # pylint: disable=broad-exception-caught
             # A reaper that dies on the first transient error is worse than
