@@ -41,6 +41,12 @@ def _load_user_config(user_id: int) -> dict | None:
     return row[0] if row else None
 
 
+def _verify_credentials(user_id: int, password: str) -> bool:
+    config = _load_user_config(user_id)
+    return bool(config and auth.has_web_password(config)
+                and auth.verify_web_password(config, password))
+
+
 _LOGIN_HTML = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><title>Sign in - docs</title>
 <style>
@@ -84,9 +90,7 @@ async def login_post(request: Request, user_id: str = Form(""),
         uid = int(user_id.strip())
     except ValueError:
         uid = 0
-    config = await run_db(_load_user_config, uid) if uid > 0 else None
-    if not config or not auth.has_web_password(config) \
-            or not auth.verify_web_password(config, password):
+    if uid <= 0 or not await run_db(_verify_credentials, uid, password):
         _record_failure(ip)
         return HTMLResponse(_LOGIN_HTML.format(err="Invalid credentials."),
                             status_code=401)
