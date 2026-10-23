@@ -146,6 +146,17 @@ def test_text_only_marks_heading_levels(html, expected):
 
 
 @pytest.mark.parametrize("html, expected", [
+    (b"<h2>\nAlpha\nBeta\n</h2>", "## Alpha Beta\n"),
+    (b"<h1>Alpha<br>Beta <b>bold\r\nlabel</b></h1>",
+     "# Alpha Beta **bold label**\n"),
+    (b"<p>before\nbody</p><h6>\r\n Alpha\tBeta\r\n</h6><p>after\nbody</p>",
+     "before\nbody\n\n###### Alpha Beta\n\nafter\nbody\n"),
+])
+def test_text_only_keeps_headings_on_one_line(html, expected):
+    assert cli._html_to_text(html) == expected
+
+
+@pytest.mark.parametrize("html, expected", [
     (b"<strong>label</strong>", "**label**\n"),
     (b"<p>a <strong>bold</strong> word</p>", "a **bold** word\n"),
     (b"<b>outer <strong>inner</strong> end</b>", "**outer inner end**\n"),
@@ -159,6 +170,19 @@ def test_text_only_marks_heading_levels(html, expected):
     (b"</b><strong>kept</strong>", "**kept**\n"),
 ])
 def test_text_only_marks_bold_runs(html, expected):
+    assert cli._html_to_text(html) == expected
+
+
+@pytest.mark.parametrize("html, expected", [
+    (b"<p>before<b><strong></strong></b> after</p>", "before after\n"),
+    (b"<b><strong></strong></b><b>word</b>", "**word**\n"),
+    (b"<b>word</b><strong><b></b></strong>", "**word**\n"),
+    (b"<b>\t <strong>\n</strong></b>", ""),
+    (b"<p>before<b> <strong>\n</strong></b>after</p>", "before\nafter\n"),
+    (b"<b><template>hidden</template></b>", ""),
+    (b"<p>**<b><strong></strong></b> after</p>", "** after\n"),
+])
+def test_text_only_keeps_empty_bold_runs_invisible(html, expected):
     assert cli._html_to_text(html) == expected
 
 

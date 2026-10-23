@@ -29,11 +29,12 @@ _DEFAULT_URL = setting("DOCS_HUB_URL", "")
 
 # Tags whose text content is layout/markup noise, not document prose.
 _SKIP_TAGS = {"script", "style", "head", "title", "noscript", "template"}
+_HEADING_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 # Tags that imply a line break in the rendered text.
 _BLOCK_TAGS = {"p", "div", "br", "hr", "li", "tr", "section", "article",
                "header", "footer", "nav", "aside", "main", "ul", "ol",
                "table", "thead", "tbody", "blockquote", "pre", "figure",
-               "figcaption", "h1", "h2", "h3", "h4", "h5", "h6"}
+               "figcaption"} | _HEADING_TAGS
 
 
 class _TextExtractor(HTMLParser):
@@ -45,39 +46,48 @@ class _TextExtractor(HTMLParser):
         super().__init__()
         self._parts: list[str] = []
         self._skip_depth = 0
+        self._in_heading = False
         self._bold_depth = 0
+        self._bold_open = False
         self._bold_end = -1
 
     def handle_starttag(self, tag: str, attrs: list) -> None:
         if tag in _SKIP_TAGS:
             self._skip_depth += 1
         elif tag in _BLOCK_TAGS:
-            self._parts.append("\n")
-            if self._skip_depth == 0 and tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            self._parts.append(" " if self._in_heading else "\n")
+            if self._skip_depth == 0 and tag in _HEADING_TAGS:
+                self._in_heading = True
                 self._parts.append("#" * int(tag[1]) + " ")
         elif self._skip_depth == 0 and tag in {"strong", "b"}:
-            if self._bold_depth == 0:
-                # Merge touching runs without mistaking literal ** for a closing marker.
-                if self._parts and self._bold_end == len(self._parts) - 1:
-                    self._parts.pop()
-                else:
-                    self._parts.append("**")
-                self._bold_end = -1
             self._bold_depth += 1
 
     def handle_endtag(self, tag: str) -> None:
         if tag in _SKIP_TAGS and self._skip_depth:
             self._skip_depth -= 1
         elif tag in _BLOCK_TAGS:
-            self._parts.append("\n")
+            if self._skip_depth == 0 and tag in _HEADING_TAGS:
+                self._in_heading = False
+            self._parts.append(" " if self._in_heading else "\n")
         elif self._skip_depth == 0 and tag in {"strong", "b"} and self._bold_depth:
             self._bold_depth -= 1
-            if self._bold_depth == 0:
+            if self._bold_depth == 0 and self._bold_open:
                 self._parts.append("**")
                 self._bold_end = len(self._parts) - 1
+                self._bold_open = False
 
     def handle_data(self, data: str) -> None:
         if self._skip_depth == 0:
+            if self._in_heading:
+                data = re.sub(r"\s+", " ", data)
+            if self._bold_depth and not self._bold_open and data.strip():
+                # Merge touching runs without mistaking literal ** for a closing marker.
+                if self._parts and self._bold_end == len(self._parts) - 1:
+                    self._parts.pop()
+                else:
+                    self._parts.append("**")
+                self._bold_end = -1
+                self._bold_open = True
             self._parts.append(data)
 
     def text(self) -> str:
