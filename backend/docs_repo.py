@@ -23,7 +23,7 @@ def _slug_lock(c, slug: str) -> None:
 
     Every writer that touches a slug's blob directory takes it, so a publish
     writing the version's file (v<n>.html or v<n>.md) can never interleave
-    with a purge or a delete rmtree-ing the directory under it. The lock is
+    with a purge or a delete unlinking that slug's version files. The lock is
     held to commit and released by it.
     """
     c.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (slug,))
@@ -49,7 +49,7 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
         raise ValueError(f"invalid format: {fmt!r}")
     with db.docs_conn() as c:
         # Serialise against a concurrent purge_expired or delete_docs of the
-        # same slug: without this either one can rmtree the directory between
+        # same slug: without this either one can unlink the version between
         # this publish writing the version's file (v1.html or v1.md) and
         # committing the row pointing at it.
         _slug_lock(c, slug)
@@ -232,15 +232,16 @@ def find_docs(filters: dict) -> list[dict]:
 
 def delete_docs(slugs: list[str]) -> int:
     """Delete the named docs (versions cascade via the doc_versions FK) and
-    their blob directories. Returns the count of doc rows actually deleted.
+    their version files, preserving child slugs' files. Returns the count of
+    doc rows actually deleted.
 
     One transaction per slug, holding the same per-slug advisory lock publish
     takes, with the blobs going while the lock is still held — otherwise a
     concurrent publish of the slug could write the version's file (v<n>.html
-    or v<n>.md) into the directory this call is about to remove. The crash
-    story is purge's: a crash between the rmtree and the commit rolls the row
+    or v<n>.md) that this call is about to remove. The crash story is purge's:
+    a crash between the file unlinks and the commit rolls the row
     back, leaving a doc row whose blobs are gone, so that slug reads as a
-    broken document until it is re-published (which starts a fresh directory)
+    broken document until it is re-published
     or deleted again.
     """
     deleted = 0
@@ -258,13 +259,14 @@ def delete_docs(slugs: list[str]) -> int:
 
 def purge_expired() -> int:
     """Delete every doc whose expiry has passed (versions cascade) and its
-    blob directory. Returns the number of docs removed.
+    version files, preserving child slugs' files. Returns the number of docs
+    removed.
 
     One transaction per slug, holding the same per-slug advisory lock that
     publish takes, and the blobs go while the lock is still held: a publish
     of the same slug either waits and then finds no stale row, or got there
     first and the re-checked _EXPIRED no longer matches. A crash between
-    the rmtree and the commit rolls the row back, but that row is expired,
+    the file unlinks and the commit rolls the row back, but that row is expired,
     `_LIVE` hides it from every reader, and the next purge deletes it again.
     """
     with db.docs_conn() as c:

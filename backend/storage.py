@@ -5,10 +5,10 @@ version, the extension following the version's format.
 """
 from __future__ import annotations
 
+import errno
 import hashlib
 import os
 import re
-import shutil
 
 # slug: lowercase alnum segments joined by '/'; segment chars [a-z0-9_-];
 # each segment starts and ends alphanumeric; no '..', no leading/trailing '/'.
@@ -19,6 +19,7 @@ _SLUG_RE = re.compile(rf"^{_SEGMENT}(/{_SEGMENT})*$")
 # Checked alongside the slug so a caller that derives the extension wrongly
 # cannot name a path outside that pair.
 _EXTS = ("html", "md")
+_VERSION_FILE_RE = re.compile(r"v[0-9]+\.(html|md)")
 
 
 def is_valid_slug(slug: str) -> bool:
@@ -56,8 +57,27 @@ def read_blob(path: str) -> bytes:
 
 
 def delete_doc(slug: str) -> None:
-    """Remove the blob directory for a slug. No-op if it does not exist."""
+    """Remove only the slug's top-level version files; absence is a no-op.
+
+    After every unlink succeeds, rmdir removes the directory if empty.
+    ENOTEMPTY is allowed because child slug directories or other entries
+    remain. The row's data is its version files: a surviving version file is
+    a deletion failure, while an empty directory that cannot be removed is
+    inert. Unlink errors and rmdir errors other than ENOTEMPTY propagate.
+    """
     if not is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
     path = os.path.join(_store_root(), slug)
-    shutil.rmtree(path, ignore_errors=True)
+    try:
+        names = os.listdir(path)
+    except FileNotFoundError:
+        return
+    for name in names:
+        file_path = os.path.join(path, name)
+        if _VERSION_FILE_RE.fullmatch(name) and os.path.isfile(file_path):
+            os.unlink(file_path)
+    try:
+        os.rmdir(path)
+    except OSError as exc:
+        if exc.errno != errno.ENOTEMPTY:
+            raise

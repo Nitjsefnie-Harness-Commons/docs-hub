@@ -87,11 +87,12 @@ def test_find_docs_shape():
 def test_delete_docs_removes_rows_versions_blobs():
     docs_repo.publish("a/del", "Del", [], None, "analyst", b"<h1>1</h1>")
     docs_repo.publish("a/del", "Del", [], None, "analyst", b"<h1>2</h1>")
+    blob_dir = os.path.join(os.environ["STORE_ROOT"], "a", "del")
+    assert os.path.isdir(blob_dir)
     n = docs_repo.delete_docs(["a/del"])
     assert n == 1
     assert docs_repo.get_latest("a/del") is None
     assert docs_repo.list_versions("a/del") == []
-    blob_dir = os.path.join(os.environ["STORE_ROOT"], "a", "del")
     assert not os.path.exists(blob_dir)
 
 
@@ -131,6 +132,46 @@ def _backdate(slug):
         c.execute("UPDATE docs SET expires_at = now() - interval '1 second' "
                   "WHERE slug=%s", (slug,))
         c.commit()
+
+
+@pytest.mark.parametrize("parent_first", [True, False])
+@pytest.mark.parametrize("removal", ["delete", "purge", "republish"])
+def test_parent_removal_preserves_child_versions(parent_first, removal):
+    slugs = ["family", "family/child"]
+    if not parent_first:
+        slugs.reverse()
+    for slug in slugs:
+        docs_repo.publish(slug, "Family", [], None, "analyst", b"<h1>v1</h1>")
+        docs_repo.publish(slug, "Family", [], None, "analyst", b"# v2\n",
+                          fmt="markdown")
+    child_versions = [docs_repo.get_version("family/child", n) for n in (1, 2)]
+    child_files = [os.path.join(os.environ["STORE_ROOT"], "family", "child", name)
+                   for name in ("v1.html", "v2.md")]
+    child_stats = [os.stat(path) for path in child_files]
+    old_parent_file = os.path.join(os.environ["STORE_ROOT"], "family", "v2.md")
+    assert os.path.isfile(old_parent_file)
+
+    if removal == "delete":
+        assert docs_repo.delete_docs(["family"]) == 1
+    else:
+        _backdate("family")
+        if removal == "purge":
+            assert docs_repo.purge_expired() == 1
+        else:
+            result = docs_repo.publish("family", "New", [], None, "analyst",
+                                       b"<h1>new</h1>")
+            assert result["version"] == 1
+            assert docs_repo.get_latest("family")["html"] == b"<h1>new</h1>"
+            assert [v["version"] for v in docs_repo.list_versions("family")] == [1]
+
+    assert not os.path.exists(old_parent_file)
+    assert [os.stat(path) for path in child_files] == child_stats
+    assert [v["version"] for v in docs_repo.list_versions("family/child")] == [2, 1]
+    assert [docs_repo.get_version("family/child", n) for n in (1, 2)] == child_versions
+    assert docs_repo.get_version("family/child", 1)["html"] == b"<h1>v1</h1>"
+    assert docs_repo.get_latest("family/child")["html"] == b"# v2\n"
+    if removal != "republish":
+        assert docs_repo.get_latest("family") is None
 
 
 def test_publish_with_ttl_sets_expires_at_in_the_future():
