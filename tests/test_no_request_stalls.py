@@ -73,8 +73,8 @@ async def _assert_fast(client: httpx.AsyncClient, path: str) -> None:
 
 
 async def _health_while_publishes_wait(slugs: list[str]) -> None:
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                base_url="http://test") as client:
+    async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         async with _waiting_publishes(client, slugs):
             await _assert_fast(client, "/health")
 
@@ -90,8 +90,8 @@ def test_more_publish_waiters_than_worker_threads_do_not_stall_health() -> None:
 @pytest.mark.parametrize("path", ["/login", "/index.html", "/api/whoami"])
 def test_db_waiters_leave_unrelated_worker_requests_responsive(path: str) -> None:
     async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                    base_url="http://test") as client:
+        async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             async with _waiting_publishes(client, [f"held/probe{i}" for i in range(45)]):
                 await _assert_fast(client, path)
 
@@ -100,8 +100,8 @@ def test_db_waiters_leave_unrelated_worker_requests_responsive(path: str) -> Non
 
 def test_forty_db_requests_reach_the_pool_timeout_without_worker_queueing() -> None:
     async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                    base_url="http://test") as client:
+        async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             pool = db.docs_pool()
             assert pool.max_size == 8
             assert pool.timeout == 10
@@ -126,8 +126,8 @@ def test_forty_db_requests_reach_the_pool_timeout_without_worker_queueing() -> N
 
 def test_anonymous_public_lookup_waiting_for_pool_does_not_stall_health() -> None:
     async def run() -> None:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
-                                    base_url="http://test") as client:
+        async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
             assert (await _publish(client, "public/doc")).status_code == 200
             response = await client.post("/api/doc/public/doc/public",
                                          json={"public": True}, headers=KEY)
