@@ -130,13 +130,22 @@ def test_tag_version_skips_development_versions(tmp_path: Path, version: str, sk
 def _stub_gh(tmp_path: Path) -> Path:
     gh = tmp_path / "gh"
     gh.write_text("""#!/usr/bin/env python3
+import argparse
 import json
 import os
 import subprocess
 import sys
 args = sys.argv[1:]
+method = None
+if args[0] == 'api':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-X', '--method')
+    parser.add_argument('-f', '--raw-field', '-F', '--field',
+                        dest='fields', action='append')
+    options, _ = parser.parse_known_args(args[1:])
+    method = options.method or ('POST' if options.fields else 'GET')
 with open(os.environ['GH_CALLS'], 'a', encoding='utf-8') as log:
-    log.write(json.dumps(args) + '\\n')
+    log.write(json.dumps({'args': args, 'method': method}) + '\\n')
 if args[0] == 'api' and any(arg.endswith('/git/tags') for arg in args):
     response = json.dumps({'sha': 'tagobjsha123'})
     if '--jq' in args:
@@ -154,17 +163,23 @@ elif args[:3] != ['workflow', 'run', 'release.yml']:
 
 
 @pytest.mark.parametrize("repo,tag", [("example/one", "v1.2.3"), ("example/two", "v4.5.6rc1")])
-def test_tag_writer_creates_annotated_object_then_ref(tmp_path: Path, repo: str, tag: str):
+@pytest.mark.parametrize("method_option", ["--method POST", "-X POST", ""])
+def test_tag_writer_creates_annotated_object_then_ref(tmp_path: Path, repo: str, tag: str,
+                                                      method_option: str):
     calls_path = _stub_gh(tmp_path)
     sha = "a" * 40
-    result = _run_script(tmp_path, _step("tag.yml", "tag", "Create and push the tag")["run"],
+    script = _step("tag.yml", "tag", "Create and push the tag")["run"]
+    result = _run_script(tmp_path, script.replace("--method POST", method_option),
                          {"GH_CALLS": str(calls_path), "REPO": repo, "TAG": tag, "SHA": sha})
     assert result.returncode == 0, result.stdout + result.stderr
     calls = [json.loads(line) for line in calls_path.read_text(encoding="utf-8").splitlines()]
     assert len(calls) == 2
     for call, endpoint in zip(calls, ("tags", "refs")):
+        assert call["method"] == "POST", call
+        call = call["args"]
         assert call[0] == "api"
         assert f"repos/{repo}/git/{endpoint}" in call
+    calls = [call["args"] for call in calls]
     for field in (f"tag={tag}", f"message={tag}", f"object={sha}", "type=commit"):
         assert field in calls[0]
     assert "sha=tagobjsha123" in calls[1]
@@ -194,8 +209,8 @@ def test_tag_writer_dispatches_release_at_tag(tmp_path: Path):
                           "TAG": "v1.2.3"})
     assert result.returncode == 0, result.stdout + result.stderr
     calls = [json.loads(line) for line in calls_path.read_text(encoding="utf-8").splitlines()]
-    assert calls == [["workflow", "run", "release.yml", "--repo", "example/repository",
-                      "--ref", "v1.2.3"]]
+    assert calls == [{"args": ["workflow", "run", "release.yml", "--repo", "example/repository",
+                               "--ref", "v1.2.3"], "method": None}]
 
 
 @pytest.mark.parametrize("tampered", [False, True])
