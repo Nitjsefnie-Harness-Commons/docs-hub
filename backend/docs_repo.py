@@ -66,8 +66,11 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             try:
                 storage.delete_doc(slug)
             except OSError as e:
+                blob_dir = os.path.dirname(storage.blob_path(slug, 1))
                 _log.error("failed to remove stored files for %r at %r: %r",
-                           slug, os.path.dirname(storage.blob_path(slug, 1)), str(e))
+                           slug.replace("\r\n", "").replace("\n", ""),
+                           blob_dir.replace("\r\n", "").replace("\n", ""),
+                           str(e).replace("\r\n", "").replace("\n", ""))
                 raise
         row = c.execute("SELECT id, latest_version FROM docs WHERE slug=%s",
                         (slug,)).fetchone()
@@ -104,13 +107,19 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             if updated is None:
                 raise RuntimeError(
                     "UPDATE ... RETURNING expires_at yielded no row")
-        except BaseException:
+        except BaseException as exc:
             try:
+                root = os.path.realpath(os.environ["STORE_ROOT"])
+                path = os.path.realpath(path)
+                if not path.startswith(root + os.sep):
+                    raise ValueError(f"path escapes store: {path!r}") from exc
                 os.unlink(path)
             except FileNotFoundError:
                 pass
             except OSError as e:
-                _log.error("failed to remove uncommitted version file %r: %r", path, str(e))
+                _log.error("failed to remove uncommitted version file %r: %r",
+                           path.replace("\r\n", "").replace("\n", ""),
+                           str(e).replace("\r\n", "").replace("\n", ""))
             raise
         c.commit()
     return {"slug": slug, "version": version, "doc_id": doc_id,
@@ -144,7 +153,11 @@ def get_version(slug: str, version: int) -> dict | None:
     meta = _version_row(slug, version)
     if meta is None:
         return None
-    meta["html"] = storage.read_blob(storage.checked_path(meta["file_path"]))
+    root = os.path.realpath(os.environ["STORE_ROOT"])
+    path = os.path.realpath(meta["file_path"])
+    if not path.startswith(root + os.sep):
+        raise ValueError(f"path escapes store: {path!r}")
+    meta["html"] = storage.read_blob(path)
     return meta
 
 
@@ -282,8 +295,11 @@ def delete_docs(slugs: list[str]) -> tuple[int, list[str]]:
             if row is not None:
                 deleted += 1
         except OSError as e:
+            blob_dir = os.path.dirname(storage.blob_path(slug, 1))
             _log.error("failed to remove stored files for %r at %r: %r",
-                       slug, os.path.dirname(storage.blob_path(slug, 1)), str(e))
+                       slug.replace("\r\n", "").replace("\n", ""),
+                       blob_dir.replace("\r\n", "").replace("\n", ""),
+                       str(e).replace("\r\n", "").replace("\n", ""))
             failed.append(slug)
     return deleted, failed
 
@@ -320,8 +336,11 @@ def purge_expired() -> int:
             if row is not None:
                 purged += 1
         except OSError as e:
+            blob_dir = os.path.dirname(storage.blob_path(slug, 1))
             _log.error("failed to remove stored files for %r at %r: %r",
-                       slug, os.path.dirname(storage.blob_path(slug, 1)), str(e))
+                       slug.replace("\r\n", "").replace("\n", ""),
+                       blob_dir.replace("\r\n", "").replace("\n", ""),
+                       str(e).replace("\r\n", "").replace("\n", ""))
     return purged
 
 

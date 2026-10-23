@@ -10,7 +10,6 @@ import hashlib
 import os
 import re
 import stat
-from pathlib import Path
 
 # slug: lowercase alnum segments joined by '/'; segment chars [a-z0-9_-];
 # each segment starts and ends alphanumeric; no '..', no leading/trailing '/'.
@@ -32,14 +31,6 @@ def _store_root() -> str:
     return os.environ["STORE_ROOT"]
 
 
-def checked_path(path: str) -> str:
-    """Resolve symlinks before checking that file access stays in the store."""
-    resolved = Path(path).resolve()
-    if not resolved.is_relative_to(Path(_store_root()).resolve()):
-        raise ValueError(f"path escapes store: {path!r}")
-    return str(resolved)
-
-
 def blob_path(slug: str, version: int, ext: str = "html") -> str:
     """Absolute path for a version's file.
 
@@ -49,13 +40,21 @@ def blob_path(slug: str, version: int, ext: str = "html") -> str:
         raise ValueError(f"invalid slug: {slug!r}")
     if ext not in _EXTS:
         raise ValueError(f"invalid ext: {ext!r}")
-    return checked_path(os.path.join(_store_root(), slug, f"v{version}.{ext}"))
+    root = os.path.realpath(_store_root())
+    path = os.path.realpath(os.path.join(_store_root(), slug, f"v{version}.{ext}"))
+    # Every checked path is strictly below the store root, so include the separator.
+    if not path.startswith(root + os.sep):
+        raise ValueError(f"path escapes store: {slug!r}")
+    return path
 
 
 def store_blob(slug: str, version: int, html: bytes,
                ext: str = "html") -> tuple[str, int, str]:
     """Write the version's file verbatim. Returns (path, byte_size, sha256_hex)."""
-    path = blob_path(slug, version, ext)
+    root = os.path.realpath(_store_root())
+    path = os.path.realpath(blob_path(slug, version, ext))
+    if not path.startswith(root + os.sep):
+        raise ValueError(f"path escapes store: {slug!r}")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         f.write(html)
@@ -63,6 +62,10 @@ def store_blob(slug: str, version: int, html: bytes,
 
 
 def read_blob(path: str) -> bytes:
+    root = os.path.realpath(_store_root())
+    path = os.path.realpath(path)
+    if not path.startswith(root + os.sep):
+        raise ValueError(f"path escapes store: {path!r}")
     with open(path, "rb") as f:
         return f.read()
 
@@ -79,17 +82,25 @@ def delete_doc(slug: str) -> None:
     """
     if not is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
-    path = checked_path(os.path.join(_store_root(), slug))
+    root = os.path.realpath(_store_root())
+    path = os.path.realpath(os.path.join(_store_root(), slug))
+    if not path.startswith(root + os.sep):
+        raise ValueError(f"path escapes store: {slug!r}")
     try:
         names = os.listdir(path)
     except FileNotFoundError:
         return
     for name in names:
-        file_path = os.path.join(path, name)
         if _VERSION_FILE_RE.fullmatch(name):
-            checked_path(file_path)
+            file_path = os.path.realpath(os.path.join(path, name))
+            if not file_path.startswith(root + os.sep):
+                raise ValueError(f"path escapes store: {file_path!r}")
             if stat.S_ISREG(os.stat(file_path).st_mode):
-                os.unlink(file_path)
+                # Unlink the entry itself so an in-store symlink preserves its target.
+                entry_path = os.path.normpath(os.path.join(path, name))
+                if not entry_path.startswith(root + os.sep):
+                    raise ValueError(f"path escapes store: {entry_path!r}")
+                os.unlink(entry_path)
     try:
         os.rmdir(path)
     except OSError as exc:

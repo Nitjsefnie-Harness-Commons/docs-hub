@@ -67,7 +67,7 @@ def test_delete_unlinks_internal_version_symlink_without_removing_child(tmp_path
     assert storage.read_blob(child_path) == b"child version"
 
 
-def test_get_version_refuses_stored_path_outside_store(tmp_path):
+def test_get_version_refuses_stored_path_outside_store(tmp_path, monkeypatch):
     outside = tmp_path / "outside.html"
     outside.write_bytes(b"outside private content")
     assert outside.read_bytes() == b"outside private content"
@@ -86,6 +86,10 @@ def test_get_version_refuses_stored_path_outside_store(tmp_path):
         assert c.execute("SELECT file_path FROM doc_versions WHERE doc_id=%s",
                          (doc_id,)).fetchall() == [(str(outside),)]
 
+    def fail_read(_path):
+        pytest.fail("outside path reached the blob reader")
+
+    monkeypatch.setattr(storage, "read_blob", fail_read)
     with pytest.raises(ValueError):
         docs_repo.get_version("unsafe/read", 1)
 
@@ -137,9 +141,33 @@ def test_removal_error_log_quotes_paths_and_escapes_newlines(
     assert records[0].levelno == logging.ERROR
     message = records[0].getMessage()
     path = root / slug / "v2.html" if operation == "cleanup" else root / slug
-    assert repr(str(path)) in message
-    assert repr(str(error)) in message
+    assert repr(str(path).replace("\n", "")) in message
+    assert repr(str(error).replace("\r\n", "").replace("\n", "")) in message
+    assert "\n" not in records[0].args[-2]
+    assert "\r" not in records[0].args[-1]
+    assert "\n" not in records[0].args[-1]
     if operation != "cleanup":
         assert repr(slug) in message
     assert "\n" not in message
     assert "\r" not in message
+
+
+def test_failed_publish_cleanup_refuses_retargeted_path(tmp_path, monkeypatch):
+    root = tmp_path / "store"
+    root.mkdir()
+    outside = tmp_path / "store-outside"
+    outside.mkdir()
+    sentinel = outside / "v1.html"
+    sentinel.write_bytes(b"outside version")
+    assert sentinel.read_bytes() == b"outside version"
+    monkeypatch.setenv("STORE_ROOT", str(root))
+
+    def fail_write(*_args, **_kwargs):
+        (root / "link").symlink_to(outside, target_is_directory=True)
+        raise RuntimeError("write failed after path changed")
+
+    monkeypatch.setattr(storage, "store_blob", fail_write)
+    with pytest.raises(ValueError):
+        docs_repo.publish("link", "Unsafe", [], None, "analyst", b"new")
+
+    assert sentinel.read_bytes() == b"outside version"
