@@ -10,6 +10,7 @@ import hashlib
 import os
 import re
 import stat
+from pathlib import Path
 
 # slug: lowercase alnum segments joined by '/'; segment chars [a-z0-9_-];
 # each segment starts and ends alphanumeric; no '..', no leading/trailing '/'.
@@ -31,15 +32,24 @@ def _store_root() -> str:
     return os.environ["STORE_ROOT"]
 
 
+def checked_path(path: str) -> str:
+    """Resolve symlinks before checking that file access stays in the store."""
+    resolved = Path(path).resolve()
+    if not resolved.is_relative_to(Path(_store_root()).resolve()):
+        raise ValueError(f"path escapes store: {path!r}")
+    return str(resolved)
+
+
 def blob_path(slug: str, version: int, ext: str = "html") -> str:
     """Absolute path for a version's file.
 
-    Raises ValueError on a bad slug or an extension outside `_EXTS`."""
+    Raises ValueError on a bad slug, an extension outside `_EXTS`, or a path
+    resolving outside the store."""
     if not is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
     if ext not in _EXTS:
         raise ValueError(f"invalid ext: {ext!r}")
-    return os.path.join(_store_root(), slug, f"v{version}.{ext}")
+    return checked_path(os.path.join(_store_root(), slug, f"v{version}.{ext}"))
 
 
 def store_blob(slug: str, version: int, html: bytes,
@@ -65,19 +75,21 @@ def delete_doc(slug: str) -> None:
     remain. The row's data is its version files: a surviving version file is
     a deletion failure, while an empty directory that cannot be removed is
     inert. Stat and unlink errors, and rmdir errors other than ENOTEMPTY,
-    propagate.
+    propagate. Paths resolving outside the store raise ValueError.
     """
     if not is_valid_slug(slug):
         raise ValueError(f"invalid slug: {slug!r}")
-    path = os.path.join(_store_root(), slug)
+    path = checked_path(os.path.join(_store_root(), slug))
     try:
         names = os.listdir(path)
     except FileNotFoundError:
         return
     for name in names:
         file_path = os.path.join(path, name)
-        if _VERSION_FILE_RE.fullmatch(name) and stat.S_ISREG(os.stat(file_path).st_mode):
-            os.unlink(file_path)
+        if _VERSION_FILE_RE.fullmatch(name):
+            checked_path(file_path)
+            if stat.S_ISREG(os.stat(file_path).st_mode):
+                os.unlink(file_path)
     try:
         os.rmdir(path)
     except OSError as exc:

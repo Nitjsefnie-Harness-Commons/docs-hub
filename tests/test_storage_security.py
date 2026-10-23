@@ -1,0 +1,145 @@
+"""Contain stored-file access and escape file-removal diagnostics."""
+import errno
+import logging
+import os
+
+import pytest
+
+from backend import db, docs_repo, storage
+
+
+@pytest.mark.parametrize("operation", ["blob_path", "store_blob", "delete_doc"])
+@pytest.mark.parametrize("symlink", ["directory", "version"])
+def test_storage_refuses_symlink_escape(tmp_path, monkeypatch, operation, symlink):
+    root = tmp_path / "store"
+    outside = tmp_path / "store-outside" / "x"
+    root.mkdir()
+    outside.mkdir(parents=True)
+    sentinel = outside / "v1.html"
+    sentinel.write_bytes(b"outside version")
+    monkeypatch.setenv("STORE_ROOT", str(root))
+    if symlink == "directory":
+        (root / "link").symlink_to(outside.parent, target_is_directory=True)
+    else:
+        (root / "link" / "x").mkdir(parents=True)
+        (root / "link" / "x" / "v1.html").symlink_to(sentinel)
+    assert sentinel.read_bytes() == b"outside version"
+    assert outside.is_dir()
+
+    with pytest.raises(ValueError):
+        if operation == "blob_path":
+            storage.blob_path("link/x", 1)
+        elif operation == "store_blob":
+            storage.store_blob("link/x", 1, b"replacement")
+        else:
+            storage.delete_doc("link/x")
+
+    assert sentinel.read_bytes() == b"outside version"
+    assert outside.is_dir()
+
+
+def test_delete_refuses_symlink_to_empty_outside_directory(tmp_path, monkeypatch):
+    root = tmp_path / "store"
+    outside = tmp_path / "store-outside" / "x"
+    root.mkdir()
+    outside.mkdir(parents=True)
+    (root / "link").symlink_to(outside.parent, target_is_directory=True)
+    monkeypatch.setenv("STORE_ROOT", str(root))
+    assert outside.is_dir()
+
+    with pytest.raises(ValueError):
+        storage.delete_doc("link/x")
+
+    assert outside.is_dir()
+
+
+def test_delete_unlinks_internal_version_symlink_without_removing_child(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORE_ROOT", str(tmp_path))
+    child_path, _, _ = storage.store_blob("parent/child", 1, b"child version")
+    link = tmp_path / "parent" / "v1.html"
+    link.symlink_to(child_path)
+    assert link.read_bytes() == b"child version"
+    assert storage.read_blob(child_path) == b"child version"
+
+    storage.delete_doc("parent")
+
+    assert not link.is_symlink()
+    assert storage.read_blob(child_path) == b"child version"
+
+
+def test_get_version_refuses_stored_path_outside_store(tmp_path):
+    outside = tmp_path / "outside.html"
+    outside.write_bytes(b"outside private content")
+    assert outside.read_bytes() == b"outside private content"
+    with db.docs_conn() as c:
+        doc_id = c.execute(
+            "INSERT INTO docs (slug, title, latest_version) "
+            "VALUES (%s,%s,%s) RETURNING id", ("unsafe/read", "Unsafe", 1),
+        ).fetchone()[0]
+        c.execute(
+            "INSERT INTO doc_versions "
+            "(doc_id, version, posted_by, file_path, byte_size, sha256) "
+            "VALUES (%s,%s,%s,%s,%s,%s)",
+            (doc_id, 1, "analyst", str(outside), outside.stat().st_size, "0" * 64),
+        )
+        c.commit()
+        assert c.execute("SELECT file_path FROM doc_versions WHERE doc_id=%s",
+                         (doc_id,)).fetchall() == [(str(outside),)]
+
+    with pytest.raises(ValueError):
+        docs_repo.get_version("unsafe/read", 1)
+
+    assert outside.read_bytes() == b"outside private content"
+
+
+@pytest.mark.parametrize("operation", ["delete", "purge", "expired-publish", "cleanup"])
+def test_removal_error_log_quotes_paths_and_escapes_newlines(
+        tmp_path, monkeypatch, caplog, operation):
+    root = tmp_path / "store\nforged path"
+    monkeypatch.setenv("STORE_ROOT", str(root))
+    slug = "safe/log"
+    error = OSError(errno.EACCES, "Permission denied\r\nforged error", "/store/x\ny")
+    docs_repo.publish(slug, "Log", [], None, "analyst", b"old")
+    assert docs_repo.get_latest(slug)["html"] == b"old"
+    if operation in ("purge", "expired-publish"):
+        with db.docs_conn() as c:
+            c.execute("UPDATE docs SET expires_at=now() - interval '1 second' "
+                      "WHERE slug=%s", (slug,))
+            c.commit()
+
+    def fail_remove(_slug):
+        raise error
+
+    monkeypatch.setattr(storage, "delete_doc", fail_remove)
+    with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+        if operation == "delete":
+            assert docs_repo.delete_docs([slug]) == (0, [slug])
+        elif operation == "purge":
+            assert docs_repo.purge_expired() == 0
+        elif operation == "expired-publish":
+            with pytest.raises(OSError) as exc:
+                docs_repo.publish(slug, "New", [], None, "analyst", b"new")
+            assert exc.value is error
+        else:
+            original = RuntimeError("write failed")
+
+            def fail_write(*_args, **_kwargs):
+                raise original
+
+            monkeypatch.setattr(storage, "store_blob", fail_write)
+            monkeypatch.setattr(os, "unlink", fail_remove)
+            with pytest.raises(RuntimeError) as exc:
+                docs_repo.publish(slug, "New", [], None, "analyst", b"new")
+            assert exc.value is original
+
+    records = [r for r in caplog.records if r.name == "backend.docs_repo"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    message = records[0].getMessage()
+    path = root / slug / "v2.html" if operation == "cleanup" else root / slug
+    assert repr(str(path)) in message
+    assert repr(str(error)) in message
+    if operation != "cleanup":
+        assert repr(slug) in message
+    assert "\n" not in message
+    assert "\r" not in message

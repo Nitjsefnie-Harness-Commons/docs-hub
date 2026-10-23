@@ -66,8 +66,8 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             try:
                 storage.delete_doc(slug)
             except OSError as e:
-                _log.error("failed to remove stored files for %s at %s: %s",
-                           slug, os.path.dirname(storage.blob_path(slug, 1)), e)
+                _log.error("failed to remove stored files for %r at %r: %r",
+                           slug, os.path.dirname(storage.blob_path(slug, 1)), str(e))
                 raise
         row = c.execute("SELECT id, latest_version FROM docs WHERE slug=%s",
                         (slug,)).fetchone()
@@ -110,7 +110,7 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             except FileNotFoundError:
                 pass
             except OSError as e:
-                _log.error("failed to remove uncommitted version file %s: %s", path, e)
+                _log.error("failed to remove uncommitted version file %r: %r", path, str(e))
             raise
         c.commit()
     return {"slug": slug, "version": version, "doc_id": doc_id,
@@ -140,11 +140,11 @@ def get_version(slug: str, version: int) -> dict | None:
 
     That key holds the stored blob whatever "format" says — it predates
     Markdown support and renaming it would ripple through views, api and
-    the CLI for nothing."""
+    the CLI for nothing. Paths resolving outside the store raise ValueError."""
     meta = _version_row(slug, version)
     if meta is None:
         return None
-    meta["html"] = storage.read_blob(meta["file_path"])
+    meta["html"] = storage.read_blob(storage.checked_path(meta["file_path"]))
     return meta
 
 
@@ -282,8 +282,8 @@ def delete_docs(slugs: list[str]) -> tuple[int, list[str]]:
             if row is not None:
                 deleted += 1
         except OSError as e:
-            _log.error("failed to remove stored files for %s at %s: %s",
-                       slug, os.path.dirname(storage.blob_path(slug, 1)), e)
+            _log.error("failed to remove stored files for %r at %r: %r",
+                       slug, os.path.dirname(storage.blob_path(slug, 1)), str(e))
             failed.append(slug)
     return deleted, failed
 
@@ -320,8 +320,8 @@ def purge_expired() -> int:
             if row is not None:
                 purged += 1
         except OSError as e:
-            _log.error("failed to remove stored files for %s at %s: %s",
-                       slug, os.path.dirname(storage.blob_path(slug, 1)), e)
+            _log.error("failed to remove stored files for %r at %r: %r",
+                       slug, os.path.dirname(storage.blob_path(slug, 1)), str(e))
     return purged
 
 
