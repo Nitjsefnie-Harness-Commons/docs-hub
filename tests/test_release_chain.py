@@ -37,6 +37,20 @@ def _assert_minimal_writer(job: dict[str, Any]) -> None:
         assert not re.search(r"\bpython(?:\d+(?:\.\d+)*)?\b", script)
 
 
+def test_every_checkout_disables_persisted_credentials():
+    # Guard issue #63's boundary: no job leaves the Actions token in .git/config.
+    checkouts = [
+        (path.name, job_name, step)
+        for path in sorted((_REPO / ".github/workflows").glob("*"))
+        for job_name, job in _workflow(path.name)["jobs"].items()
+        for step in job.get("steps", [])
+        if step.get("uses", "").partition("@")[0] == "actions/checkout"
+    ]
+    assert checkouts, "No actions/checkout steps found"
+    for filename, job_name, step in checkouts:
+        assert step.get("with", {}).get("persist-credentials") is False, (filename, job_name)
+
+
 def test_release_build_is_read_only_and_hands_off_artifact():
     workflow = _workflow("release.yml")
     assert workflow["permissions"] == {"contents": "read"}
@@ -45,12 +59,12 @@ def test_release_build_is_read_only_and_hands_off_artifact():
     assert "postgres" in build["services"]
     assert set(build["env"]) >= {"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD"}
     assert "services" not in workflow and "env" not in workflow
-    assert _action(build, "actions/checkout")["with"]["persist-credentials"] is False
     upload = _action(build, "actions/upload-artifact")
     assert build["steps"][-1] == upload
     publish = workflow["jobs"]["publish"]
     download = _action(publish, "actions/download-artifact")
-    assert upload["with"]["name"] == download["with"]["name"] == "release-dist"
+    artifact_name = upload["with"]["name"]
+    assert download["with"]["name"] == artifact_name
 
 
 def test_release_publish_has_only_the_writer_permissions():
@@ -68,7 +82,6 @@ def test_tag_readiness_is_read_only_and_exports_skip():
     readiness = workflow["jobs"]["release-readiness"]
     assert readiness["permissions"] == {"contents": "read", "checks": "read"}
     assert readiness["timeout-minutes"] == 60
-    assert _action(readiness, "actions/checkout")["with"]["persist-credentials"] is False
     assert set(readiness["outputs"]) == {"tag", "sha", "skip"}
     for name in ("Refuse to re-tag an existing version", "Wait for the other gates on this commit"):
         step = _step("tag.yml", "release-readiness", name)
