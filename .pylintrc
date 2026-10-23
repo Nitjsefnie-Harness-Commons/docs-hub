@@ -18,7 +18,7 @@ disable=
 # a first caller installs one. See backend/db.py.
     global-statement,
 # Deferred imports are load-bearing here, not laziness: tests/conftest.py must
-# set DATABASE_URL_* and STORE_ROOT in the environment BEFORE backend.db is
+# set DOCS_HUB_DATABASE_URL_* and DOCS_HUB_STORE_ROOT in the environment BEFORE backend.db is
 # imported, because import time is when the pool configuration is read.
     import-outside-toplevel,
 # Route handlers and the repository layer take one parameter per column;
