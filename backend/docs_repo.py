@@ -35,19 +35,22 @@ def _slug_lock(c, slug: str) -> None:
 
 
 def _cleanup_failed_version(slug: str, version: int, ext: str, cause: BaseException) -> None:
-    """Remove a regular uncommitted version; leave non-regular entries intact."""
-    path = os.path.join(os.environ["STORE_ROOT"], slug, f"v{version}.{ext}")
+    """Remove regular versions; skip nonregular entries and propagate lstat errors."""
+    root = os.path.realpath(os.environ["STORE_ROOT"])
+    path = os.path.normpath(os.path.join(root, slug, f"v{version}.{ext}"))
+    if not path.startswith(root + os.sep):
+        raise ValueError(f"path escapes store: {path!r}") from cause
     try:
-        root = os.path.realpath(os.environ["STORE_ROOT"])
-        path = os.path.normpath(os.path.join(root, slug, f"v{version}.{ext}"))
+        st = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(st.st_mode):
+        return
+    try:
+        path = os.path.realpath(path)
         if not path.startswith(root + os.sep):
             raise ValueError(f"path escapes store: {path!r}") from cause
-        st = os.lstat(path)
-        if stat.S_ISREG(st.st_mode):
-            path = os.path.realpath(path)
-            if not path.startswith(root + os.sep):
-                raise ValueError(f"path escapes store: {path!r}") from cause
-            os.unlink(path)
+        os.unlink(path)
     except FileNotFoundError:
         pass
     except OSError as e:
@@ -111,7 +114,6 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             doc_id, latest = row
             version = latest + 1
         ext = "md" if fmt == "markdown" else "html"
-        path = storage.blob_path(slug, version, ext)
         # The file leads the row; unlink before commit, whose failure may leave a durable row.
         try:
             path, size, digest = storage.store_blob(slug, version, html, ext=ext)

@@ -207,3 +207,28 @@ def test_failed_publish_cleanup_skips_non_regular_entry(tmp_path, monkeypatch, c
     assert target.read_bytes() == b"keep target"
     assert entry.is_symlink() if leftover == "symlink" else entry.is_dir()
     assert [r for r in caplog.records if r.name == "backend.docs_repo"] == []
+
+
+def test_failed_publish_cleanup_propagates_lstat_error(tmp_path, monkeypatch):
+    monkeypatch.setenv("STORE_ROOT", str(tmp_path))
+    entry = tmp_path / "cleanup-stat" / "v1.html"
+    entry.parent.mkdir()
+    entry.write_bytes(b"partial")
+    assert entry.read_bytes() == b"partial"
+    error = OSError(errno.EACCES, "lstat denied", str(entry))
+    real_lstat = os.lstat
+
+    def fail_lstat(path, *args, **kwargs):
+        if path == str(entry):
+            raise error
+        return real_lstat(path, *args, **kwargs)
+
+    def fail_write(*_args, **_kwargs):
+        raise RuntimeError("injected write failure")
+
+    monkeypatch.setattr(os, "lstat", fail_lstat)
+    monkeypatch.setattr(storage, "store_blob", fail_write)
+    with pytest.raises(OSError) as exc:
+        docs_repo.publish("cleanup-stat", "Cleanup", [], None, "analyst", b"new")
+    assert exc.value is error
+    assert entry.read_bytes() == b"partial"
