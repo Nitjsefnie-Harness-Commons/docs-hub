@@ -54,3 +54,18 @@ updates:
       prefix: "ci"
     labels:
       - dependencies
+    groups:
+      # Group every action bump into one pull request. github/codeql-action's
+      # init and analyze steps are separate dependencies that must stay on one
+      # version: seven separate bump pairs were opened before this group, and
+      # the split bumps (#39 init-only, #40 analyze-only) each left the
+      # analyze checks failing.
+      version-updates:
+        patterns:
+          - "*"
+      # A group without applies-to covers version updates only (GitHub
+      # Dependabot docs), so security updates need their own group.
+      security-updates:
+        applies-to: security-updates
+        patterns:
+          - "*"
