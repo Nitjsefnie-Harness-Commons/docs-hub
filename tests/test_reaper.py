@@ -3,6 +3,7 @@ lifespan (TestClient as a context manager runs startup/shutdown) with a
 tiny interval, and through `loop` directly for the error path."""
 import asyncio
 import os
+import threading
 import time
 
 import pytest
@@ -42,6 +43,72 @@ def test_lifespan_reaper_purges_expired_docs(monkeypatch):
         assert _row_count("reap/me") == 0
         assert not os.path.exists(
             os.path.join(os.environ["STORE_ROOT"], "reap/me"))
+
+
+@pytest.mark.parametrize("purge_fails", [False, True])
+def test_lifespan_waits_for_purge_before_closing_pools(
+        monkeypatch: pytest.MonkeyPatch, purge_fails: bool) -> None:
+    """Cancelling the await cannot stop its worker thread: shutdown must
+    drain it before closing pools, even if the purge fails while draining.
+    The delayed release bounds the wait; the order detects early closure.
+    """
+    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "0.05")
+    started = threading.Event()
+    release = threading.Event()
+    entered = threading.Event()
+    shutdown_go = threading.Event()
+    order: list[str] = []
+    errors: list[Exception] = []
+    real_close_pools = db.close_pools
+
+    def purge() -> int:
+        started.set()
+        assert release.wait(10), "purge was never released"
+        order.append("purge-finished")
+        if purge_fails:
+            raise RuntimeError("purge failed during shutdown")
+        return 0
+
+    def close_pools() -> None:
+        order.append("close_pools")
+        real_close_pools()
+
+    def lifecycle() -> None:
+        try:
+            with TestClient(app):
+                entered.set()
+                assert shutdown_go.wait(10), "shutdown was never requested"
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            errors.append(exc)
+
+    def release_purge() -> None:
+        time.sleep(0.5)
+        release.set()
+
+    monkeypatch.setattr(docs_repo, "purge_expired", purge)
+    monkeypatch.setattr(db, "close_pools", close_pools)
+    thread = threading.Thread(target=lifecycle)
+    thread.start()
+    try:
+        assert entered.wait(10), "lifespan never entered"
+        assert started.wait(10), "purge never started"
+        releaser = threading.Thread(target=release_purge)
+        releaser.start()
+        shutdown_go.set()
+        thread.join(10)
+        assert not thread.is_alive(), "shutdown did not finish"
+        releaser.join(10)
+    finally:
+        release.set()
+        shutdown_go.set()
+        thread.join(10)
+    assert not errors
+    assert order == ["purge-finished", "close_pools"]
+    assert order.count("close_pools") == 1
+    # pylint: disable-next=protected-access
+    assert db._DOCS is None
+    # pylint: disable-next=protected-access
+    assert db._AUTH is None
 
 
 def test_loop_survives_a_failing_purge(monkeypatch):
