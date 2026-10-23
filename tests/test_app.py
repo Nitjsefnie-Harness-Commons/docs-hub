@@ -157,7 +157,7 @@ def test_static_assets_served_when_authed():
 def test_served_spa_iframe_has_no_same_origin_authority():
     r = _client().get("/app.js", headers=KEY)
     assert r.status_code == 200
-    assert 'sandbox="allow-scripts"' in r.text
+    assert 'sandbox="allow-scripts" allow="clipboard-write"' in r.text
     assert "allow-same-origin" not in r.text
 
 
@@ -343,7 +343,7 @@ def test_browser_routes_render_markdown_and_escape_html():
     for path in ("/d/md/render", "/d/md/render/v1"):
         r = c.get(path, headers=KEY)
         assert r.status_code == 200
-        assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
+        assert r.headers.get("content-security-policy") == "sandbox allow-scripts allow-modals"
         assert r.headers["content-type"].startswith("text/html")
         assert "<h1>hello</h1>" in r.text
         assert "<script>" not in r.text
