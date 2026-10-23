@@ -10,13 +10,17 @@ console script: the console script only exists once the wheel is installed, and
 CI runs the suite from the checkout. `-m` on the submodule keeps the package
 context, so `from ._settings import setting` resolves.
 """
+# Pytest requests fixtures by parameter name; cli_server is used for its lifecycle.
+# pylint: disable=redefined-outer-name,unused-argument
 import os
 import subprocess
 import sys
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
+import pytest
 import uvicorn
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -27,25 +31,27 @@ CLI = [sys.executable, "-m", "docs_hub_cli.cli"]
 _PORT = 8099
 _URL = f"http://127.0.0.1:{_PORT}"
 
-_SERVER = None
 
-
-def _spawn_server():
-    """Start the test server once per session. The thread is a daemon and is
-    never joined, so re-binding port 8099 for a second test always failed."""
-    global _SERVER
-    if _SERVER is not None:
-        return _SERVER
+@pytest.fixture(scope="module")
+def cli_server() -> Iterator[str]:
+    # Module cleanup precedes _test_env's pool close/dropdb; the alive-check is the control.
     from backend.app import app
     cfg = uvicorn.Config(app, host="127.0.0.1", port=_PORT, log_level="error")
     server = uvicorn.Server(cfg)
-    threading.Thread(target=server.run, daemon=True).start()
-    for _ in range(50):
-        time.sleep(0.1)
-        if server.started:
-            _SERVER = server
-            return server
-    raise RuntimeError("server did not start")
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    try:
+        for _ in range(50):
+            time.sleep(0.1)
+            if server.started:
+                break
+        else:
+            raise RuntimeError("server did not start")
+        yield _URL
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        assert not thread.is_alive(), "CLI Uvicorn server thread on port 8099 survived teardown"
 
 
 def _env():
@@ -69,8 +75,7 @@ def _run(*args, check=False):
                           env=_env(), cwd=str(_REPO), check=check)
 
 
-def test_cli_publish_get_list(tmp_path):
-    _spawn_server()
+def test_cli_publish_get_list(tmp_path, cli_server):
     doc = tmp_path / "d.html"
     doc.write_text("<h1>cli</h1>", encoding="utf-8")
     pub = _run("publish", str(doc), "--slug", "cli/demo",
@@ -85,10 +90,9 @@ def test_cli_publish_get_list(tmp_path):
     assert "cli/demo" in lst.stdout
 
 
-def test_cli_publish_with_a_ttl_reports_and_lists_the_expiry(tmp_path):
+def test_cli_publish_with_a_ttl_reports_and_lists_the_expiry(tmp_path, cli_server):
     """`--ttl` through the real server: the timestamp is whatever the server
     computed, so only the shape of the suffix is asserted."""
-    _spawn_server()
     doc = tmp_path / "d.html"
     doc.write_text("<h1>ttl</h1>", encoding="utf-8")
     pub = _run("publish", str(doc), "--slug", "cli/ttl", "--title", "CLI Ttl",
@@ -101,14 +105,13 @@ def test_cli_publish_with_a_ttl_reports_and_lists_the_expiry(tmp_path):
     assert " expires " in row[0], row[0]
 
 
-def test_cli_publishes_and_reads_back_markdown(tmp_path):
+def test_cli_publishes_and_reads_back_markdown(tmp_path, cli_server):
     """A `.md` upload through the real server, with no --format.
 
     The filename alone makes it Markdown, `publish` says so, and
     `get --text-only` hands the source back byte-for-byte -- the HTML
     stripper must not run over a document that is already text.
     """
-    _spawn_server()
     source = "# Title\n\nA line with <b>angle brackets</b> & an entity.\n"
     doc = tmp_path / "d.md"
     doc.write_text(source, encoding="utf-8")
@@ -121,8 +124,7 @@ def test_cli_publishes_and_reads_back_markdown(tmp_path):
     assert got.stdout == source
 
 
-def test_cli_tags(tmp_path):
-    _spawn_server()
+def test_cli_tags(tmp_path, cli_server):
     doc = tmp_path / "d.html"
     doc.write_text("<h1>t</h1>", encoding="utf-8")
     for slug, tags in (("cli/a", "spec,draft"), ("cli/b", "spec")):
@@ -136,14 +138,13 @@ def test_cli_tags(tmp_path):
     assert any(ln.endswith("draft") and ln.startswith("1") for ln in lines)
 
 
-def test_cli_versions_and_text_only(tmp_path):
+def test_cli_versions_and_text_only(tmp_path, cli_server):
     """A second publish under one slug, then `versions` and `get --text-only`.
 
     These two subcommands have no other end-to-end cover, and --text-only is
     the only path where the CLI transforms the bytes the server returned
     instead of passing them through.
     """
-    _spawn_server()
     doc = tmp_path / "d.html"
     for body in ("<h1>one</h1>", "<h1>two</h1><script>ignore()</script>"):
         doc.write_text(body, encoding="utf-8")
@@ -160,7 +161,7 @@ def test_cli_versions_and_text_only(tmp_path):
     assert text.stdout.strip() == "# two"
 
 
-def test_cli_rejects_a_missing_api_key(tmp_path):
+def test_cli_rejects_a_missing_api_key(tmp_path, cli_server):
     """No key -> exit 2 before any request is made.
 
     DOCS_HUB_API_KEY is emptied AND the settings-file fallback is neutralised
@@ -168,7 +169,6 @@ def test_cli_rejects_a_missing_api_key(tmp_path):
     would still let ~/.agent-bundle/settings.json supply the real key on a
     fleet machine.
     """
-    _spawn_server()
     env = {**_env(), "DOCS_HUB_API_KEY": "", "HOME": str(tmp_path)}
     got = subprocess.run([*CLI, "list"], capture_output=True, text=True,
                          env=env, cwd=str(_REPO), check=False)
