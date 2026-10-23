@@ -3,6 +3,7 @@ import errno
 import logging
 import os
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 
 import psycopg
@@ -29,6 +30,132 @@ def test_republish_increments_version():
     # prior version still retrievable
     v1 = docs_repo.get_version("analyst/x", 1)
     assert v1["html"] == b"<h1>v1</h1>"
+
+
+def _assert_no_publish_rows(slug):
+    with db.docs_conn() as c:
+        assert c.execute("SELECT count(*) FROM docs WHERE slug=%s",
+                         (slug,)).fetchone()[0] == 0
+        assert c.execute("SELECT count(*) FROM doc_versions").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("fmt, ext", [("html", "html"), ("markdown", "md")])
+def test_publish_removes_partial_blob_on_write_failure(monkeypatch, fmt, ext):
+    slug = "failure/partial-write-" + ext
+    path = storage.blob_path(slug, 1, ext)
+    error = OSError(errno.ENOSPC, "No space left on device", path)
+    written = []
+
+    def fail_write(candidate, version, body, ext="html"):
+        partial_path = storage.blob_path(candidate, version, ext)
+        assert partial_path == path
+        os.makedirs(os.path.dirname(partial_path), exist_ok=True)
+        with open(partial_path, "wb") as f:
+            f.write(body[:3])
+        assert storage.read_blob(partial_path) == b"par"
+        written.append(partial_path)
+        raise error
+
+    monkeypatch.setattr(storage, "store_blob", fail_write)
+    with pytest.raises(OSError) as exc:
+        docs_repo.publish(slug, "Partial", [], None, "analyst", b"partial", fmt=fmt)
+    assert exc.value is error
+    assert written == [path]
+    assert not os.path.exists(path)
+    _assert_no_publish_rows(slug)
+
+
+@pytest.mark.parametrize("failure", ["insert", "update", "commit"])
+def test_publish_cleans_blob_only_before_commit(monkeypatch, failure):
+    slug = "failure/transaction-" + failure
+    path = storage.blob_path(slug, 1)
+    body = b"complete version"
+    error = RuntimeError("injected " + failure + " failure")
+    failed = []
+    connect = db.docs_conn
+
+    class Connection:
+        def __init__(self, real):
+            self.real = real
+
+        def execute(self, query, params=None):
+            if failure == "insert" and query.startswith("INSERT INTO doc_versions "):
+                assert query.startswith("INSERT INTO doc_versions (doc_id, version, ")
+                assert storage.read_blob(path) == body
+                failed.append("insert")
+                raise error
+            if failure == "update" and query.startswith("UPDATE docs SET "):
+                assert query.startswith("UPDATE docs SET latest_version=")
+                assert storage.read_blob(path) == body
+                failed.append("update")
+                raise error
+            return self.real.execute(query, params)
+
+        def commit(self):
+            if failure == "commit":
+                assert storage.read_blob(path) == body
+                failed.append("commit")
+                raise error
+            return self.real.commit()
+
+    @contextmanager
+    def failing_connection():
+        with connect() as c:
+            yield Connection(c)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(docs_repo.db, "docs_conn", failing_connection)
+        with pytest.raises(RuntimeError) as exc:
+            docs_repo.publish(slug, "Transaction", [], None, "analyst", body)
+    assert exc.value is error
+    assert failed == [failure]
+    if failure == "commit":
+        assert storage.read_blob(path) == body
+    else:
+        assert not os.path.exists(path)
+    _assert_no_publish_rows(slug)
+
+
+@pytest.mark.parametrize("write_file", [False, True])
+def test_publish_preserves_original_error_when_cleanup_fails(monkeypatch, caplog, write_file):
+    slug = "failure/cleanup-" + str(write_file).lower()
+    path = storage.blob_path(slug, 1)
+    error = KeyboardInterrupt("interrupted write")
+    unlink = os.unlink
+
+    def fail_write(candidate, version, body, ext="html"):
+        assert storage.blob_path(candidate, version, ext) == path
+        if write_file:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(body[:3])
+            assert storage.read_blob(path) == b"par"
+        raise error
+
+    def fail_unlink(candidate):
+        if candidate == path:
+            raise OSError(errno.EIO, "Input/output error", candidate)
+        return unlink(candidate)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "store_blob", fail_write)
+        if write_file:
+            patch.setattr(os, "unlink", fail_unlink)
+        with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+            with pytest.raises(KeyboardInterrupt) as exc:
+                docs_repo.publish(slug, "Cleanup", [], None, "analyst", b"partial")
+    assert exc.value is error
+    _assert_no_publish_rows(slug)
+    records = [r for r in caplog.records if r.name == "backend.docs_repo"]
+    if write_file:
+        assert storage.read_blob(path) == b"par"
+        assert len(records) == 1
+        assert records[0].levelno == logging.ERROR
+        assert path in records[0].getMessage()
+        assert "Input/output error" in records[0].getMessage()
+    else:
+        assert not os.path.exists(path)
+        assert records == []
 
 
 def test_get_missing_returns_none():
