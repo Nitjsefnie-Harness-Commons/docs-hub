@@ -6,11 +6,14 @@ name: codeql
 # tab rather than turning the build red, so a new query shipping upstream
 # cannot block an unrelated push.
 #
-# BOTH languages are analysed. The Python side is the auth boundary: a
-# password gate, an HMAC session cookie, an API key, and one deliberately
-# anonymous route. The JavaScript side is the SPA, which interpolates
-# API-returned strings into innerHTML — precisely the shape CodeQL's XSS
-# queries exist for.
+# Python, JavaScript and Actions are analysed. The Python side is the auth
+# boundary: a password gate, an HMAC session cookie, an API key, and one
+# deliberately anonymous route. The JavaScript side is the SPA, which
+# interpolates API-returned strings into innerHTML — precisely the shape
+# CodeQL's XSS queries exist for. Actions workflows define this repository's
+# CI gates, so they are part of the trust surface. Actions queries find
+# pull_request_target misuse, untrusted input interpolated through ${{ }}
+# into run: scripts, and over-privileged jobs.
 #
 # The weekly cron is not redundant with push: CodeQL's query packs are updated
 # continuously, and a new query only ever runs against code that has changed
@@ -54,6 +57,8 @@ jobs:
           - language: python
             build-mode: none
           - language: javascript-typescript
+            build-mode: none
+          - language: actions
             build-mode: none
 
     steps:
