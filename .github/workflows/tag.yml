@@ -114,48 +114,66 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ inputs.sha || github.sha }}
           REPO: ${{ github.repository }}
-        # Three details that are each a way this can be wrong:
-        #   - it excludes ITSELF, or it would wait on a job waiting on it;
-        #   - it requires at least one other check to exist, so it cannot
-        #     race ahead and tag before CI has even been scheduled;
-        #   - `cancelled` counts as failure. A cancelled run means a newer
-        #     push superseded this SHA, which is not a commit to release.
+        # Exclude only the exact tag job, including earlier attempts on this
+        # SHA. Every required gate must exist and succeed before tagging.
         run: |
-          deadline=$(( SECONDS + 45 * 60 ))
+          # Timing overrides are test hooks; production defaults to 45 minutes
+          # with 20 seconds between reads.
+          TAG_WAIT_DEADLINE_SECONDS="${TAG_WAIT_DEADLINE_SECONDS:-2700}"
+          TAG_WAIT_SLEEP_SECONDS="${TAG_WAIT_SLEEP_SECONDS:-20}"
+          # Explicit checks a push changing docs_hub_cli/__init__.py starts.
+          # Change this list when the aggregate CI check (#46) replaces it.
+          required='suites (3.13, 16)
+          suites (3.13, 17)
+          coverage
+          pylint
+          pycodestyle
+          pyright
+          eslint
+          pip-audit
+          npm-audit
+          analyze (python)
+          analyze (javascript-typescript)'
+          deadline=$(( SECONDS + TAG_WAIT_DEADLINE_SECONDS ))
           while [ "$SECONDS" -lt "$deadline" ]; do
             runs="$(gh api --paginate \
               -H "Cache-Control: no-cache" \
               "repos/$REPO/commits/$SHA/check-runs" \
-              --jq '.check_runs[] | select(.name | startswith("tag") | not)
+              --jq '.check_runs[] | select(.name != "tag")
                     | "\(.status)\t\(.conclusion)\t\(.name)"')"
 
-            if [ -z "$runs" ]; then
-              echo "no other check runs reported yet, waiting..."
-              sleep 20
-              continue
-            fi
-
-            pending="$(echo "$runs" | grep -cv '^completed' || true)"
-            if [ "$pending" -gt 0 ]; then
-              echo "$pending check(s) still running:"
-              echo "$runs" | grep -v '^completed' | awk '{print "    " $0}'
-              sleep 20
-              continue
-            fi
-
-            echo "All checks completed:"
+            verdict="$(echo "$runs" | awk -F'\t' -v required="$required" '
+              BEGIN {
+                n = split(required, names, "\n")
+                for (i = 1; i <= n; i++) needed[names[i]] = 1
+              }
+              NF {
+                seen[$3] = 1
+                if ($1 != "completed") pending = 1
+                if ($2 == "failure" || $2 == "cancelled" || $2 == "timed_out" ||
+                    ($1 == "completed" && $3 in needed && $2 != "success")) bad = 1
+              }
+              END {
+                for (name in needed) if (!(name in seen)) pending = 1
+                if (bad) print "refuse"
+                else if (pending) print "wait"
+                else print "pass"
+              }')"
+            echo "Reported checks:"
             echo "$runs" | awk '{print "    " $0}'
-            bad="$(echo "$runs" \
-              | awk -F'\t' '$2 != "success" && $2 != "skipped" && $2 != "neutral"')"
-            if [ -n "$bad" ]; then
-              echo "Refusing to tag: these checks did not pass:" >&2
-              echo "$bad" | awk '{print "    " $0}' >&2
+            if [ "$verdict" = refuse ]; then
+              echo "Refusing to tag: a check did not pass." >&2
               exit 1
+            fi
+            if [ "$verdict" = wait ]; then
+              echo "Required checks missing or checks still running, waiting..."
+              sleep "$TAG_WAIT_SLEEP_SECONDS"
+              continue
             fi
             echo "Every check passed — proceeding."
             exit 0
           done
-          echo "Timed out after 45 minutes waiting for checks on $SHA" >&2
+          echo "Timed out after $TAG_WAIT_DEADLINE_SECONDS seconds waiting for checks on $SHA" >&2
           exit 1
 
       - name: Create and push the tag
