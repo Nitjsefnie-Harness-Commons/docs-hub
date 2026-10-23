@@ -62,9 +62,9 @@ python3 -m venv .venv
 
 To run the server, apply `backend/schema.sql` to a database and set the
 environment listed under **Deployment** in the README —
-`DATABASE_URL_DOCS`, `DATABASE_URL_AUTH`, `DOCS_HUB_API_KEY`,
-`SESSION_SECRET`, `STORE_ROOT`, and `COOKIE_SECURE=0` for local non-HTTPS
-development — then:
+`DOCS_HUB_DATABASE_URL_DOCS`, `DOCS_HUB_DATABASE_URL_AUTH`, `DOCS_HUB_API_KEY`,
+`DOCS_HUB_SESSION_SECRET`, `DOCS_HUB_STORE_ROOT`, and
+`DOCS_HUB_COOKIE_SECURE=0` for local non-HTTPS development — then:
 
 ```bash
 .venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8084

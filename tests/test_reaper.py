@@ -33,7 +33,7 @@ def _row_count(slug):
 
 
 def test_lifespan_reaper_purges_expired_docs(monkeypatch):
-    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "0.05")
+    monkeypatch.setenv("DOCS_HUB_PURGE_INTERVAL_SECONDS", "0.05")
     with TestClient(app) as c:
         c.post("/api/publish",
                data={"slug": "reap/me", "title": "R", "from": "analyst",
@@ -46,7 +46,7 @@ def test_lifespan_reaper_purges_expired_docs(monkeypatch):
             time.sleep(0.05)
         assert _row_count("reap/me") == 0
         assert not os.path.exists(
-            os.path.join(os.environ["STORE_ROOT"], "reap/me"))
+            os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "reap/me"))
 
 
 @pytest.mark.parametrize("purge_fails", [False, True])
@@ -59,7 +59,7 @@ def test_lifespan_waits_for_purge_before_closing_pools(
     drain it before closing pools, even if the purge fails while draining.
     Release follows observed cancellation, even when shutdown starts late.
     """
-    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "0.05")
+    monkeypatch.setenv("DOCS_HUB_PURGE_INTERVAL_SECONDS", "0.05")
     started = threading.Event()
     release = threading.Event()
     entered = threading.Event()
@@ -419,7 +419,7 @@ def test_loop_survives_a_failing_purge(monkeypatch):
 
 
 def test_start_reads_the_interval_from_the_environment(monkeypatch):
-    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "123.5")
+    monkeypatch.setenv("DOCS_HUB_PURGE_INTERVAL_SECONDS", "123.5")
     seen = {}
 
     async def fake_loop(interval):
@@ -440,12 +440,12 @@ def test_start_rejects_a_non_positive_or_unparseable_interval(monkeypatch, raw):
     """Zero or a negative interval turns asyncio.sleep into a bare yield, so
     the reaper would spin on the DB forever; an unparseable one used to blow
     up deep inside the lifespan. Both fail loudly at start()."""
-    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", raw)
+    monkeypatch.setenv("DOCS_HUB_PURGE_INTERVAL_SECONDS", raw)
 
     async def run():
         reaper.start()
 
-    with pytest.raises(ValueError, match="PURGE_INTERVAL_SECONDS"):
+    with pytest.raises(ValueError, match="DOCS_HUB_PURGE_INTERVAL_SECONDS"):
         asyncio.run(run())
 
 
@@ -453,8 +453,8 @@ def test_lifespan_closes_the_pools_when_the_interval_is_bad(monkeypatch):
     """reaper.start() runs inside the lifespan's try, so a rejected interval
     still unwinds through db.close_pools() instead of leaving the pools (and
     their non-daemon worker threads) open."""
-    monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "0")
-    with pytest.raises(ValueError, match="PURGE_INTERVAL_SECONDS"):
+    monkeypatch.setenv("DOCS_HUB_PURGE_INTERVAL_SECONDS", "0")
+    with pytest.raises(ValueError, match="DOCS_HUB_PURGE_INTERVAL_SECONDS"):
         with TestClient(app):
             pass
     # The pool global is the only observable proof the finally ran.

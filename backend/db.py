@@ -16,6 +16,8 @@ from contextlib import contextmanager
 
 from psycopg_pool import ConnectionPool
 
+from backend.settings import required
+
 _DOCS: ConnectionPool | None = None
 _AUTH: ConnectionPool | None = None
 
@@ -38,7 +40,7 @@ def docs_pool() -> ConnectionPool:
     global _DOCS
     if _DOCS is None:
         _DOCS = ConnectionPool(
-            os.environ["DATABASE_URL_DOCS"],
+            required("DATABASE_URL_DOCS"),
             min_size=1, max_size=8, timeout=10, open=True,
             check=ConnectionPool.check_connection,
             kwargs={"autocommit": False},
@@ -50,7 +52,7 @@ def auth_pool() -> ConnectionPool:
     global _AUTH
     if _AUTH is None:
         _AUTH = ConnectionPool(
-            os.environ["DATABASE_URL_AUTH"],
+            required("DATABASE_URL_AUTH"),
             min_size=1, max_size=4, timeout=10, open=True,
             check=ConnectionPool.check_connection,
             kwargs={"autocommit": True},

@@ -2,14 +2,13 @@
 table; mints an HMAC session cookie on success. Rate-limited per IP."""
 from __future__ import annotations
 
-import os
 import time
 from threading import Lock
 
 from fastapi import APIRouter, Form, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from backend import auth, db, session
+from backend import auth, db, session, settings
 from backend.workers import run_db
 
 router = APIRouter()
@@ -98,7 +97,7 @@ async def login_post(request: Request, user_id: str = Form(""),
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(
         session.SESSION_COOKIE_NAME, token, httponly=True,
-        secure=os.environ.get("COOKIE_SECURE", "1") == "1",
+        secure=settings.setting("COOKIE_SECURE", "1") == "1",
         samesite="strict", max_age=session.SESSION_COOKIE_MAX_AGE, path="/",
     )
     return resp

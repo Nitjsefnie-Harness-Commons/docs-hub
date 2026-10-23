@@ -251,7 +251,7 @@ def test_find_docs_shape():
 def test_delete_docs_removes_rows_versions_blobs():
     docs_repo.publish("a/del", "Del", [], None, "analyst", b"<h1>1</h1>")
     docs_repo.publish("a/del", "Del", [], None, "analyst", b"<h1>2</h1>")
-    blob_dir = os.path.join(os.environ["STORE_ROOT"], "a", "del")
+    blob_dir = os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "a", "del")
     assert os.path.isdir(blob_dir)
     assert docs_repo.get_latest("a/del") is not None
     assert len(docs_repo.list_versions("a/del")) == 2
@@ -456,10 +456,10 @@ def test_parent_removal_preserves_child_versions(parent_first, removal):
         docs_repo.publish(slug, "Family", [], None, "analyst", b"# v2\n",
                           fmt="markdown")
     child_versions = [docs_repo.get_version("family/child", n) for n in (1, 2)]
-    child_files = [os.path.join(os.environ["STORE_ROOT"], "family", "child", name)
+    child_files = [os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "family", "child", name)
                    for name in ("v1.html", "v2.md")]
     child_stats = [os.stat(path) for path in child_files]
-    old_parent_file = os.path.join(os.environ["STORE_ROOT"], "family", "v2.md")
+    old_parent_file = os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "family", "v2.md")
     assert os.path.isfile(old_parent_file)
     assert docs_repo.get_latest("family") is not None
 
@@ -548,7 +548,7 @@ def test_republish_of_expired_slug_starts_fresh_at_v1():
     docs_repo.publish("e/again", "A", [], None, "analyst", b"<h1>old</h1>",
                       ttl_seconds=60)
     _backdate("e/again")
-    old_blob = os.path.join(os.environ["STORE_ROOT"], "e/again", "v1.html")
+    old_blob = os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "e/again", "v1.html")
     assert os.path.exists(old_blob)
     res = docs_repo.publish("e/again", "A", [], None, "analyst", b"<h1>new</h1>")
     assert res["version"] == 1
@@ -567,7 +567,7 @@ def test_purge_expired_removes_rows_and_blobs():
     docs_repo.publish("e/perm", "K", [], None, "analyst", b"<h1>k</h1>")
     _backdate("e/p1")
     assert docs_repo.purge_expired() == 1
-    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/p1"))
+    assert not os.path.exists(os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "e/p1"))
     with db.docs_conn() as c:
         assert c.execute("SELECT count(*) FROM docs WHERE slug='e/p1'"
                          ).fetchone()[0] == 0
@@ -590,14 +590,14 @@ def test_purge_expired_waits_for_the_per_slug_lock():
         purged.append(docs_repo.purge_expired())
         done.set()
 
-    with psycopg.connect(os.environ["DATABASE_URL_DOCS"]) as holder:
+    with psycopg.connect(os.environ["DOCS_HUB_DATABASE_URL_DOCS"]) as holder:
         holder.execute("SELECT pg_advisory_xact_lock(hashtext('e/lock'))")
         threading.Thread(target=run, daemon=True).start()
         assert not done.wait(0.3), "purge_expired ignored the per-slug lock"
     # Leaving the block ends holder's transaction, dropping the lock.
     assert done.wait(10), "purge_expired never finished once the lock was freed"
     assert purged == [1]
-    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/lock"))
+    assert not os.path.exists(os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "e/lock"))
 
 
 def test_delete_docs_waits_for_the_per_slug_lock():
@@ -606,21 +606,21 @@ def test_delete_docs_waits_for_the_per_slug_lock():
     written by a publish of that slug mid-flight."""
     docs_repo.publish("e/dlock", "D", [], None, "analyst", b"<h1>1</h1>")
     assert docs_repo.get_latest("e/dlock") is not None
-    assert os.path.isdir(os.path.join(os.environ["STORE_ROOT"], "e/dlock"))
+    assert os.path.isdir(os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "e/dlock"))
     done, deleted = threading.Event(), []
 
     def run():
         deleted.append(docs_repo.delete_docs(["e/dlock"]))
         done.set()
 
-    with psycopg.connect(os.environ["DATABASE_URL_DOCS"]) as holder:
+    with psycopg.connect(os.environ["DOCS_HUB_DATABASE_URL_DOCS"]) as holder:
         holder.execute("SELECT pg_advisory_xact_lock(hashtext('e/dlock'))")
         threading.Thread(target=run, daemon=True).start()
         assert not done.wait(0.3), "delete_docs ignored the per-slug lock"
     # Leaving the block ends holder's transaction, dropping the lock.
     assert done.wait(10), "delete_docs never finished once the lock was freed"
     assert deleted == [(1, [])]
-    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/dlock"))
+    assert not os.path.exists(os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "e/dlock"))
 
 
 def test_publish_markdown_stores_md_blob_and_format():
@@ -656,4 +656,4 @@ def test_publish_rejects_unknown_format():
     # The rejection happens before anything is written, so the slug is left
     # with neither a doc row nor a blob directory.
     assert docs_repo.get_latest("m/bad") is None
-    assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "m", "bad"))
+    assert not os.path.exists(os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "m", "bad"))

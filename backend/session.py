@@ -1,7 +1,7 @@
 """HMAC session-cookie mint/verify + the auth middleware.
 
 Cookie token: <user_id>.<issued_at>.<nonce>.<hmac>, signed with the
-server-side SESSION_SECRET. Agent requests skip the cookie and present
+server-side DOCS_HUB_SESSION_SECRET. Agent requests skip the cookie and present
 the shared API key instead.
 """
 from __future__ import annotations
@@ -17,6 +17,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, RedirectResponse
 
 from backend import docs_repo
+from backend.settings import required
 from backend.workers import run_db
 
 SESSION_COOKIE_NAME = "session"
@@ -30,7 +31,7 @@ _VERSION_PATH = re.compile(r"^/d/.+/v\d+$")
 
 
 def _secret() -> bytes:
-    return os.environ["SESSION_SECRET"].encode("utf-8")
+    return required("SESSION_SECRET").encode("utf-8")
 
 
 def make_session_token(user_id: int) -> str:
