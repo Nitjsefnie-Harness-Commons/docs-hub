@@ -10,7 +10,7 @@ from backend import docs_repo, render
 
 router = APIRouter()
 
-ARTIFACT_CSP = "sandbox allow-scripts"
+ARTIFACT_CSP = "sandbox allow-scripts allow-modals"
 
 _PUBLIC_DIR = Path(__file__).resolve().parent.parent / "public"
 

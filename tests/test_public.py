@@ -52,7 +52,7 @@ def test_public_latest_has_artifact_sandbox():
     assert _set_public(c, "pub/sandbox", True).status_code == 200
     r = _client().get("/d/pub/sandbox")
     assert r.status_code == 200
-    assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
+    assert r.headers.get("content-security-policy") == "sandbox allow-scripts allow-modals"
 
 
 def test_version_has_artifact_sandbox():
@@ -60,7 +60,7 @@ def test_version_has_artifact_sandbox():
     assert _publish(c, "priv/sandbox").status_code == 200
     r = c.get("/d/priv/sandbox/v1", headers=KEY)
     assert r.status_code == 200
-    assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
+    assert r.headers.get("content-security-policy") == "sandbox allow-scripts allow-modals"
 
 
 def test_html_api_has_artifact_sandbox_with_human_cookie():
@@ -72,7 +72,7 @@ def test_html_api_has_artifact_sandbox_with_human_cookie():
     assert r.status_code == 200
     assert r.content == body
     assert r.headers["content-type"].startswith("text/html")
-    assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
+    assert r.headers.get("content-security-policy") == "sandbox allow-scripts allow-modals"
     assert _set_public(c, "priv/api-sandbox", True, headers=None).status_code == 200
     assert _client().get("/api/doc/priv/api-sandbox").status_code == 401
 

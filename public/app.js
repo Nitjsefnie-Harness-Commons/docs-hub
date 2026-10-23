@@ -419,7 +419,7 @@ function renderDocViewer(slug, requestedVersion) {
         </div>
       </div>
       <div class="artifact-frame">
-        <iframe id="artifact" sandbox="allow-scripts" src="/d/${esc(apiSlug(slug))}/v${v.version}"></iframe>
+        <iframe id="artifact" sandbox="allow-scripts" allow="clipboard-write" src="/d/${esc(apiSlug(slug))}/v${v.version}"></iframe>
       </div>
     </div>
   `;
