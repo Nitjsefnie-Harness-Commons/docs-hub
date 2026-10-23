@@ -117,6 +117,40 @@ jobs:
           print(f"wheel contents: {sorted(tops)}")
           EOF
 
+      - name: Prove the wheel is this tag's version
+        run: |
+          case "$GITHUB_REF" in
+            refs/tags/*) tag="${GITHUB_REF#refs/tags/}" ;;
+            *)
+              echo "Not a tag ref ($GITHUB_REF); nothing to publish." >&2
+              echo "Push a v* tag — .github/workflows/tag.yml does that" >&2
+              echo "automatically when __version__ changes." >&2
+              exit 1
+              ;;
+          esac
+
+          python3 - "$tag" <<'EOF'
+          import glob
+          import sys
+          import zipfile
+          from email import message_from_bytes
+
+          from packaging.version import Version
+          from docs_hub_cli import __version__
+
+          tag = sys.argv[1]
+          with zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[-1]) as wheel:
+              metadata = next(n for n in wheel.namelist()
+                              if n.endswith(".dist-info/METADATA"))
+              wheel_version = message_from_bytes(wheel.read(metadata)).get("Version")
+          agreement = (f"tag {tag}; __version__ {__version__}; "
+                       f"wheel Version {wheel_version or '<missing>'}")
+          if (wheel_version is None or tag != "v" + __version__
+                  or Version(wheel_version) != Version(__version__)):
+              sys.exit(f"Version mismatch: {agreement}")
+          print(f"Versions agree: {agreement}")
+          EOF
+
       - name: Publish checksums beside the wheel
         working-directory: dist
         # `--` so a wheel whose name starts with a dash cannot be read as
