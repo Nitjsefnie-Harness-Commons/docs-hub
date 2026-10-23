@@ -46,6 +46,23 @@ def test_anonymous_read_private_doc_redirects_to_login():
     assert r.headers["location"] == "/login"
 
 
+def test_public_latest_has_artifact_sandbox():
+    c = _client()
+    assert _publish(c, "pub/sandbox").status_code == 200
+    assert _set_public(c, "pub/sandbox", True).status_code == 200
+    r = _client().get("/d/pub/sandbox")
+    assert r.status_code == 200
+    assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
+
+
+def test_version_has_artifact_sandbox():
+    c = _client()
+    assert _publish(c, "priv/sandbox").status_code == 200
+    r = c.get("/d/priv/sandbox/v1", headers=KEY)
+    assert r.status_code == 200
+    assert r.headers.get("content-security-policy") == "sandbox allow-scripts"
+
+
 def test_public_flag_survives_republish():
     c = _client()
     _publish(c, "pub/sticky", body=b"<h1>v1</h1>")
@@ -86,6 +103,20 @@ def test_toggle_accepts_human_cookie():
     r = _set_public(c, "pub/human", True, headers=None)
     assert r.status_code == 200, r.text
     assert r.json()["public"] is True
+
+
+def test_opaque_origin_artifact_cannot_make_victim_public():
+    c = _client()
+    assert _publish(c, "priv/victim").status_code == 200
+    # Model the artifact request after sandboxing strips cookie authority.
+    anon = _client()
+    r = anon.post("/api/doc/priv/victim/public", json={"public": True},
+                  headers={"Origin": "null"})
+    assert r.status_code == 401
+    assert "access-control-allow-origin" not in r.headers
+    r = anon.get("/d/priv/victim", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/login"
 
 
 def test_toggle_unknown_slug_404():
