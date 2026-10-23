@@ -157,7 +157,7 @@ def test_cli_versions_and_text_only(tmp_path):
     assert all(ln.endswith("bytes") and "analyst" in ln for ln in lines)
     text = _run("get", "cli/vers", "--text-only")
     assert text.returncode == 0, text.stderr
-    assert text.stdout.strip() == "two"
+    assert text.stdout.strip() == "# two"
 
 
 def test_cli_rejects_a_missing_api_key(tmp_path):
