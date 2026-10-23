@@ -1,16 +1,17 @@
 import asyncio
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from contextlib import ExitStack, asynccontextmanager
-from threading import Timer
+from threading import Event, Thread, Timer
 
 import httpx
 import psycopg
 import pytest
 from psycopg_pool import PoolTimeout
+from psycopg.types.json import Jsonb
 
-from backend import db
+from backend import auth, db, render, session
 from backend.app import app
 
 KEY = {"x-docs-key": "test-api-key"}
@@ -144,5 +145,105 @@ def test_anonymous_public_lookup_waiting_for_pool_does_not_stall_health() -> Non
                     response = await asyncio.wait_for(lookup, 15)
             assert response.status_code == 200
             assert response.text == "<h1>x</h1>"
+
+    asyncio.run(run())
+
+
+async def _health_during_blocking_work(
+        client: httpx.AsyncClient, request: Awaitable[httpx.Response],
+        entered: Event, release: Event) -> httpx.Response:
+    """Probe after worker entry from another thread, so an event-loop stall
+    still reaches a finite cleanup path instead of hanging the test.
+    """
+    loop = asyncio.get_running_loop()
+    errors: list[Exception] = []
+
+    def probe() -> None:
+        try:
+            assert entered.wait(10), "blocking work never entered"
+            started = time.monotonic()
+            response = asyncio.run_coroutine_threadsafe(client.get("/health"), loop).result(1)
+            assert response.status_code == 200
+            assert time.monotonic() - started < 1
+            assert not release.is_set(), "blocking work ended before health answered"
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            errors.append(exc)
+        finally:
+            release.set()
+
+    thread = Thread(target=probe)
+    thread.start()
+    try:
+        response = await asyncio.wait_for(request, 15)
+    finally:
+        release.set()
+        await asyncio.to_thread(thread.join, 10)
+    assert not thread.is_alive(), "health probe never finished"
+    assert not errors
+    return response
+
+
+@pytest.mark.parametrize("path, anonymous", [
+    ("/d/render/doc", False), ("/d/render/doc/v1", False), ("/d/render/doc", True)])
+def test_markdown_rendering_does_not_stall_health(
+        monkeypatch: pytest.MonkeyPatch, path: str, anonymous: bool) -> None:
+    entered = Event()
+    release = Event()
+
+    def blocked_render(source: bytes, title: str) -> str:
+        assert source == b"# Render" and title == "Render"
+        entered.set()
+        assert release.wait(10), "rendering was never released"
+        return "<h1>Rendered</h1>"
+
+    monkeypatch.setattr(render, "render_markdown", blocked_render)
+
+    async def run() -> None:
+        async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            published = await client.post(
+                "/api/publish", data={"slug": "render/doc", "title": "Render", "from": "analyst"},
+                files={"file": ("d.md", b"# Render", "text/markdown")}, headers=KEY)
+            assert published.status_code == 200
+            if anonymous:
+                public = await client.post("/api/doc/render/doc/public",
+                                           json={"public": True}, headers=KEY)
+                assert public.status_code == 200
+            response = await _health_during_blocking_work(
+                client, client.get(path, headers={} if anonymous else KEY), entered, release)
+            assert response.status_code == 200
+            assert response.text == "<h1>Rendered</h1>"
+
+    asyncio.run(run())
+
+
+def test_password_verification_does_not_stall_health(monkeypatch: pytest.MonkeyPatch) -> None:
+    entered = Event()
+    release = Event()
+    config = {auth.WEB_PASSWORD_HASH_KEY: "hash", auth.WEB_PASSWORD_SALT_KEY: "salt"}
+    with db.auth_conn() as conn:
+        conn.execute(
+            "INSERT INTO users (user_id, config) VALUES (%s, %s) "
+            "ON CONFLICT (user_id) DO UPDATE SET config = EXCLUDED.config",
+            (909090, Jsonb(config)))
+
+    def blocked_verify(stored: dict, password: str) -> bool:
+        assert stored == config and password == "password"
+        entered.set()
+        assert release.wait(10), "verification was never released"
+        return True
+
+    monkeypatch.setattr(auth, "verify_web_password", blocked_verify)
+
+    async def run() -> None:
+        async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app, client=("verify-boundary", 123)),
+                base_url="http://test") as client:
+            response = await _health_during_blocking_work(
+                client, client.post("/login", data={"user_id": "909090", "password": "password"}),
+                entered, release)
+            assert response.status_code == 303
+            assert session.verify_session_token(response.cookies[session.SESSION_COOKIE_NAME]) \
+                == 909090
 
     asyncio.run(run())

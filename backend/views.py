@@ -45,7 +45,7 @@ async def render_version(slug: str, version: int) -> Response:
     doc = await run_db(docs_repo.get_version, slug, version)
     if doc is None:
         return Response("Not found", status_code=404, media_type="text/plain")
-    return _serve(doc)
+    return await run_db(_serve, doc)
 
 
 @router.get("/d/{slug:path}")
@@ -53,4 +53,4 @@ async def render_latest(slug: str) -> Response:
     doc = await run_db(docs_repo.get_latest, slug)
     if doc is None:
         return Response("Not found", status_code=404, media_type="text/plain")
-    return _serve(doc)
+    return await run_db(_serve, doc)
