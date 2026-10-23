@@ -96,6 +96,24 @@ def test_delete_doc_preserves_non_version_entries():
         assert storage.read_blob(os.path.join(root, name)) == b"keep"
 
 
+def test_delete_doc_propagates_stat_failure(monkeypatch):
+    path, _, _ = storage.store_blob("stat-error", 1, b"keep")
+    assert os.path.isfile(path)
+    real_stat = os.stat
+    error = OSError(errno.EACCES, "Permission denied", path)
+
+    def fail_version_stat(file_path, *args, **kwargs):
+        if file_path == path:
+            raise error
+        return real_stat(file_path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "stat", fail_version_stat)
+    with pytest.raises(OSError) as exc:
+        storage.delete_doc("stat-error")
+    assert exc.value is error
+    assert storage.read_blob(path) == b"keep"
+
+
 def test_delete_doc_propagates_unlink_failure(monkeypatch):
     path, _, _ = storage.store_blob("unlink-error", 1, b"keep")
     assert os.path.isfile(path)
