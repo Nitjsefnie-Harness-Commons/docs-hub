@@ -577,9 +577,9 @@ def test_purge_expired_removes_rows_and_blobs():
 
 
 def test_purge_expired_waits_for_the_per_slug_lock():
-    """The reaper removes a slug's blob directory, so it must not run while a
-    publish of that slug is mid-flight — the publish would write v1.html and
-    the rmtree would take it away. Both sides take the same per-slug advisory
+    """The reaper removes only a slug's own version files, preserving descendant
+    slug directories. It must not run while a publish of that slug is mid-flight:
+    it could unlink the new v1.html. Both sides take the same per-slug advisory
     lock; here a third connection holds it and purge_expired has to wait."""
     docs_repo.publish("e/lock", "L", [], None, "analyst", b"<h1>1</h1>",
                       ttl_seconds=60)
@@ -601,9 +601,9 @@ def test_purge_expired_waits_for_the_per_slug_lock():
 
 
 def test_delete_docs_waits_for_the_per_slug_lock():
-    """delete_docs rmtrees a slug's directory too, so it needs the same lock
-    for the same reason: a publish mid-flight would write v1.html into a
-    directory this call is about to remove."""
+    """delete_docs removes only a slug's own version files, preserving descendant
+    slug directories. It needs the same lock because it could unlink v1.html
+    written by a publish of that slug mid-flight."""
     docs_repo.publish("e/dlock", "D", [], None, "analyst", b"<h1>1</h1>")
     assert docs_repo.get_latest("e/dlock") is not None
     assert os.path.isdir(os.path.join(os.environ["STORE_ROOT"], "e/dlock"))
