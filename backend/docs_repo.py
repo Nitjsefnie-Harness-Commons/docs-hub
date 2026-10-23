@@ -85,22 +85,33 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             doc_id, latest = row
             version = latest + 1
         ext = "md" if fmt == "markdown" else "html"
-        path, size, digest = storage.store_blob(slug, version, html, ext=ext)
-        c.execute(
-            "INSERT INTO doc_versions "
-            "(doc_id, version, posted_by, file_path, byte_size, sha256, format) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (doc_id, version, posted_by, path, size, digest, fmt),
-        )
-        updated = c.execute(
-            "UPDATE docs SET latest_version=%s, title=%s, tags=%s, project=%s, "
-            "updated_at=now(), expires_at=now() + make_interval(secs => %s) "
-            "WHERE id=%s RETURNING expires_at",
-            (version, title, tags, project, ttl_seconds, doc_id),
-        ).fetchone()
-        if updated is None:
-            raise RuntimeError(
-                "UPDATE ... RETURNING expires_at yielded no row")
+        path = storage.blob_path(slug, version, ext)
+        # The file leads the row; unlink before commit, whose failure may leave a durable row.
+        try:
+            path, size, digest = storage.store_blob(slug, version, html, ext=ext)
+            c.execute(
+                "INSERT INTO doc_versions "
+                "(doc_id, version, posted_by, file_path, byte_size, sha256, format) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (doc_id, version, posted_by, path, size, digest, fmt),
+            )
+            updated = c.execute(
+                "UPDATE docs SET latest_version=%s, title=%s, tags=%s, project=%s, "
+                "updated_at=now(), expires_at=now() + make_interval(secs => %s) "
+                "WHERE id=%s RETURNING expires_at",
+                (version, title, tags, project, ttl_seconds, doc_id),
+            ).fetchone()
+            if updated is None:
+                raise RuntimeError(
+                    "UPDATE ... RETURNING expires_at yielded no row")
+        except BaseException:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
+            except OSError as e:
+                _log.error("failed to remove uncommitted version file %s: %s", path, e)
+            raise
         c.commit()
     return {"slug": slug, "version": version, "doc_id": doc_id,
             "expires_at": updated[0], "format": fmt}
