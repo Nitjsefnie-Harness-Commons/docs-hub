@@ -99,6 +99,8 @@ jobs:
       - name: Run the suite
         env:
           PYTHONDONTWRITEBYTECODE: "1"
+          # An intermittent shutdown segfault leaves no stack without this (issue 75).
+          PYTHONFAULTHANDLER: "1"
         run: python -m pytest -v -ra
 
   coverage:
@@ -154,6 +156,7 @@ jobs:
         id: measure
         env:
           PYTHONDONTWRITEBYTECODE: "1"
+          PYTHONFAULTHANDLER: "1"
         # A FAILING test does not fail this step: the suites job above owns
         # that verdict, and a failing test still executed the lines it reached.
         # What must fail is pytest not running at all — a collection error or
