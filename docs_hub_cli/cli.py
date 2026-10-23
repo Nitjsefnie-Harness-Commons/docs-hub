@@ -15,6 +15,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from html.parser import HTMLParser
@@ -258,10 +259,10 @@ def cmd_get(args: argparse.Namespace) -> int:
 def cmd_list(args: argparse.Namespace) -> int:
     q = []
     if args.project:
-        q.append(f"project={args.project}")
+        q.append(("project", args.project))
     if args.agent:
-        q.append(f"agent={args.agent}")
-    path = "/api/list" + ("?" + "&".join(q) if q else "")
+        q.append(("agent", args.agent))
+    path = "/api/list" + ("?" + urllib.parse.urlencode(q) if q else "")
     status, raw, _ = _request("GET", path)
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
@@ -296,7 +297,8 @@ def cmd_tags(args: argparse.Namespace) -> int:
     """List every tag in use with its count (most-used first). Agents call
     this before `publish` so they pick from the established tag set instead
     of inventing parallel ones."""
-    path = "/api/tags" + (f"?project={args.project}" if args.project else "")
+    query = urllib.parse.urlencode({"project": args.project}) if args.project else ""
+    path = "/api/tags" + ("?" + query if query else "")
     status, raw, _ = _request("GET", path)
     if status != 200:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
