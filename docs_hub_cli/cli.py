@@ -261,6 +261,20 @@ def cmd_get(args: argparse.Namespace) -> int:
     return 0
 
 
+def _response_rows(raw: bytes, key: str) -> list[dict]:
+    rows = json.loads(raw)[key]
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise ValueError
+    return rows
+
+
+def _invalid_response(status: int, raw: bytes) -> int:
+    preview = "".join(c if c.isprintable() else ascii(c)[1:-1]
+                      for c in raw[:200].decode("utf-8", "replace"))
+    print(f"ERROR: HTTP {status}: invalid response: {preview}", file=sys.stderr)
+    return 1
+
+
 def cmd_list(args: argparse.Namespace) -> int:
     q = []
     if args.project:
@@ -273,20 +287,20 @@ def cmd_list(args: argparse.Namespace) -> int:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
     try:
-        docs = json.loads(raw)["docs"]
+        docs = _response_rows(raw, "docs")
+        lines: list[str] = []
+        for d in docs:
+            tags = ",".join(d.get("tags") or []) or "-"
+            fmt = " [markdown]" if d.get("format") == "markdown" else ""
+            expires = f" expires {d['expires_at']}" if d.get("expires_at") else ""
+            line = (f"{d['slug']:<40} v{d['latest_version']:<3} "
+                    f"{d['posted_by']:<14} [{tags}] {d['title']}{fmt}{expires}")
+            if not args.untagged or not d.get("tags"):
+                lines.append(line)
     except (ValueError, KeyError, TypeError):
-        preview = " ".join(raw[:200].decode("utf-8", "replace").splitlines())
-        print(f"ERROR: HTTP {status}: invalid response: {preview}",
-              file=sys.stderr)
-        return 1
-    if args.untagged:
-        docs = [d for d in docs if not d.get("tags")]
-    for d in docs:
-        tags = ",".join(d.get("tags") or []) or "-"
-        fmt = " [markdown]" if d.get("format") == "markdown" else ""
-        expires = f" expires {d['expires_at']}" if d.get("expires_at") else ""
-        print(f"{d['slug']:<40} v{d['latest_version']:<3} "
-              f"{d['posted_by']:<14} [{tags}] {d['title']}{fmt}{expires}")
+        return _invalid_response(status, raw)
+    for line in lines:
+        print(line)
     return 0
 
 
@@ -296,18 +310,17 @@ def cmd_versions(args: argparse.Namespace) -> int:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
     try:
-        versions = json.loads(raw)["versions"]
+        versions = _response_rows(raw, "versions")
+        lines: list[str] = []
+        for v in versions:
+            # Per version: republishing as Markdown keeps earlier HTML versions.
+            fmt = " markdown" if v.get("format") == "markdown" else ""
+            lines.append(f"v{v['version']:<3} {v['created_at']} {v['posted_by']:<12} "
+                         f"{v['byte_size']} bytes{fmt}")
     except (ValueError, KeyError, TypeError):
-        preview = " ".join(raw[:200].decode("utf-8", "replace").splitlines())
-        print(f"ERROR: HTTP {status}: invalid response: {preview}",
-              file=sys.stderr)
-        return 1
-    for v in versions:
-        # Per version: republishing a slug as Markdown leaves its earlier
-        # HTML versions exactly as they were.
-        fmt = " markdown" if v.get("format") == "markdown" else ""
-        print(f"v{v['version']:<3} {v['created_at']} {v['posted_by']:<12} "
-              f"{v['byte_size']} bytes{fmt}")
+        return _invalid_response(status, raw)
+    for line in lines:
+        print(line)
     return 0
 
 
@@ -322,14 +335,12 @@ def cmd_tags(args: argparse.Namespace) -> int:
         print(f"ERROR: HTTP {status}", file=sys.stderr)
         return 1
     try:
-        tags = json.loads(raw)["tags"]
+        tags = _response_rows(raw, "tags")
+        lines = [f"{t['count']:>5}  {t['tag']}" for t in tags]
     except (ValueError, KeyError, TypeError):
-        preview = " ".join(raw[:200].decode("utf-8", "replace").splitlines())
-        print(f"ERROR: HTTP {status}: invalid response: {preview}",
-              file=sys.stderr)
-        return 1
-    for t in tags:
-        print(f"{t['count']:>5}  {t['tag']}")
+        return _invalid_response(status, raw)
+    for line in lines:
+        print(line)
     return 0
 
 
@@ -370,8 +381,9 @@ def main() -> int:
     p.add_argument("--version", type=int, default=0)
     p.add_argument("-o", "--output", default="")
     p.add_argument("--text-only", action="store_true",
-                   help="strip HTML tags and output plain text (a Markdown "
-                        "document is already text and passes through)")
+                   help="strip HTML to text with #–###### heading prefixes "
+                        "and **bold** markers (a Markdown document is "
+                        "already text and passes through)")
     p.set_defaults(func=cmd_get)
 
     p = sub.add_parser("list")
