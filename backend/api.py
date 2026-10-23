@@ -3,12 +3,12 @@ key or a human cookie (the middleware already enforced one of the two)."""
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Form, Request, UploadFile
-from starlette.concurrency import run_in_threadpool
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
 from backend import docs_repo, session
 from backend.ttl import parse_ttl
 from backend.views import ARTIFACT_CSP
+from backend.workers import run_db
 
 router = APIRouter(prefix="/api")
 
@@ -50,9 +50,9 @@ async def publish(request: Request, file: UploadFile,
         except ValueError as e:
             return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     try:
-        res = await run_in_threadpool(
+        res = await run_db(
             docs_repo.publish, slug, title, tag_list, project or None,
-            from_, html, ttl_seconds=ttl_seconds, fmt=fmt)
+            from_, html, ttl_seconds, fmt)
     except ValueError as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=400)
     return JSONResponse({
@@ -64,8 +64,8 @@ async def publish(request: Request, file: UploadFile,
 
 
 @router.get("/doc/{slug:path}")
-def get_doc(slug: str) -> Response:
-    doc = docs_repo.get_latest(slug)
+async def get_doc(slug: str) -> Response:
+    doc = await run_db(docs_repo.get_latest, slug)
     if doc is None:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     # Agents get the stored bytes verbatim in the format they were published
@@ -79,7 +79,7 @@ def get_doc(slug: str) -> Response:
 
 
 @router.post("/doc/{slug:path}/public")
-def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
+async def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
     """Flip a slug's public flag. Auth is enforced by the middleware (agent
     key or human cookie); an anonymous caller never reaches this handler.
     Public docs are readable by anyone at /d/<slug>; everything else stays
@@ -88,14 +88,14 @@ def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
     if not isinstance(public, bool):
         return JSONResponse({"ok": False, "error": "public must be a boolean"},
                             status_code=400)
-    if not docs_repo.set_public(slug, public):
+    if not await run_db(docs_repo.set_public, slug, public):
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     return JSONResponse({"ok": True, "slug": slug, "public": public})
 
 
 @router.get("/list")
-def api_list(project: str = "", agent: str = "") -> JSONResponse:
-    docs = docs_repo.list_docs(project or None, agent or None)
+async def api_list(project: str = "", agent: str = "") -> JSONResponse:
+    docs = await run_db(docs_repo.list_docs, project or None, agent or None)
     for d in docs:
         d["updated_at"] = d["updated_at"].isoformat()
         if d["expires_at"] is not None:
@@ -104,8 +104,8 @@ def api_list(project: str = "", agent: str = "") -> JSONResponse:
 
 
 @router.get("/versions/{slug:path}")
-def api_versions(slug: str) -> JSONResponse:
-    vs = docs_repo.list_versions(slug)
+async def api_versions(slug: str) -> JSONResponse:
+    vs = await run_db(docs_repo.list_versions, slug)
     if not vs:
         return JSONResponse({"ok": False, "error": "not found"}, status_code=404)
     for v in vs:
@@ -118,8 +118,8 @@ _FILTER_KEYS = ("slug", "project", "author", "tag", "q",
 
 
 @router.post("/delete")
-def delete(_request: Request,
-           body: dict = Body(default={})) -> JSONResponse:
+async def delete(_request: Request,
+                 body: dict = Body(default={})) -> JSONResponse:
     """Delete whole docs by filter. Two-step: a call with no `confirm_token`
     previews and returns a token; a call echoing a valid token executes.
     Accepts the agent API key or a human session cookie (the middleware has
@@ -132,7 +132,7 @@ def delete(_request: Request,
     if not filters:
         return JSONResponse({"ok": False, "error": "at least one filter required"},
                             status_code=400)
-    matched = docs_repo.find_docs(filters)
+    matched = await run_db(docs_repo.find_docs, filters)
     token = body.get("confirm_token")
     if not token:
         return JSONResponse({
@@ -144,7 +144,7 @@ def delete(_request: Request,
         return JSONResponse(
             {"ok": False, "error": "confirm token invalid or expired"},
             status_code=409)
-    deleted, failed = docs_repo.delete_docs([m["slug"] for m in matched])
+    deleted, failed = await run_db(docs_repo.delete_docs, [m["slug"] for m in matched])
     if failed:
         return JSONResponse({"ok": False, "error": "failed to remove stored files",
                              "deleted": deleted, "failed": failed}, status_code=500)
@@ -162,8 +162,8 @@ async def whoami(request: Request) -> JSONResponse:
 
 
 @router.get("/tags")
-def api_tags(project: str = "") -> JSONResponse:
+async def api_tags(project: str = "") -> JSONResponse:
     """Distinct tags in use with their counts (most-used first), so agents
     can pick from established tags instead of inventing new ones."""
-    tags = docs_repo.list_tags(project or None)
+    tags = await run_db(docs_repo.list_tags, project or None)
     return JSONResponse({"ok": True, "tags": tags})

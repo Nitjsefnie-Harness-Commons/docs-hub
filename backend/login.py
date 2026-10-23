@@ -10,6 +10,7 @@ from fastapi import APIRouter, Form, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
 from backend import auth, db, session
+from backend.workers import run_db
 
 router = APIRouter()
 
@@ -73,8 +74,8 @@ def login_page() -> HTMLResponse:
 
 
 @router.post("/login")
-def login_post(request: Request, user_id: str = Form(""),
-               password: str = Form("")) -> Response:
+async def login_post(request: Request, user_id: str = Form(""),
+                     password: str = Form("")) -> Response:
     ip = request.client.host if request.client else "unknown"
     if _rate_limited(ip):
         return HTMLResponse(_LOGIN_HTML.format(err="Too many attempts."),
@@ -83,7 +84,7 @@ def login_post(request: Request, user_id: str = Form(""),
         uid = int(user_id.strip())
     except ValueError:
         uid = 0
-    config = _load_user_config(uid) if uid > 0 else None
+    config = await run_db(_load_user_config, uid) if uid > 0 else None
     if not config or not auth.has_web_password(config) \
             or not auth.verify_web_password(config, password):
         _record_failure(ip)
