@@ -2,6 +2,6 @@
 # release cannot turn CI red on an unchanged commit; Dependabot bumps them.
 # The runtime dependencies in requirements.txt are installed alongside these
 # in CI, because both pylint and pyright resolve `import fastapi` for real.
-pycodestyle==2.14.0
+pycodestyle==2.15.0
 pylint==4.0.7
 pyright==1.1.414
