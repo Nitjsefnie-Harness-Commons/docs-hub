@@ -4,6 +4,6 @@ title = "docs-hub secret scan"
 useDefault = true
 
 # Keep suppressions reviewable: use per-rule [rules.allowlist] entries
-# scoped by path or fingerprints, each with a why-comment. Preserve the
+# scoped by path, each with a why-comment. Preserve the
 # default scan; nothing may disable it wholesale.
 # No allowlist entries at present: the audit found no detections.
