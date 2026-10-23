@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 from typing import Any
+import zipfile
 
 import pytest
 import yaml
@@ -180,3 +181,49 @@ def test_publish_verifies_downloaded_checksums(tmp_path: Path, tampered: bool):
     step = _step("release.yml", "publish", "Verify the downloaded artifact against its checksums")
     result = _run_script(tmp_path, step["run"], {})
     assert result.returncode == (1 if tampered else 0), result.stdout + result.stderr
+
+
+def _run_version_proof(tmp_path: Path, ref: str, version: str,
+                       wheel_version: str | None) -> subprocess.CompletedProcess[str]:
+    package = tmp_path / "docs_hub_cli"
+    package.mkdir()
+    (package / "__init__.py").write_text(f"__version__ = {version!r}\n", encoding="utf-8")
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    wheel_name = f"docs_hub_cli-{wheel_version or version}-py3-none-any.whl"
+    metadata = "Metadata-Version: 2.1\nName: docs-hub-cli\n"
+    if wheel_version is not None:
+        metadata += f"Version: {wheel_version}\n"
+    with zipfile.ZipFile(dist / wheel_name, "w") as wheel:
+        wheel.writestr(f"docs_hub_cli-{version}.dist-info/METADATA", metadata)
+    step = _step("release.yml", "build", "Prove the wheel is this tag's version")
+    return _run_script(tmp_path, step["run"], {"GITHUB_REF": ref})
+
+
+@pytest.mark.parametrize("tag,version,wheel_version,exit_code", [
+    ("v99.99.99", "0.3.1", "0.3.1", 1),
+    ("v0.3.1", "0.3.1", "0.3.1", 0),
+    ("v0.3.1-rc1", "0.3.1-rc1", "0.3.1rc1", 0),
+    ("v0.3.1", "0.3.1", "9.9.9", 1),
+    ("v0.3.1", "0.3.1", None, 1),
+    ("v0.3.1rc1", "0.3.1-rc1", "0.3.1rc1", 1),
+])
+def test_release_version_proof(tmp_path: Path, tag: str, version: str,
+                               wheel_version: str | None, exit_code: int):
+    """Mismatch fails in this build step; the attach step runs only in publish."""
+    result = _run_version_proof(tmp_path, f"refs/tags/{tag}", version, wheel_version)
+    output = result.stdout + result.stderr
+    assert result.returncode == exit_code, output
+    assert f"tag {tag}" in output
+    assert f"__version__ {version}" in output
+    assert f"wheel Version {wheel_version or '<missing>'}" in output
+    if exit_code == 0:
+        assert "agree" in result.stdout.lower()
+
+
+def test_release_version_proof_refuses_non_tag_ref(tmp_path: Path):
+    result = _run_version_proof(tmp_path, "refs/heads/master", "0.3.1", "0.3.1")
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Not a tag ref (refs/heads/master); nothing to publish." in result.stderr
+    assert "Push a v* tag — .github/workflows/tag.yml does that" in result.stderr
+    assert "automatically when __version__ changes." in result.stderr
