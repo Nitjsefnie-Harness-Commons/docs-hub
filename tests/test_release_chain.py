@@ -139,6 +139,22 @@ def test_tag_writer_creates_annotated_object_then_ref(tmp_path: Path, repo: str,
     assert f"ref=refs/tags/{tag}" in calls[1]
 
 
+@pytest.mark.parametrize("tag", [
+    "vnot-a-version", "1.2.3", "x1.2.3", "v1.2.3!", "v1.2.3\nignored",
+])
+def test_tag_writer_refuses_invalid_tag_before_api_calls(tmp_path: Path, tag: str):
+    calls_path = _stub_gh(tmp_path)
+    calls_path.write_text("", encoding="utf-8")
+    result = _run_script(tmp_path, _step("tag.yml", "tag", "Create and push the tag")["run"],
+                         {"GH_CALLS": str(calls_path), "REPO": "example/repository",
+                          "TAG": tag, "SHA": "a" * 40})
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert calls_path.read_text(encoding="utf-8") == ""
+    assert "invalid" in result.stderr.lower()
+    assert tag in result.stderr
+    assert "already exists" not in result.stderr
+
+
 def test_tag_writer_dispatches_release_at_tag(tmp_path: Path):
     calls_path = _stub_gh(tmp_path)
     result = _run_script(tmp_path, _step("tag.yml", "tag", "Start the release")["run"],
