@@ -10,7 +10,10 @@ from backend import login
 from backend.app import app
 
 
-def test_concurrent_pruning_preserves_every_recorded_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_concurrent_pruning_preserves_every_recorded_failure(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    # Control the helper interleaving directly, without database/password work.
+    # pylint: disable=protected-access
     snapshot_ready = Event()
     resume_pruning = Event()
     pruning_done = Event()
