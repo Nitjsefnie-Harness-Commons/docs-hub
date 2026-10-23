@@ -32,7 +32,7 @@ async def _wait_for_pool_waiters(count: int) -> None:
 @asynccontextmanager
 async def _waiting_publishes(client: httpx.AsyncClient,
                              slugs: list[str]) -> AsyncIterator[None]:
-    with psycopg.connect(os.environ["DATABASE_URL_DOCS"], autocommit=True) as conn:
+    with psycopg.connect(os.environ["DOCS_HUB_DATABASE_URL_DOCS"], autocommit=True) as conn:
         try:
             for slug in slugs:
                 conn.execute("SELECT pg_advisory_lock(hashtext(%s))", (slug,))

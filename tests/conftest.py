@@ -23,12 +23,12 @@ def _test_env(tmp_path_factory):
          "config JSONB NOT NULL DEFAULT '{}'::jsonb)"],
         check=True)
     store = tmp_path_factory.mktemp("store")
-    os.environ["DATABASE_URL_DOCS"] = "postgresql:///docs_test"
-    os.environ["DATABASE_URL_AUTH"] = "postgresql:///docs_test"
-    os.environ["STORE_ROOT"] = str(store)
-    os.environ["SESSION_SECRET"] = "test-session-secret"
+    os.environ["DOCS_HUB_DATABASE_URL_DOCS"] = "postgresql:///docs_test"
+    os.environ["DOCS_HUB_DATABASE_URL_AUTH"] = "postgresql:///docs_test"
+    os.environ["DOCS_HUB_STORE_ROOT"] = str(store)
+    os.environ["DOCS_HUB_SESSION_SECRET"] = "test-session-secret"
     os.environ["DOCS_HUB_API_KEY"] = "test-api-key"
-    os.environ["COOKIE_SECURE"] = "0"
+    os.environ["DOCS_HUB_COOKIE_SECURE"] = "0"
     yield
     # Close the pools first: their open connections would make dropdb fail,
     # leaving docs_test behind, and their worker threads stall interpreter exit.

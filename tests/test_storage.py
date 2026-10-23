@@ -48,7 +48,7 @@ def test_store_blob_rejects_bad_slug():
 def test_delete_doc_removes_dir():
     storage.store_blob("analyst/del", 1, b"<h1>x</h1>")
     storage.store_blob("analyst/del", 2, b"<h1>y</h1>")
-    root = os.path.join(os.environ["STORE_ROOT"], "analyst", "del")
+    root = os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "analyst", "del")
     assert os.path.isdir(root)
     storage.delete_doc("analyst/del")
     assert not os.path.exists(root)
@@ -62,7 +62,7 @@ def test_delete_doc_preserves_child_versions(parent_first):
     for slug in slugs:
         storage.store_blob(slug, 1, b"<h1>first</h1>")
         storage.store_blob(slug, 2, b"# second\n", ext="md")
-    root = os.path.join(os.environ["STORE_ROOT"], "parent")
+    root = os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "parent")
     parent_files = [os.path.join(root, "v1.html"), os.path.join(root, "v2.md")]
     child_files = [os.path.join(root, "child", "v1.html"),
                    os.path.join(root, "child", "v2.md")]
@@ -79,7 +79,7 @@ def test_delete_doc_preserves_child_versions(parent_first):
 
 def test_delete_doc_preserves_non_version_entries():
     storage.store_blob("entries", 1, b"version")
-    root = os.path.join(os.environ["STORE_ROOT"], "entries")
+    root = os.path.join(os.environ["DOCS_HUB_STORE_ROOT"], "entries")
     names = ("notes.html", "v.html", "v1.html.bak", "prefix-v2.md", "v3.txt")
     for name in names:
         with open(os.path.join(root, name), "wb") as f:

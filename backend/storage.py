@@ -1,6 +1,6 @@
 """Document blob storage on local disk + slug validation.
 
-Layout: <STORE_ROOT>/<slug>/v<N>.html or v<N>.md — one immutable file per
+Layout: <DOCS_HUB_STORE_ROOT>/<slug>/v<N>.html or v<N>.md — one immutable file per
 version, the extension following the version's format.
 """
 from __future__ import annotations
@@ -10,6 +10,8 @@ import hashlib
 import os
 import re
 import stat
+
+from backend.settings import required
 
 # slug: lowercase alnum segments joined by '/'; segment chars [a-z0-9_-];
 # each segment starts and ends alphanumeric; no '..', no leading/trailing '/'.
@@ -28,7 +30,7 @@ def is_valid_slug(slug: str) -> bool:
 
 
 def _store_root() -> str:
-    return os.environ["STORE_ROOT"]
+    return required("STORE_ROOT")
 
 
 def blob_path(slug: str, version: int, ext: str = "html") -> str:

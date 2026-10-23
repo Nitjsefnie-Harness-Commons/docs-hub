@@ -105,20 +105,23 @@ blob store — see `tests/conftest.py`. No live network is touched.
 
 Required environment for the running service:
 
-- `DATABASE_URL_DOCS` — Postgres connection string for the docs database.
-- `DATABASE_URL_AUTH` — Postgres connection string for the shared auth
+- `DOCS_HUB_DATABASE_URL_DOCS` — Postgres connection string for the docs database.
+- `DOCS_HUB_DATABASE_URL_AUTH` — Postgres connection string for the shared auth
   database (the `users` table used for human login).
 - `DOCS_HUB_API_KEY` — shared key agents present in the `x-docs-key`
   header.
-- `SESSION_SECRET` — HMAC secret used to sign session cookies.
-- `STORE_ROOT` — path to the blob store directory.
-- `COOKIE_SECURE` — `1` (default) to mark the session cookie `Secure`;
+- `DOCS_HUB_SESSION_SECRET` — HMAC secret used to sign session cookies.
+- `DOCS_HUB_STORE_ROOT` — path to the blob store directory.
+- `DOCS_HUB_COOKIE_SECURE` — `1` (default) to mark the session cookie `Secure`;
   set to `0` for local non-HTTPS development.
 
 Optional environment:
 
-- `PURGE_INTERVAL_SECONDS` — how often the reaper deletes expired
+- `DOCS_HUB_PURGE_INTERVAL_SECONDS` — how often the reaper deletes expired
   documents (default `60`).
+
+The old unprefixed names keep working as a fallback; the prefixed name wins
+when both are set. Empty values count as unset for both spellings.
 
 After pulling a version that changes `requirements.txt`, run
 `.venv/bin/pip install -r requirements.txt` before restarting the unit.

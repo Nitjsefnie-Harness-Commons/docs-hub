@@ -20,7 +20,7 @@ def test_storage_refuses_symlink_escape(tmp_path, monkeypatch, operation, symlin
     outside.mkdir(parents=True)
     sentinel = outside / "v1.html"
     sentinel.write_bytes(b"outside version")
-    monkeypatch.setenv("STORE_ROOT", str(root))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
     if symlink == "directory":
         (root / "link").symlink_to(outside.parent, target_is_directory=True)
     else:
@@ -48,7 +48,7 @@ def test_delete_refuses_symlink_to_empty_outside_directory(tmp_path, monkeypatch
     root.mkdir()
     outside.mkdir(parents=True)
     (root / "link").symlink_to(outside.parent, target_is_directory=True)
-    monkeypatch.setenv("STORE_ROOT", str(root))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
     assert outside.is_dir()
 
     with pytest.raises(OSError) as exc:
@@ -58,7 +58,7 @@ def test_delete_refuses_symlink_to_empty_outside_directory(tmp_path, monkeypatch
 
 
 def test_delete_refuses_internal_version_symlink_without_removing_child(tmp_path, monkeypatch):
-    monkeypatch.setenv("STORE_ROOT", str(tmp_path))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(tmp_path))
     child_path, _, _ = storage.store_blob("parent/child", 1, b"child version")
     link = tmp_path / "parent" / "v1.html"
     link.symlink_to(child_path)
@@ -107,7 +107,7 @@ def test_get_version_refuses_stored_path_outside_store(tmp_path, monkeypatch):
 def test_removal_error_log_quotes_paths_and_escapes_newlines(
         tmp_path, monkeypatch, caplog, operation, linebreak):
     root = tmp_path / f"store{linebreak}forged path"
-    monkeypatch.setenv("STORE_ROOT", str(root))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
     slug = "safe/log"
     error = OSError(errno.EACCES, f"Permission denied{linebreak}forged error", "/store/x\ny")
     docs_repo.publish(slug, "Log", [], None, "analyst", b"old")
@@ -171,7 +171,7 @@ def test_failed_publish_cleanup_refuses_retargeted_path(tmp_path, monkeypatch):
     sentinel = outside / "v1.html"
     sentinel.write_bytes(b"outside version")
     assert sentinel.read_bytes() == b"outside version"
-    monkeypatch.setenv("STORE_ROOT", str(root))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
 
     def fail_write(*_args, **_kwargs):
         (root / "link").symlink_to(outside, target_is_directory=True)
@@ -191,7 +191,7 @@ def test_failed_publish_cleanup_skips_non_regular_entry(tmp_path, monkeypatch, c
     target = root / "other.html"
     target.write_bytes(b"keep target")
     assert target.read_bytes() == b"keep target"
-    monkeypatch.setenv("STORE_ROOT", str(root))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
     entry = root / "cleanup" / "v1.html"
     error = RuntimeError("injected write failure")
 
@@ -226,7 +226,7 @@ def test_failed_publish_cleanup_skips_non_regular_entry(tmp_path, monkeypatch, c
 
 
 def test_failed_publish_cleanup_propagates_lstat_error(tmp_path, monkeypatch):
-    monkeypatch.setenv("STORE_ROOT", str(tmp_path))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(tmp_path))
     entry = tmp_path / "cleanup-stat" / "v1.html"
     entry.parent.mkdir()
     entry.write_bytes(b"partial")
@@ -252,7 +252,7 @@ def test_failed_publish_cleanup_propagates_lstat_error(tmp_path, monkeypatch):
 
 def test_delete_refuses_regular_file_resolving_outside_store(tmp_path, monkeypatch):
     root = tmp_path / "store"
-    monkeypatch.setenv("STORE_ROOT", str(root))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
     storage.store_blob("guard", 1, b"own version")
     entry = root / "guard" / "v1.html"
     outside = tmp_path / "outside.html"
@@ -279,7 +279,7 @@ def test_delete_refuses_regular_file_resolving_outside_store(tmp_path, monkeypat
 def test_removal_anomaly_keeps_row_logs_error_and_returns_500(
         tmp_path, monkeypatch, caplog, operation, symlink):
     root = tmp_path / "store"
-    monkeypatch.setenv("STORE_ROOT", str(root))
+    monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
     slug = "anomaly/doc"
     docs_repo.publish(slug, "Original", [], None, "analyst", b"original")
     assert docs_repo.get_latest(slug)["html"] == b"original"

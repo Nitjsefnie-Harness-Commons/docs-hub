@@ -32,7 +32,7 @@ async def lifespan(_app: FastAPI):
         yield
     finally:
         # Startup can fail before the task exists -- a rejected
-        # PURGE_INTERVAL_SECONDS, or a failed schema check -- and the pools
+        # DOCS_HUB_PURGE_INTERVAL_SECONDS, or a failed schema check -- and the pools
         # still have to be closed.
         if purge_task is not None:
             purge_task.cancel()

@@ -7,6 +7,7 @@ import stat
 from typing import LiteralString
 
 from backend import db, storage
+from backend.settings import required
 
 _log = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ def _slug_lock(c, slug: str) -> None:
 
 def _cleanup_failed_version(slug: str, version: int, ext: str, cause: BaseException) -> None:
     """Remove regular versions; log and retain nonregular leftovers; propagate lstat errors."""
-    root = os.path.realpath(os.environ["STORE_ROOT"])
+    root = os.path.realpath(required("STORE_ROOT"))
     path = os.path.normpath(os.path.join(root, slug, f"v{version}.{ext}"))
     if not path.startswith(root + os.sep):
         raise ValueError(f"path escapes store: {path!r}") from cause
@@ -97,7 +98,7 @@ def publish(slug: str, title: str, tags: list[str], project: str | None,
             try:
                 storage.delete_doc(slug)
             except OSError as e:
-                blob_dir = os.path.join(os.environ["STORE_ROOT"], slug)
+                blob_dir = os.path.join(required("STORE_ROOT"), slug)
                 _log.error("failed to remove stored files for %r at %r: %r",
                            slug.replace("\r", "").replace("\n", ""),
                            blob_dir.replace("\r", "").replace("\n", ""),
@@ -172,7 +173,7 @@ def get_version(slug: str, version: int) -> dict | None:
     meta = _version_row(slug, version)
     if meta is None:
         return None
-    root = os.path.realpath(os.environ["STORE_ROOT"])
+    root = os.path.realpath(required("STORE_ROOT"))
     path = os.path.realpath(meta["file_path"])
     if not path.startswith(root + os.sep):
         raise ValueError(f"path escapes store: {path!r}")
@@ -314,7 +315,7 @@ def delete_docs(slugs: list[str]) -> tuple[int, list[str]]:
             if row is not None:
                 deleted += 1
         except OSError as e:
-            blob_dir = os.path.join(os.environ["STORE_ROOT"], slug)
+            blob_dir = os.path.join(required("STORE_ROOT"), slug)
             _log.error("failed to remove stored files for %r at %r: %r",
                        slug.replace("\r", "").replace("\n", ""),
                        blob_dir.replace("\r", "").replace("\n", ""),
@@ -355,7 +356,7 @@ def purge_expired() -> int:
             if row is not None:
                 purged += 1
         except OSError as e:
-            blob_dir = os.path.join(os.environ["STORE_ROOT"], slug)
+            blob_dir = os.path.join(required("STORE_ROOT"), slug)
             _log.error("failed to remove stored files for %r at %r: %r",
                        slug.replace("\r", "").replace("\n", ""),
                        blob_dir.replace("\r", "").replace("\n", ""),

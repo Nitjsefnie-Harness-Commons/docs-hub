@@ -55,7 +55,7 @@ invocation keeps working unchanged.
   NOT sticky — every publish restates it, and omitting it makes the doc
   permanent. `docs_repo` filters every read to live rows (`_LIVE`), so an
   expired doc is 404/unlisted the moment its time passes; `backend/reaper.py`
-  runs `purge_expired()` at startup and every `PURGE_INTERVAL_SECONDS`
+  runs `purge_expired()` at startup and every `DOCS_HUB_PURGE_INTERVAL_SECONDS`
   (default 60) to delete the rows and blobs. Republishing an expired slug
   purges it first and starts again at v1.
 - Markdown docs: `doc_versions.format` (`html` | `markdown`), inferred from

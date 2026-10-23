@@ -77,7 +77,7 @@ def _kill_pooled_backends() -> int:
     with db.docs_conn() as c:
         c.execute("SELECT 1").fetchone()
         c.commit()
-    with psycopg.connect(os.environ["DATABASE_URL_DOCS"], autocommit=True) as k:
+    with psycopg.connect(os.environ["DOCS_HUB_DATABASE_URL_DOCS"], autocommit=True) as k:
         return k.execute(
             "SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity "
             "WHERE datname = current_database() AND pid <> pg_backend_pid()"
