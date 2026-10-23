@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fails if a forbidden literal appears in the tree or in committed history.
 # Literals come from .secrecy-literals (gitignored, one per line) and from
-# .env's DATABASE_URL_AUTH. Findings name commits and files, never the value.
+# .env's DOCS_HUB_DATABASE_URL_AUTH (legacy fallback: DATABASE_URL_AUTH).
+# Findings name commits and files, never the value.
 #
 #   scripts/secrecy-check.sh          tree + history
 #   scripts/secrecy-check.sh --tree   tree only
@@ -26,8 +27,13 @@ if [ -f .secrecy-literals ]; then
 fi
 
 if [ -f .env ]; then
-  AUTH_DB="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?DATABASE_URL_AUTH[[:space:]]*=[[:space:]]*//p' .env \
-    | head -n1 | tr -d '"'"'"'' | sed 's/?.*$//' | sed 's#.*/##' | tr -d '[:space:]')"
+  AUTH_DB="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?DOCS_HUB_DATABASE_URL_AUTH[[:space:]]*=[[:space:]]*//p' .env \
+    | head -n1 | tr -d '"'"'"'' | tr -d '[:space:]')"
+  if [ -z "$AUTH_DB" ]; then
+    AUTH_DB="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?DATABASE_URL_AUTH[[:space:]]*=[[:space:]]*//p' .env \
+      | head -n1 | tr -d '"'"'"'' | tr -d '[:space:]')"
+  fi
+  AUTH_DB="$(printf '%s' "$AUTH_DB" | sed 's/?.*$//' | sed 's#.*/##')"
   if [ -n "${AUTH_DB:-}" ] && [ "${#AUTH_DB}" -ge 4 ]; then
     NEEDLES+=("$AUTH_DB")
     LABELS+=("the auth-DB name")
