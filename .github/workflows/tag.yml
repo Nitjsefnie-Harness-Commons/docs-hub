@@ -54,29 +54,31 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  tag:
+  release-readiness:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     permissions:
-      # Creating the tag. release.yml holds its own write permission for the
-      # release itself.
-      contents: write
+      contents: read
       # Reading the other workflows' results for this SHA.
       checks: read
-      # Dispatching release.yml. See the last step for why the tag push
-      # cannot do that on its own.
-      actions: write
+
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      sha: ${{ steps.version.outputs.sha }}
+      skip: ${{ steps.version.outputs.skip }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.sha || github.sha }}
-          # This job DOES push (the tag), so it keeps the token.
-          persist-credentials: true
+          # This job only reads the tree; the writer uses the API.
+          persist-credentials: false
 
       - name: Read and validate the version
         id: version
+        env:
+          SHA: ${{ inputs.sha || github.sha }}
         # Read from the imported attribute rather than grepped out of the
         # file: pyproject.toml resolves the distribution version from this
         # same attribute, so reading it the same way is the only way to be
@@ -89,9 +91,17 @@ jobs:
             exit 1
           fi
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *".dev"* ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Dev version skipped (message pending)."
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
           echo "Version is $version"
 
       - name: Refuse to re-tag an existing version
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
@@ -110,12 +120,13 @@ jobs:
           echo "$TAG is free"
 
       - name: Wait for the other gates on this commit
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.sha || github.sha }}
+          SHA: ${{ steps.version.outputs.sha }}
           REPO: ${{ github.repository }}
-        # Exclude only the exact tag job, including earlier attempts on this
-        # SHA. Every required gate must exist and succeed before tagging.
+        # Exclude only the exact tag and release-readiness jobs, including
+        # earlier attempts on this SHA. Every required gate must exist and succeed.
         run: |
           # Timing overrides are test hooks; production defaults to 45 minutes
           # with 20 seconds between reads.
@@ -139,7 +150,7 @@ jobs:
             runs="$(gh api --paginate \
               -H "Cache-Control: no-cache" \
               "repos/$REPO/commits/$SHA/check-runs" \
-              --jq '.check_runs[] | select(.name != "tag")
+              --jq '.check_runs[] | select(.name != "tag" and .name != "release-readiness")
                     | "\(.status)\t\(.conclusion)\t\(.name)"')"
 
             verdict="$(echo "$runs" | awk -F'\t' -v required="$required" '
@@ -176,17 +187,34 @@ jobs:
           echo "Timed out after $TAG_WAIT_DEADLINE_SECONDS seconds waiting for checks on $SHA" >&2
           exit 1
 
+  tag:
+    needs: release-readiness
+    if: needs.release-readiness.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    permissions:
+      # Creating the tag. release.yml holds its own write permission for the
+      # release itself.
+      contents: write
+      # Dispatching release.yml. See the last step for why the tag push
+      # cannot do that on its own.
+      actions: write
+
+    steps:
       - name: Create and push the tag
         env:
-          TAG: ${{ steps.version.outputs.tag }}
-          SHA: ${{ inputs.sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.release-readiness.outputs.tag }}
+          SHA: ${{ needs.release-readiness.outputs.sha }}
         # An annotated tag, not lightweight: it records who created it and
         # when, which a lightweight tag does not.
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "$TAG" "$SHA"
-          git push origin "$TAG"
+          tag_object="$(gh api --method POST "repos/$REPO/git/tags" \
+            -f tag="$TAG" -f message="$TAG" -f object="$SHA" -f type=commit --jq '.sha')"
+          gh api --method POST "repos/$REPO/git/refs" \
+            -f ref="refs/tags/$TAG" -f sha="$tag_object"
           echo "Pushed $TAG at $SHA."
           {
             echo "### Tagged \`$TAG\`"
@@ -198,7 +226,7 @@ jobs:
       - name: Start the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
+          TAG: ${{ needs.release-readiness.outputs.tag }}
           REPO: ${{ github.repository }}
         # release.yml also triggers on `push: tags: v*`, and that trigger
         # is what fires for a tag a HUMAN pushes. It does not fire for the
