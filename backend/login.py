@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from threading import Lock
 
 from fastapi import APIRouter, Form, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
@@ -13,19 +14,23 @@ from backend import auth, db, session
 router = APIRouter()
 
 _FAILURES: dict[str, list[float]] = {}
+# Five recorded failures within 300 s per IP block login; in-flight attempts are not reserved.
+_FAILURES_LOCK = Lock()
 _MAX_FAILURES = 5
 _WINDOW = 300
 
 
 def _rate_limited(ip: str) -> bool:
-    now = time.time()
-    attempts = [t for t in _FAILURES.get(ip, []) if now - t < _WINDOW]
-    _FAILURES[ip] = attempts
-    return len(attempts) >= _MAX_FAILURES
+    with _FAILURES_LOCK:
+        now = time.time()
+        attempts = [t for t in _FAILURES.get(ip, []) if now - t < _WINDOW]
+        _FAILURES[ip] = attempts
+        return len(attempts) >= _MAX_FAILURES
 
 
 def _record_failure(ip: str) -> None:
-    _FAILURES.setdefault(ip, []).append(time.time())
+    with _FAILURES_LOCK:
+        _FAILURES.setdefault(ip, []).append(time.time())
 
 
 def _load_user_config(user_id: int) -> dict | None:
