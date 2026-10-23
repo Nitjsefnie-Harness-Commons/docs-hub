@@ -5,6 +5,7 @@ import asyncio
 import os
 import threading
 import time
+from contextlib import suppress
 
 import pytest
 from fastapi.testclient import TestClient
@@ -50,16 +51,20 @@ def test_lifespan_waits_for_purge_before_closing_pools(
         monkeypatch: pytest.MonkeyPatch, purge_fails: bool) -> None:
     """Cancelling the await cannot stop its worker thread: shutdown must
     drain it before closing pools, even if the purge fails while draining.
-    The delayed release bounds the wait; the order detects early closure.
+    Release follows observed cancellation, even when shutdown starts late.
     """
     monkeypatch.setenv("PURGE_INTERVAL_SECONDS", "0.05")
     started = threading.Event()
     release = threading.Event()
     entered = threading.Event()
     shutdown_go = threading.Event()
+    closed = threading.Event()
+    observing = threading.Event()
     order: list[str] = []
     errors: list[Exception] = []
+    tasks: list[asyncio.Task] = []
     real_close_pools = db.close_pools
+    real_start = reaper.start
 
     def purge() -> int:
         started.set()
@@ -72,6 +77,12 @@ def test_lifespan_waits_for_purge_before_closing_pools(
     def close_pools() -> None:
         order.append("close_pools")
         real_close_pools()
+        closed.set()
+
+    def start(interval: float | None = None) -> asyncio.Task:
+        task = real_start(interval)
+        tasks.append(task)
+        return task
 
     def lifecycle() -> None:
         try:
@@ -81,34 +92,96 @@ def test_lifespan_waits_for_purge_before_closing_pools(
         except Exception as exc:  # pylint: disable=broad-exception-caught
             errors.append(exc)
 
-    def release_purge() -> None:
-        time.sleep(0.5)
-        release.set()
+    async def release_purge() -> None:
+        task = tasks[0]
+        observing.set()
+        async with asyncio.timeout(10):
+            while not task.done():
+                if task.cancelling() >= 1:
+                    # Deliver cancellation before observing the live drain.
+                    await asyncio.sleep(0)
+                    if not task.done():
+                        release.set()
+                    return
+                await asyncio.sleep(0.001)
 
     monkeypatch.setattr(docs_repo, "purge_expired", purge)
     monkeypatch.setattr(db, "close_pools", close_pools)
+    monkeypatch.setattr(reaper, "start", start)
     thread = threading.Thread(target=lifecycle)
     thread.start()
     try:
         assert entered.wait(10), "lifespan never entered"
         assert started.wait(10), "purge never started"
-        releaser = threading.Thread(target=release_purge)
-        releaser.start()
+        releaser = asyncio.run_coroutine_threadsafe(release_purge(), tasks[0].get_loop())
+        assert observing.wait(10), "cancellation observer never started"
+        # Hold the lifecycle past the old timed release to exercise late shutdown.
+        assert not release.wait(0.6), "purge released before shutdown"
         shutdown_go.set()
-        thread.join(10)
-        assert not thread.is_alive(), "shutdown did not finish"
-        releaser.join(10)
+        try:
+            releaser.result(10)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            errors.append(exc)
+        if not release.is_set():
+            assert closed.wait(10), "reaper stopped without closing pools"
     finally:
         release.set()
         shutdown_go.set()
         thread.join(10)
-    assert not errors
+    assert not thread.is_alive(), "shutdown did not finish"
     assert order == ["purge-finished", "close_pools"]
+    assert not errors
     assert order.count("close_pools") == 1
     # pylint: disable-next=protected-access
     assert db._DOCS is None
     # pylint: disable-next=protected-access
     assert db._AUTH is None
+
+
+@pytest.mark.parametrize("purge_fails", [False, True])
+def test_loop_drains_purge_through_repeated_cancellation(
+        monkeypatch: pytest.MonkeyPatch, purge_fails: bool) -> None:
+    """Another cancellation must leave the worker protected until it exits;
+    returning CancelledError early would let lifespan close its pools.
+    """
+    started = threading.Event()
+    release = threading.Event()
+    order: list[str] = []
+
+    def purge() -> int:
+        started.set()
+        assert release.wait(10), "purge was never released"
+        order.append("purge-finished")
+        if purge_fails:
+            raise RuntimeError("purge failed during shutdown")
+        return 0
+
+    monkeypatch.setattr(docs_repo, "purge_expired", purge)
+
+    async def run() -> None:
+        task = asyncio.create_task(reaper.loop(60))
+        task.add_done_callback(lambda _task: order.append("task-finished"))
+        try:
+            assert await asyncio.to_thread(started.wait, 10), "purge never started"
+            task.cancel()
+            await asyncio.sleep(0)
+            assert task.cancelling() == 1 and not task.done(), "reaper never drained"
+            task.cancel()
+            # Let cancellation and the completion callback run before release.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(asyncio.shield(task), 10)
+            await asyncio.sleep(0)
+            assert order == ["purge-finished", "task-finished"]
+        finally:
+            release.set()
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    asyncio.run(run())
 
 
 def test_loop_survives_a_failing_purge(monkeypatch):

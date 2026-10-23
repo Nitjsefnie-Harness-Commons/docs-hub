@@ -5,9 +5,10 @@ live filter); this loop is what actually removes the rows and the blobs.
 Runs once at startup, then every PURGE_INTERVAL_SECONDS (default 60). One
 failed purge is logged and the loop carries on — a transient DB outage must
 not leave the service without a reaper until the next restart.
-Cancellation drains the current purge before unwinding: cancelling an await
-cannot stop its worker thread, which could otherwise reopen pools after
-shutdown closes them. A purge failure must not mask that shutdown unwind.
+Cancellation keeps shielding and draining the current purge before unwinding,
+even through repeated cancellation: cancelling an await cannot stop its worker
+thread, which could otherwise reopen pools after shutdown closes them. A purge
+failure must not mask that shutdown unwind.
 """
 from __future__ import annotations
 
@@ -32,7 +33,12 @@ async def loop(interval: float) -> None:
                 _log.info("purged %d expired doc(s)", removed)
         except asyncio.CancelledError:
             with suppress(Exception):
-                await job
+                while True:
+                    try:
+                        await asyncio.shield(job)
+                        break
+                    except asyncio.CancelledError:
+                        continue
             raise
         except Exception:  # pylint: disable=broad-exception-caught
             # A reaper that dies on the first transient error is worse than
