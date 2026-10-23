@@ -251,7 +251,7 @@ function renderIndex() {
       const titleAttr = active
         ? `title="sort by ${h.label.toLowerCase()} — reverse"`
         : `title="sort by ${h.label.toLowerCase()}"`;
-      return `<th class="${cls}" style="${style}" ${titleAttr} data-sort="${h.key}">${esc(h.label)}<span class="arrow">${glyph}</span></th>`;
+      return `<th class="${cls}" style="${style}" ${titleAttr}><button type="button" data-sort="${h.key}">${esc(h.label)}<span class="arrow">${glyph}</span></button></th>`;
     })
     .join('');
 
@@ -326,15 +326,15 @@ function renderIndex() {
   `;
 }
 
-function wireIndex(searchWasFocused) {
+function wireIndex(searchWasFocused, sortWasFocused) {
   const reroute = () => render();
   $('#f-q')?.addEventListener('input', (e) => { FILTER.q = e.target.value; reroute(); });
   $('#f-project')?.addEventListener('change', (e) => { FILTER.project = e.target.value; reroute(); });
   $('#f-agent')?.addEventListener('change', (e) => { FILTER.agent = e.target.value; reroute(); });
   $('#f-tag')?.addEventListener('change', (e) => { FILTER.tag = e.target.value; reroute(); });
-  $$('[data-sort]').forEach((th) =>
-    th.addEventListener('click', () => {
-      setSort(th.dataset.sort);
+  $$('button[data-sort]').forEach((button) =>
+    button.addEventListener('click', () => {
+      setSort(button.dataset.sort);
       reroute();
     }),
   );
@@ -355,6 +355,9 @@ function wireIndex(searchWasFocused) {
       inp.focus();
       inp.setSelectionRange(inp.value.length, inp.value.length);
     }
+  }
+  if (sortWasFocused) {
+    $(`button[data-sort="${sortWasFocused}"]`)?.focus();
   }
 }
 
@@ -655,9 +658,11 @@ async function render() {
   }
   const searchWasFocused =
     !!(document.activeElement && document.activeElement.id === 'f-q');
+  const sortWasFocused = document.activeElement?.matches('button[data-sort]')
+    ? document.activeElement.dataset.sort : null;
   root.innerHTML = html;
   switch (route.name) {
-    case 'index':    wireIndex(searchWasFocused); break;
+    case 'index':    wireIndex(searchWasFocused, sortWasFocused); break;
     case 'versions': wireVersions(); break;
     case 'viewer':   wireDocViewer(route.slug); break;
   }
