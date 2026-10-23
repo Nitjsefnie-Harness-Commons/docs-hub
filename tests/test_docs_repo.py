@@ -1,11 +1,13 @@
 # tests/test_docs_repo.py
+import errno
+import logging
 import os
 import threading
 from datetime import datetime, timedelta, timezone
 
 import psycopg
 import pytest
-from backend import db, docs_repo
+from backend import db, docs_repo, storage
 
 
 def test_publish_creates_v1():
@@ -89,21 +91,24 @@ def test_delete_docs_removes_rows_versions_blobs():
     docs_repo.publish("a/del", "Del", [], None, "analyst", b"<h1>2</h1>")
     blob_dir = os.path.join(os.environ["STORE_ROOT"], "a", "del")
     assert os.path.isdir(blob_dir)
+    assert docs_repo.get_latest("a/del") is not None
+    assert len(docs_repo.list_versions("a/del")) == 2
     n = docs_repo.delete_docs(["a/del"])
-    assert n == 1
+    assert n == (1, [])
     assert docs_repo.get_latest("a/del") is None
     assert docs_repo.list_versions("a/del") == []
     assert not os.path.exists(blob_dir)
 
 
 def test_delete_docs_unknown_slug_counts_zero():
-    assert docs_repo.delete_docs(["nope/nope"]) == 0
+    assert docs_repo.delete_docs(["nope/nope"]) == (0, [])
 
 
 def test_delete_docs_partial_set():
     docs_repo.publish("a/keep", "Keep", [], None, "analyst", b"<h1>k</h1>")
     docs_repo.publish("a/drop", "Drop", [], None, "analyst", b"<h1>d</h1>")
-    assert docs_repo.delete_docs(["a/drop", "missing/x"]) == 1
+    assert docs_repo.get_latest("a/drop") is not None
+    assert docs_repo.delete_docs(["a/drop", "missing/x"]) == (1, [])
     assert docs_repo.get_latest("a/keep") is not None
     assert docs_repo.get_latest("a/drop") is None
 
@@ -134,6 +139,150 @@ def _backdate(slug):
         c.commit()
 
 
+def _assert_removal_error(caplog, slug, path):
+    records = [r for r in caplog.records if r.name == "backend.docs_repo"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    message = records[0].getMessage()
+    assert f"for {slug} at " in message
+    assert f"at {os.path.dirname(path)}:" in message
+    assert path in message
+    assert "[Errno 13] Permission denied" in message
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_delete_docs_keeps_failed_slug_and_continues(monkeypatch, caplog, partial):
+    slug = "failure/delete"
+    docs_repo.publish(slug, "Old", [], None, "analyst", b"old")
+    docs_repo.publish(slug, "Latest", [], None, "analyst", b"latest")
+    docs_repo.publish("failure/other", "Other", [], None, "analyst", b"other")
+    first_path = storage.blob_path(slug, 1)
+    path = storage.blob_path(slug, 2)
+    other_path = storage.blob_path("failure/other", 1)
+    assert docs_repo.get_latest(slug)["html"] == b"latest"
+    assert docs_repo.get_latest("failure/other")["html"] == b"other"
+    assert os.path.isfile(first_path)
+    assert os.path.isfile(path)
+    assert os.path.isfile(other_path)
+    if partial:
+        os.unlink(first_path)
+    remove = storage.delete_doc
+
+    def fail_one(candidate):
+        if candidate == slug:
+            raise OSError(errno.EACCES, "Permission denied", path)
+        remove(candidate)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "delete_doc", fail_one)
+        with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+            assert docs_repo.delete_docs([slug, "failure/other"]) == (1, [slug])
+    assert docs_repo.get_latest(slug)["html"] == b"latest"
+    assert [v["version"] for v in docs_repo.list_versions(slug)] == [2, 1]
+    assert os.path.isfile(path)
+    assert os.path.exists(first_path) is not partial
+    assert [d["slug"] for d in docs_repo.list_docs()] == [slug]
+    assert docs_repo.get_latest("failure/other") is None
+    assert not os.path.exists(other_path)
+    _assert_removal_error(caplog, slug, path)
+
+    assert docs_repo.delete_docs([slug]) == (1, [])
+    assert docs_repo.get_latest(slug) is None
+    assert not os.path.exists(first_path)
+    assert not os.path.exists(path)
+
+
+@pytest.mark.parametrize("with_success", [False, True])
+def test_purge_expired_keeps_failed_row_for_retry(monkeypatch, caplog, with_success):
+    slug = "failure/purge"
+    docs_repo.publish(slug, "Old", [], None, "analyst", b"old")
+    assert docs_repo.get_latest(slug)["html"] == b"old"
+    path = storage.blob_path(slug, 1)
+    assert os.path.isfile(path)
+    _backdate(slug)
+    with db.docs_conn() as c:
+        before = c.execute("SELECT id, expires_at FROM docs WHERE slug=%s",
+                           (slug,)).fetchone()
+    assert before is not None
+    if with_success:
+        docs_repo.publish("failure/purge-other", "Other", [], None, "analyst", b"other")
+        assert docs_repo.get_latest("failure/purge-other") is not None
+        _backdate("failure/purge-other")
+    remove = storage.delete_doc
+
+    def fail_one(candidate):
+        if candidate == slug:
+            raise OSError(errno.EACCES, "Permission denied", path)
+        remove(candidate)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "delete_doc", fail_one)
+        with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+            assert docs_repo.purge_expired() == int(with_success)
+    with db.docs_conn() as c:
+        assert c.execute("SELECT id, expires_at FROM docs WHERE slug=%s",
+                         (slug,)).fetchone() == before
+        assert c.execute("SELECT slug FROM docs").fetchall() == [(slug,)]
+    assert storage.read_blob(path) == b"old"
+    _assert_removal_error(caplog, slug, path)
+
+    assert docs_repo.purge_expired() == 1
+    with db.docs_conn() as c:
+        assert c.execute("SELECT id FROM docs WHERE slug=%s", (slug,)).fetchone() is None
+    assert not os.path.exists(path)
+
+
+def test_expired_publish_keeps_old_life_when_removal_fails(monkeypatch, caplog):
+    slug = "failure/publish"
+    docs_repo.publish(slug, "Old", [], None, "analyst", b"old")
+    assert docs_repo.get_latest(slug)["html"] == b"old"
+    _backdate(slug)
+    path = storage.blob_path(slug, 1)
+    directory = os.path.dirname(path)
+    assert os.listdir(directory) == ["v1.html"]
+    with db.docs_conn() as c:
+        before = c.execute(
+            "SELECT d.id, d.expires_at, d.latest_version, v.version, v.file_path "
+            "FROM docs d JOIN doc_versions v ON v.doc_id=d.id WHERE d.slug=%s",
+            (slug,)).fetchall()
+    assert len(before) == 1
+
+    def fail_remove(_slug):
+        raise OSError(errno.EACCES, "Permission denied", path)
+
+    monkeypatch.setattr(storage, "delete_doc", fail_remove)
+    with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+        with pytest.raises(OSError) as exc:
+            docs_repo.publish(slug, "New", [], None, "analyst", b"# new", fmt="markdown")
+    assert exc.value.errno == errno.EACCES
+    with db.docs_conn() as c:
+        assert c.execute(
+            "SELECT d.id, d.expires_at, d.latest_version, v.version, v.file_path "
+            "FROM docs d JOIN doc_versions v ON v.doc_id=d.id WHERE d.slug=%s",
+            (slug,)).fetchall() == before
+    assert storage.read_blob(path) == b"old"
+    assert os.listdir(directory) == ["v1.html"]
+    _assert_removal_error(caplog, slug, path)
+
+
+@pytest.mark.parametrize("removal", ["delete", "purge"])
+def test_removal_counts_an_already_absent_directory(removal):
+    slug = "absent/" + removal
+    docs_repo.publish(slug, "Gone", [], None, "analyst", b"old")
+    assert docs_repo.get_latest(slug) is not None
+    if removal == "purge":
+        _backdate(slug)
+    with db.docs_conn() as c:
+        assert c.execute("SELECT id FROM docs WHERE slug=%s", (slug,)).fetchone() is not None
+    storage.delete_doc(slug)
+    if removal == "delete":
+        assert docs_repo.delete_docs([slug]) == (1, [])
+    else:
+        assert docs_repo.purge_expired() == 1
+    with db.docs_conn() as c:
+        assert c.execute("SELECT id FROM docs WHERE slug=%s", (slug,)).fetchone() is None
+
+
 @pytest.mark.parametrize("parent_first", [True, False])
 @pytest.mark.parametrize("removal", ["delete", "purge", "republish"])
 def test_parent_removal_preserves_child_versions(parent_first, removal):
@@ -150,9 +299,10 @@ def test_parent_removal_preserves_child_versions(parent_first, removal):
     child_stats = [os.stat(path) for path in child_files]
     old_parent_file = os.path.join(os.environ["STORE_ROOT"], "family", "v2.md")
     assert os.path.isfile(old_parent_file)
+    assert docs_repo.get_latest("family") is not None
 
     if removal == "delete":
-        assert docs_repo.delete_docs(["family"]) == 1
+        assert docs_repo.delete_docs(["family"]) == (1, [])
     else:
         _backdate("family")
         if removal == "purge":
@@ -293,6 +443,8 @@ def test_delete_docs_waits_for_the_per_slug_lock():
     for the same reason: a publish mid-flight would write v1.html into a
     directory this call is about to remove."""
     docs_repo.publish("e/dlock", "D", [], None, "analyst", b"<h1>1</h1>")
+    assert docs_repo.get_latest("e/dlock") is not None
+    assert os.path.isdir(os.path.join(os.environ["STORE_ROOT"], "e/dlock"))
     done, deleted = threading.Event(), []
 
     def run():
@@ -305,7 +457,7 @@ def test_delete_docs_waits_for_the_per_slug_lock():
         assert not done.wait(0.3), "delete_docs ignored the per-slug lock"
     # Leaving the block ends holder's transaction, dropping the lock.
     assert done.wait(10), "delete_docs never finished once the lock was freed"
-    assert deleted == [1]
+    assert deleted == [(1, [])]
     assert not os.path.exists(os.path.join(os.environ["STORE_ROOT"], "e/dlock"))
 
 

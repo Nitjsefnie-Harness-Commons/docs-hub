@@ -1,8 +1,11 @@
+import errno
+import logging
+import os
 from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 from backend.app import app
-from backend import db, docs_repo, session
+from backend import db, docs_repo, session, storage
 
 KEY = {"x-docs-key": "test-api-key"}
 
@@ -96,9 +99,49 @@ def test_delete_preview_then_confirm():
                   json={"project": "analyst", "confirm_token": pj["confirm_token"]},
                   headers=KEY)
     assert conf.status_code == 200, conf.text
-    cj = conf.json()
-    assert cj["preview"] is False and cj["deleted"] == 2
+    assert conf.json() == {"ok": True, "preview": False, "deleted": 2}
     assert docs_repo.get_latest("analyst/d1") is None
+
+
+def test_delete_reports_partial_failure_and_keeps_row(monkeypatch, caplog):
+    c = _client()
+    slugs = ["failure/d1", "failure/d2", "failure/d3"]
+    for slug in slugs:
+        assert _publish(c, slug).status_code == 200
+        assert docs_repo.get_latest(slug) is not None
+    path = storage.blob_path("failure/d2", 1)
+    assert os.path.isfile(path)
+    prev = c.post("/api/delete", json={"project": "p"}, headers=KEY)
+    assert prev.status_code == 200
+    assert prev.json()["count"] == 3
+    remove = storage.delete_doc
+
+    def fail_one(slug):
+        if slug == "failure/d2":
+            raise OSError(errno.EACCES, "Permission denied", path)
+        remove(slug)
+
+    monkeypatch.setattr(storage, "delete_doc", fail_one)
+    with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+        conf = c.post("/api/delete", headers=KEY,
+                      json={"project": "p", "confirm_token": prev.json()["confirm_token"]})
+    assert conf.status_code == 500
+    assert conf.json() == {
+        "ok": False, "error": "failed to remove stored files",
+        "deleted": 2, "failed": ["failure/d2"],
+    }
+    assert docs_repo.get_latest("failure/d2")["html"] == b"<h1>x</h1>"
+    assert storage.read_blob(path) == b"<h1>x</h1>"
+    assert docs_repo.get_latest("failure/d1") is None
+    assert docs_repo.get_latest("failure/d3") is None
+    assert [d["slug"] for d in docs_repo.list_docs()] == ["failure/d2"]
+    records = [r for r in caplog.records if r.name == "backend.docs_repo"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    assert "for failure/d2 at " in records[0].getMessage()
+    assert f"at {os.path.dirname(path)}:" in records[0].getMessage()
+    assert path in records[0].getMessage()
+    assert "[Errno 13] Permission denied" in records[0].getMessage()
 
 
 def test_delete_bad_token_rejected():
@@ -225,6 +268,44 @@ def _backdate(slug):
         c.execute("UPDATE docs SET expires_at = now() - interval '1 second' "
                   "WHERE slug=%s", (slug,))
         c.commit()
+
+
+def test_expired_publish_removal_failure_returns_500(monkeypatch, caplog):
+    c = TestClient(app, raise_server_exceptions=False)
+    slug = "failure/api-publish"
+    assert _publish(c, slug, body=b"old").status_code == 200
+    assert docs_repo.get_latest(slug)["html"] == b"old"
+    _backdate(slug)
+    path = storage.blob_path(slug, 1)
+    assert storage.read_blob(path) == b"old"
+    with db.docs_conn() as conn:
+        before = conn.execute(
+            "SELECT d.id, d.expires_at, d.latest_version, v.version "
+            "FROM docs d JOIN doc_versions v ON v.doc_id=d.id WHERE d.slug=%s",
+            (slug,)).fetchall()
+    assert len(before) == 1
+
+    def fail_remove(_slug):
+        raise OSError(errno.EACCES, "Permission denied", path)
+
+    monkeypatch.setattr(storage, "delete_doc", fail_remove)
+    with caplog.at_level(logging.ERROR, logger="backend.docs_repo"):
+        response = _publish(c, slug, body=b"new")
+    assert response.status_code == 500
+    with db.docs_conn() as conn:
+        assert conn.execute(
+            "SELECT d.id, d.expires_at, d.latest_version, v.version "
+            "FROM docs d JOIN doc_versions v ON v.doc_id=d.id WHERE d.slug=%s",
+            (slug,)).fetchall() == before
+    assert storage.read_blob(path) == b"old"
+    assert os.listdir(os.path.dirname(path)) == ["v1.html"]
+    records = [r for r in caplog.records if r.name == "backend.docs_repo"]
+    assert len(records) == 1
+    assert records[0].levelno == logging.ERROR
+    assert f"for {slug} at " in records[0].getMessage()
+    assert f"at {os.path.dirname(path)}:" in records[0].getMessage()
+    assert path in records[0].getMessage()
+    assert "[Errno 13] Permission denied" in records[0].getMessage()
 
 
 def test_publish_with_ttl_returns_expires_at():

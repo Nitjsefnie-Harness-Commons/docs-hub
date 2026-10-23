@@ -142,7 +142,10 @@ async def delete(_request: Request,
         return JSONResponse(
             {"ok": False, "error": "confirm token invalid or expired"},
             status_code=409)
-    deleted = docs_repo.delete_docs([m["slug"] for m in matched])
+    deleted, failed = docs_repo.delete_docs([m["slug"] for m in matched])
+    if failed:
+        return JSONResponse({"ok": False, "error": "failed to remove stored files",
+                             "deleted": deleted, "failed": failed}, status_code=500)
     return JSONResponse({"ok": True, "preview": False, "deleted": deleted})
 
 
