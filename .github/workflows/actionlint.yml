@@ -48,10 +48,10 @@ jobs:
     timeout-minutes: 10
 
     env:
-      ACTIONLINT_VERSION: 1.7.12
+      DOCS_HUB_ACTIONLINT_VERSION: 1.7.12
       # sha256 of actionlint_1.7.12_linux_amd64.tar.gz, from the release's own
       # checksums file. Bump both together.
-      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+      DOCS_HUB_ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -69,10 +69,10 @@ jobs:
         # trust whatever that URL serves at run time. The timeouts are there
         # so a hung connection fails in seconds instead of burning the job.
         run: |
-          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tarball="actionlint_${DOCS_HUB_ACTIONLINT_VERSION:-${ACTIONLINT_VERSION}}_linux_amd64.tar.gz"
           curl -fsSL --retry 3 --connect-timeout 10 --max-time 120 -o "$tarball" \
-            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
-          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum -c -
+            "https://github.com/rhysd/actionlint/releases/download/v${DOCS_HUB_ACTIONLINT_VERSION:-${ACTIONLINT_VERSION}}/${tarball}"
+          echo "${DOCS_HUB_ACTIONLINT_SHA256:-${ACTIONLINT_SHA256}}  ${tarball}" | sha256sum -c -
           tar -xzf "$tarball" actionlint
           ./actionlint --version
 

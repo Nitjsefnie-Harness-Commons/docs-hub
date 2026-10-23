@@ -78,7 +78,7 @@ jobs:
       - name: Read and validate the version
         id: version
         env:
-          SHA: ${{ inputs.sha || github.sha }}
+          DOCS_HUB_SHA: ${{ inputs.sha || github.sha }}
         # Read from the imported attribute rather than grepped out of the
         # file: pyproject.toml resolves the distribution version from this
         # same attribute, so reading it the same way is the only way to be
@@ -91,7 +91,7 @@ jobs:
             exit 1
           fi
           echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "sha=${DOCS_HUB_SHA:-${SHA}}" >> "$GITHUB_OUTPUT"
           if [[ "$version" == *".dev"* ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Skipped $version because it is a development version."
@@ -105,27 +105,27 @@ jobs:
         if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          REPO: ${{ github.repository }}
+          DOCS_HUB_TAG: ${{ steps.version.outputs.tag }}
+          DOCS_HUB_REPO: ${{ github.repository }}
         # An existing tag means either a mistaken edit or a rerun after a
         # partial failure. Both want a human, and both are silent if this
         # step is a no-op instead of an error.
         run: |
           if gh api -H "Cache-Control: no-cache" \
-               "repos/$REPO/git/ref/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists — __version__ was set to a version" >&2
+               "repos/${DOCS_HUB_REPO:-${REPO}}/git/ref/tags/${DOCS_HUB_TAG:-${TAG}}" >/dev/null 2>&1; then
+            echo "Tag ${DOCS_HUB_TAG:-${TAG}} already exists — __version__ was set to a version" >&2
             echo "that has already shipped. Bump it further, or delete that" >&2
             echo "tag and its release if it was cut in error." >&2
             exit 1
           fi
-          echo "$TAG is free"
+          echo "${DOCS_HUB_TAG:-${TAG}} is free"
 
       - name: Wait for the other gates on this commit
         if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ steps.version.outputs.sha }}
-          REPO: ${{ github.repository }}
+          DOCS_HUB_SHA: ${{ steps.version.outputs.sha }}
+          DOCS_HUB_REPO: ${{ github.repository }}
         # Exclude only the exact tag and release-readiness jobs, including
         # earlier attempts on this SHA. Every required gate must exist and succeed.
         run: |
@@ -150,7 +150,7 @@ jobs:
           while [ "$SECONDS" -lt "$deadline" ]; do
             runs="$(gh api --paginate \
               -H "Cache-Control: no-cache" \
-              "repos/$REPO/commits/$SHA/check-runs" \
+              "repos/${DOCS_HUB_REPO:-${REPO}}/commits/${DOCS_HUB_SHA:-${SHA}}/check-runs" \
               --jq '.check_runs[] | select(.name != "tag" and .name != "release-readiness")
                     | "\(.status)\t\(.conclusion)\t\(.name)"')"
 
@@ -185,7 +185,7 @@ jobs:
             echo "Every check passed — proceeding."
             exit 0
           done
-          echo "Timed out after $TAG_WAIT_DEADLINE_SECONDS seconds waiting for checks on $SHA" >&2
+          echo "Timed out after $TAG_WAIT_DEADLINE_SECONDS seconds waiting for checks on ${DOCS_HUB_SHA:-${SHA}}" >&2
           exit 1
 
   tag:
@@ -206,33 +206,33 @@ jobs:
       - name: Create and push the tag
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ needs.release-readiness.outputs.tag }}
-          SHA: ${{ needs.release-readiness.outputs.sha }}
+          DOCS_HUB_REPO: ${{ github.repository }}
+          DOCS_HUB_TAG: ${{ needs.release-readiness.outputs.tag }}
+          DOCS_HUB_SHA: ${{ needs.release-readiness.outputs.sha }}
         # An annotated tag, not lightweight: it records who created it and
         # when, which a lightweight tag does not.
         run: |
-          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([._a-z0-9-]*)$ ]]; then
-            echo "Invalid tag: '$TAG'" >&2
+          if [[ ! "${DOCS_HUB_TAG:-${TAG}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([._a-z0-9-]*)$ ]]; then
+            echo "Invalid tag: '${DOCS_HUB_TAG:-${TAG}}'" >&2
             exit 1
           fi
-          tag_object="$(gh api --method POST "repos/$REPO/git/tags" \
-            -f tag="$TAG" -f message="$TAG" -f object="$SHA" -f type=commit --jq '.sha')"
-          gh api --method POST "repos/$REPO/git/refs" \
-            -f ref="refs/tags/$TAG" -f sha="$tag_object"
-          echo "Pushed $TAG at $SHA."
+          tag_object="$(gh api --method POST "repos/${DOCS_HUB_REPO:-${REPO}}/git/tags" \
+            -f tag="${DOCS_HUB_TAG:-${TAG}}" -f message="${DOCS_HUB_TAG:-${TAG}}" -f object="${DOCS_HUB_SHA:-${SHA}}" -f type=commit --jq '.sha')"
+          gh api --method POST "repos/${DOCS_HUB_REPO:-${REPO}}/git/refs" \
+            -f ref="refs/tags/${DOCS_HUB_TAG:-${TAG}}" -f sha="$tag_object"
+          echo "Pushed ${DOCS_HUB_TAG:-${TAG}} at ${DOCS_HUB_SHA:-${SHA}}."
           {
-            echo "### Tagged \`$TAG\`"
+            echo "### Tagged \`${DOCS_HUB_TAG:-${TAG}}\`"
             echo
-            echo "Commit \`$SHA\`, after every check on it passed."
+            echo "Commit \`${DOCS_HUB_SHA:-${SHA}}\`, after every check on it passed."
             echo "\`release.yml\` builds and publishes the wheel from here."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Start the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.release-readiness.outputs.tag }}
-          REPO: ${{ github.repository }}
+          DOCS_HUB_TAG: ${{ needs.release-readiness.outputs.tag }}
+          DOCS_HUB_REPO: ${{ github.repository }}
         # release.yml also triggers on `push: tags: v*`, and that trigger
         # is what fires for a tag a HUMAN pushes. It does not fire for the
         # tag the step above just pushed, because that push was
@@ -241,9 +241,9 @@ jobs:
         # release.yml replaces the assets on a release that already exists
         # rather than failing, so firing twice is not a problem.
         run: |
-          gh workflow run release.yml --repo "$REPO" --ref "$TAG"
-          echo "Dispatched release.yml against $TAG."
+          gh workflow run release.yml --repo "${DOCS_HUB_REPO:-${REPO}}" --ref "${DOCS_HUB_TAG:-${TAG}}"
+          echo "Dispatched release.yml against ${DOCS_HUB_TAG:-${TAG}}."
           {
-            echo "\`release.yml\` dispatched against \`$TAG\`; it builds"
+            echo "\`release.yml\` dispatched against \`${DOCS_HUB_TAG:-${TAG}}\`; it builds"
             echo "and publishes the wheel and its checksums from there."
           } >> "$GITHUB_STEP_SUMMARY"

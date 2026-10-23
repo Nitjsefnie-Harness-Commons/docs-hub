@@ -21,7 +21,8 @@ def _check(name: str, conclusion: str | None = "success",
 
 
 def _run_waiter(tmp_path: Path, checks: list[dict[str, str | None]],
-                deadline: int = 1) -> subprocess.CompletedProcess[str]:
+                deadline: int = 1,
+                workflow_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     with (_REPO / ".github/workflows/tag.yml").open(encoding="utf-8") as stream:
         workflow = yaml.safe_load(stream)
     step = next(step for step in workflow["jobs"]["release-readiness"]["steps"]
@@ -34,16 +35,22 @@ import os
 import subprocess
 import sys
 args = sys.argv[1:]
+endpoint = 'repos/example/repository/commits/' + '0' * 40 + '/check-runs'
+if endpoint not in args:
+    raise SystemExit('unexpected check-run endpoint: ' + repr(args))
 query = args[args.index('--jq') + 1]
 result = subprocess.run(['jq', '-r', query], input=os.environ['CHECKS'], text=True)
 raise SystemExit(result.returncode)
 """, encoding="utf-8")
     gh.chmod(0o755)
+    env = {key: value for key, value in os.environ.items()
+           if key not in {"REPO", "SHA", "DOCS_HUB_REPO", "DOCS_HUB_SHA"}}
+    if workflow_env is None:
+        workflow_env = {"DOCS_HUB_REPO": "example/repository", "DOCS_HUB_SHA": "0" * 40}
     return subprocess.run(
         ["bash", "-e", str(script)], check=False, capture_output=True, text=True,
         timeout=5,
-        env={**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}",
-             "REPO": "example/repository", "SHA": "0" * 40,
+        env={**env, "PATH": f"{tmp_path}:{os.environ['PATH']}", **workflow_env,
              "CHECKS": json.dumps({"check_runs": checks}),
              "TAG_WAIT_DEADLINE_SECONDS": str(deadline),
              "TAG_WAIT_SLEEP_SECONDS": "0.05"},
@@ -52,6 +59,21 @@ raise SystemExit(result.returncode)
 
 def test_all_required_checks_succeed(tmp_path: Path):
     result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED])
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("workflow_env", [
+    {"DOCS_HUB_REPO": "example/repository", "DOCS_HUB_SHA": "0" * 40},
+    {"REPO": "example/repository", "SHA": "0" * 40},
+    {"DOCS_HUB_REPO": "example/repository", "DOCS_HUB_SHA": "0" * 40,
+     "REPO": "example/legacy", "SHA": "1" * 40},
+    {"DOCS_HUB_REPO": "", "DOCS_HUB_SHA": "",
+     "REPO": "example/repository", "SHA": "0" * 40},
+])
+def test_workflow_env_prefers_prefix_and_accepts_legacy(tmp_path: Path,
+                                                        workflow_env: dict[str, str]):
+    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED],
+                         workflow_env=workflow_env)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

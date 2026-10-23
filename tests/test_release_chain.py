@@ -117,7 +117,7 @@ def test_tag_version_skips_development_versions(tmp_path: Path, version: str, sk
     output = tmp_path / "output"
     sha = "a" * 40
     step = _step("tag.yml", "release-readiness", "Read and validate the version")
-    result = _run_script(tmp_path, step["run"], {"GITHUB_OUTPUT": str(output), "SHA": sha})
+    result = _run_script(tmp_path, step["run"], {"GITHUB_OUTPUT": str(output), "DOCS_HUB_SHA": sha})
     assert result.returncode == 0, result.stdout + result.stderr
     values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
     assert values == {"tag": f"v{version}", "sha": sha, "skip": skip}
@@ -170,7 +170,8 @@ def test_tag_writer_creates_annotated_object_then_ref(tmp_path: Path, repo: str,
     sha = "a" * 40
     script = _step("tag.yml", "tag", "Create and push the tag")["run"]
     result = _run_script(tmp_path, script.replace("--method POST", method_option),
-                         {"GH_CALLS": str(calls_path), "REPO": repo, "TAG": tag, "SHA": sha})
+                         {"GH_CALLS": str(calls_path), "DOCS_HUB_REPO": repo,
+                          "DOCS_HUB_TAG": tag, "DOCS_HUB_SHA": sha})
     assert result.returncode == 0, result.stdout + result.stderr
     calls = [json.loads(line) for line in calls_path.read_text(encoding="utf-8").splitlines()]
     assert len(calls) == 2
@@ -193,8 +194,8 @@ def test_tag_writer_refuses_invalid_tag_before_api_calls(tmp_path: Path, tag: st
     calls_path = _stub_gh(tmp_path)
     calls_path.write_text("", encoding="utf-8")
     result = _run_script(tmp_path, _step("tag.yml", "tag", "Create and push the tag")["run"],
-                         {"GH_CALLS": str(calls_path), "REPO": "example/repository",
-                          "TAG": tag, "SHA": "a" * 40})
+                         {"GH_CALLS": str(calls_path), "DOCS_HUB_REPO": "example/repository",
+                          "DOCS_HUB_TAG": tag, "DOCS_HUB_SHA": "a" * 40})
     assert result.returncode == 1, result.stdout + result.stderr
     assert calls_path.read_text(encoding="utf-8") == ""
     assert "invalid" in result.stderr.lower()
@@ -205,8 +206,8 @@ def test_tag_writer_refuses_invalid_tag_before_api_calls(tmp_path: Path, tag: st
 def test_tag_writer_dispatches_release_at_tag(tmp_path: Path):
     calls_path = _stub_gh(tmp_path)
     result = _run_script(tmp_path, _step("tag.yml", "tag", "Start the release")["run"],
-                         {"GH_CALLS": str(calls_path), "REPO": "example/repository",
-                          "TAG": "v1.2.3"})
+                         {"GH_CALLS": str(calls_path), "DOCS_HUB_REPO": "example/repository",
+                          "DOCS_HUB_TAG": "v1.2.3"})
     assert result.returncode == 0, result.stdout + result.stderr
     calls = [json.loads(line) for line in calls_path.read_text(encoding="utf-8").splitlines()]
     assert calls == [{"args": ["workflow", "run", "release.yml", "--repo", "example/repository",
