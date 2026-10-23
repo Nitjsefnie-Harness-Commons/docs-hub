@@ -65,6 +65,41 @@ def test_publish_removes_partial_blob_on_write_failure(monkeypatch, fmt, ext):
     _assert_no_publish_rows(slug)
 
 
+def test_failed_republish_preserves_prior_version(monkeypatch):
+    docs_repo.publish("p/x", "Original", [], None, "analyst", b"<h1>v1</h1>")
+    prior_path = storage.blob_path("p/x", 1, ext="html")
+    path = storage.blob_path("p/x", 2, ext="html")
+    error = OSError(errno.ENOSPC, "No space left on device", path)
+    written = []
+    assert os.path.isfile(prior_path)
+    assert storage.read_blob(prior_path) == b"<h1>v1</h1>"
+    assert docs_repo.get_version("p/x", 1)["html"] == b"<h1>v1</h1>"
+
+    def fail_write(candidate, version, body, ext="html"):
+        partial_path = storage.blob_path(candidate, version, ext)
+        assert partial_path == path
+        with open(partial_path, "wb") as f:
+            f.write(body[:3])
+        assert storage.read_blob(partial_path) == b"<h1"
+        written.append(partial_path)
+        raise error
+
+    monkeypatch.setattr(storage, "store_blob", fail_write)
+    with pytest.raises(OSError) as exc:
+        docs_repo.publish("p/x", "Replacement", [], None, "analyst", b"<h1>v2</h1>")
+    assert exc.value is error
+    assert written == [path]
+    assert not os.path.exists(path)
+    # Failed-republish cleanup must preserve the prior version's file.
+    assert os.path.isfile(prior_path)
+    assert storage.read_blob(prior_path) == b"<h1>v1</h1>"
+    assert docs_repo.get_version("p/x", 1)["html"] == b"<h1>v1</h1>"
+    assert [v["version"] for v in docs_repo.list_versions("p/x")] == [1]
+    with db.docs_conn() as c:
+        assert c.execute("SELECT latest_version FROM docs WHERE slug=%s",
+                         ("p/x",)).fetchall() == [(1,)]
+
+
 @pytest.mark.parametrize("failure", ["insert", "update", "commit"])
 def test_publish_cleans_blob_only_before_commit(monkeypatch, failure):
     slug = "failure/transaction-" + failure
