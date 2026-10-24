@@ -22,9 +22,9 @@ def _thresholds():
 
 thresholds = _thresholds()
 
-# The hysteresis mirrors CALIBRATION_GAP: a raise must clear the record
-# by strictly more than one gap, so the new floor clears the old floor.
-RAISE_HYSTERESIS = Decimal("1.5")
+# A raise must clear the record by strictly more than one calibration gap,
+# so the new floor clears the old floor.
+RAISE_HYSTERESIS = thresholds.CALIBRATION_GAP
 
 
 def update(data: dict, measured: Decimal,
@@ -85,7 +85,7 @@ def main(argv=None) -> int:
             print(f"raised the {args.language} coverage floor "
                   f"{floor:.1f} -> {new_floor:.1f} "
                   f"(measured {args.measured:.1f})")
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, InvalidOperation) as error:
         print(str(error), file=sys.stderr)
         return 1
     return 0
