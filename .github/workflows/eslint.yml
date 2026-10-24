@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: eslint-${{ github.ref }}
+  group: eslint-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -39,6 +39,9 @@ jobs:
         # `npm ci`, not `npm install`: it installs the lockfile exactly and
         # fails if package.json and the lock have drifted apart, so the gate
         # cannot quietly run a different eslint than the one that was reviewed.
+        # The `test -f` spellings exist so the base-freshness derivation sees
+        # package.json and package-lock.json; an implicit `npm ci` read of
+        # them would vanish from the derived file set that leg is judged on.
         run: |
           test -f package.json && test -f package-lock.json
           npm ci

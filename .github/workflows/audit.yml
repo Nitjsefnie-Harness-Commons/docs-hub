@@ -34,7 +34,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: audit-${{ github.ref }}
+  # github.event_name separates this workflow's own scheduled and dispatched
+  # runs from its legs called by the ci gate: github.ref inside a called
+  # workflow is the caller's ref, so both would otherwise share one group and
+  # a cron firing mid-push could cancel that push leg.
+  group: audit-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

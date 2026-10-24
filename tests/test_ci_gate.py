@@ -80,6 +80,10 @@ def test_callees_leave_push_and_pull_request_to_the_gate(name: str) -> None:
         assert "permissions" not in workflow
     elif "permissions" in workflow:
         assert workflow["permissions"] == {"contents": "read"}
+    # `github.ref` inside a called workflow is the caller's ref, so without
+    # the event name a callee's own schedule/dispatch run shares the gate's
+    # called-leg group on that ref and cancels an in-flight push leg.
+    assert "github.event_name" in workflow["concurrency"]["group"]
     for job_name, job in workflow["jobs"].items():
         permissions = job.get("permissions", {})
         if name == "codeql" and job_name == "analyze":

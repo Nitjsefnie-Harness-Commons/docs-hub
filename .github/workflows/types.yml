@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: types-${{ github.ref }}
+  group: types-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,4 +46,7 @@ jobs:
           pip install --require-hashes -r requirements-dev.txt
 
       - name: pyright
+        # `--project pyrightconfig.json` is spelled out so the base-freshness
+        # derivation sees the config: a bare `pyright` would vanish from the
+        # derived file set that leg is judged on.
         run: pyright --project pyrightconfig.json
