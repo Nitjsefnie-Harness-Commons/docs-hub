@@ -2,7 +2,7 @@
 
 The ratchet is the only writer of the thresholds document outside a
 hand edit, so these cases pin the raise decision (never lowers, the
-hysteresis boundary in both directions, a same-value rerun), the
+strictly-above boundary in both directions, a same-value rerun), the
 staleness refusal, the CLI's write and message behaviour and its
 fail-closed error path.
 """
@@ -65,12 +65,12 @@ def test_a_lower_measurement_never_lowers(ratchet: ModuleType,
 
 
 @pytest.mark.parametrize("measured,expected", [
+    (Decimal("95.8"), None),  # Below the record: never lowers.
     (Decimal("95.9"), None),  # Equal to the record: a rerun is a no-op.
-    (Decimal("97.4"), None),  # Exactly the hysteresis above: not justified.
-    (Decimal("97.5"), {"measured": Decimal("97.5"),
-                       "floor": Decimal("96.0")}),
+    (Decimal("96.0"), {"measured": Decimal("96.0"),
+                       "floor": Decimal("94.5")}),
 ])
-def test_the_hysteresis_boundary_holds_in_both_directions(
+def test_the_raise_boundary_holds_in_both_directions(
         ratchet: ModuleType, tmp_path: Path, measured: Decimal,
         expected: dict | None) -> None:
     data = _seed_data(ratchet, tmp_path)
@@ -82,7 +82,7 @@ def test_the_hysteresis_boundary_holds_in_both_directions(
 def test_a_boundary_measurement_writes_nothing(tmp_path: Path) -> None:
     target = _seed(tmp_path)
     before = target.read_bytes()
-    result = _run("--measured", "97.4", "--thresholds", str(target))
+    result = _run("--measured", "95.9", "--thresholds", str(target))
     assert result.returncode == 0, result.stderr
     assert result.stdout == "no raise justified above the recorded 94.4 floor\n"
     assert target.read_bytes() == before
@@ -103,9 +103,9 @@ def test_a_raise_rewrites_and_reports(ratchet: ModuleType,
 def test_a_raise_then_a_same_value_run_does_not_raise_again(
         ratchet: ModuleType, tmp_path: Path) -> None:
     data = _seed_data(ratchet, tmp_path)
-    raised = ratchet.update(data, Decimal("97.5"))
+    raised = ratchet.update(data, Decimal("96.0"))
     assert raised is not None
-    assert ratchet.update(raised, Decimal("97.5")) is None
+    assert ratchet.update(raised, Decimal("96.0")) is None
 
 
 def test_seeding_an_absent_language_leaves_other_families_intact(
@@ -144,8 +144,8 @@ def test_a_seed_writes_and_reports(ratchet: ModuleType, tmp_path: Path) -> None:
 
 
 def test_a_stale_run_writes_nothing(tmp_path: Path) -> None:
-    # 99.9 clears the seed by more than the hysteresis, so this raise is
-    # refused by the staleness check alone, not the raise decision.
+    # 99.9 is above the seed's record, so this raise is refused by the
+    # staleness check alone, not the raise decision.
     target = _seed(tmp_path)
     before = target.read_bytes()
     result = _run("--measured", "99.9", "--base", "aaa", "--tip", "bbb",

@@ -133,8 +133,8 @@ points below it; the `coverage` job reads the floor through
 `python3 scripts/ci/thresholds.py --coverage-floor python` and fails under
 it. After a green `ci gate` run for a push to `master`, the `ratchet push`
 workflow (`.github/workflows/ratchet-push.yml`) commits a raise to
-`master` when that run measured more than 1.5 points above the recorded
-measurement and `master` has not moved since; nothing lowers the floor
+`master` when that run measured above the recorded measurement and
+`master` has not moved since; nothing lowers the floor
 automatically, and lowering it by hand to turn a red build green is not a
 fix. On a pull request the coverage of changed lines (diff-cover against
 `origin/master`) is reported in the job summary with no threshold of its
