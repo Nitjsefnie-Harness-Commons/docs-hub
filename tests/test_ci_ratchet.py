@@ -167,3 +167,17 @@ def test_a_corrupt_thresholds_file_fails_closed(tmp_path: Path) -> None:
     result = _run("--measured", "99.0", "--thresholds", str(target))
     assert result.returncode == 1
     assert result.stderr != ""
+
+
+def test_a_nan_measurement_fails_closed_and_writes_nothing(
+        tmp_path: Path) -> None:
+    # NaN parses as a Decimal and only detonates at the raise comparison;
+    # the CLI must refuse it like any other unreadable input: one stderr
+    # line, never a traceback, and the recorded file untouched.
+    target = _seed_copy(tmp_path)
+    result = _run("--measured", "NaN", "--thresholds", str(target))
+    assert result.returncode == 1
+    assert "Traceback" not in result.stderr
+    assert result.stderr != ""
+    assert result.stdout == ""
+    assert target.read_bytes() == _THRESHOLDS.read_bytes()
