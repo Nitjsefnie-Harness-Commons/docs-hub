@@ -15,7 +15,6 @@ router = APIRouter()
 _CSP = "sandbox"
 
 _TITLE = "Privacy notice"
-_LINK = b'<a href="/privacy">Privacy notice</a>'
 _BODY_CLOSE = re.compile(rb"</body\s*>", re.IGNORECASE)
 
 
@@ -35,15 +34,23 @@ def content() -> bytes | None:
     return data or None
 
 
+def link(class_: str | None = None) -> str:
+    if content() is None:
+        return ""
+    attr = f' class="{class_}"' if class_ else ""
+    return f'<a{attr} href="/privacy">Privacy notice</a>'
+
+
 def inject_link(body: bytes) -> bytes:
     """One link before the last </body>; unchanged when unavailable."""
-    if content() is None:
+    anchor = link().encode("utf-8")
+    if not anchor:
         return body
     closes = list(_BODY_CLOSE.finditer(body))
     if not closes:
-        return body + _LINK
+        return body + anchor
     at = closes[-1].start()
-    return body[:at] + _LINK + body[at:]
+    return body[:at] + anchor + body[at:]
 
 
 @router.get("/privacy")
