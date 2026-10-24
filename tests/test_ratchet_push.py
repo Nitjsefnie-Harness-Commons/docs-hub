@@ -124,7 +124,7 @@ done
     return subprocess.run(
         [_bash(), "-e", str(script)], check=False, capture_output=True,
         text=True, timeout=5,
-        env={**env, "PATH": f"{tmp_path}:{os.environ['PATH']}", **workflow_env,
+        env={**env, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", **workflow_env,
              "REPO": "example/repository",
              "GITHUB_OUTPUT": str(tmp_path / "output.txt"),
              "GH_LOG": str(tmp_path / "gh-calls.log")},
