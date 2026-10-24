@@ -42,8 +42,8 @@ jobs:
       - id: pins
         name: Read the Postgres image pins
         run: |
-          image16="$(sed -n 's/^FROM //p' .github/postgres/16/Dockerfile)"
-          image17="$(sed -n 's/^FROM //p' .github/postgres/17/Dockerfile)"
+          image16="$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/16/Dockerfile)"
+          image17="$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
           case "$image16" in postgres:16.*@sha256:*) ;;
             *) echo ".github/postgres/16/Dockerfile does not pin a postgres 16 image: $image16" >&2; exit 1 ;;
           esac
