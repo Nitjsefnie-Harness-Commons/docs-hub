@@ -23,7 +23,7 @@ from backend.workers import run_db
 SESSION_COOKIE_NAME = "session"
 SESSION_COOKIE_MAX_AGE = 7 * 24 * 3600
 
-_PUBLIC_PATHS = {"/health", "/login", "/logout"}
+_PUBLIC_PATHS = {"/health", "/login", "/logout", "/privacy"}
 
 # A /d/<slug>/v<n> path is the per-version render route — it stays auth-gated
 # even for public docs. Only the hash-less /d/<slug> (latest) route opens.
