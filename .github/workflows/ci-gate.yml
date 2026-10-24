@@ -114,39 +114,40 @@ jobs:
     steps:
       - name: Fold the leg results into one verdict
         env:
-          LEG_TESTS: ${{ needs.tests.result }}
-          LEG_LINT: ${{ needs.lint.result }}
-          LEG_TYPES: ${{ needs.types.result }}
-          LEG_ESLINT: ${{ needs.eslint.result }}
-          LEG_AUDIT: ${{ needs.audit.result }}
-          LEG_ACTIONLINT: ${{ needs.actionlint.result }}
-          LEG_CODEQL: ${{ needs.codeql.result }}
-          LEG_SECRETS: ${{ needs.secrets.result }}
-          LEG_CONFLICT_MARKERS: ${{ needs.conflict-markers.result }}
-          LEG_BASE_FRESHNESS: ${{ needs.base-freshness.result }}
-          EVENT_NAME: ${{ github.event_name }}
+          DOCS_HUB_LEG_TESTS: ${{ needs.tests.result }}
+          DOCS_HUB_LEG_LINT: ${{ needs.lint.result }}
+          DOCS_HUB_LEG_TYPES: ${{ needs.types.result }}
+          DOCS_HUB_LEG_ESLINT: ${{ needs.eslint.result }}
+          DOCS_HUB_LEG_AUDIT: ${{ needs.audit.result }}
+          DOCS_HUB_LEG_ACTIONLINT: ${{ needs.actionlint.result }}
+          DOCS_HUB_LEG_CODEQL: ${{ needs.codeql.result }}
+          DOCS_HUB_LEG_SECRETS: ${{ needs.secrets.result }}
+          DOCS_HUB_LEG_CONFLICT_MARKERS: ${{ needs.conflict-markers.result }}
+          DOCS_HUB_LEG_BASE_FRESHNESS: ${{ needs.base-freshness.result }}
+          DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           failed=0
           check() {
             if [ "$2" = success ]; then
               return
             fi
-            if [ "$1" = base-freshness ] && [ "$2" = skipped ] && [ -n "$EVENT_NAME" ] \
-                && [ "$EVENT_NAME" != pull_request ]; then
+            if [ "$1" = base-freshness ] && [ "$2" = skipped ] \
+                && [ -n "${DOCS_HUB_EVENT_NAME:-${EVENT_NAME}}" ] \
+                && [ "${DOCS_HUB_EVENT_NAME:-${EVENT_NAME}}" != pull_request ]; then
               return
             fi
             echo "$1: ${2:-missing}"
             failed=1
           }
 
-          check tests "${LEG_TESTS:-}"
-          check lint "${LEG_LINT:-}"
-          check types "${LEG_TYPES:-}"
-          check eslint "${LEG_ESLINT:-}"
-          check audit "${LEG_AUDIT:-}"
-          check actionlint "${LEG_ACTIONLINT:-}"
-          check codeql "${LEG_CODEQL:-}"
-          check secrets "${LEG_SECRETS:-}"
-          check conflict-markers "${LEG_CONFLICT_MARKERS:-}"
-          check base-freshness "${LEG_BASE_FRESHNESS:-}"
+          check tests "${DOCS_HUB_LEG_TESTS:-${LEG_TESTS}}"
+          check lint "${DOCS_HUB_LEG_LINT:-${LEG_LINT}}"
+          check types "${DOCS_HUB_LEG_TYPES:-${LEG_TYPES}}"
+          check eslint "${DOCS_HUB_LEG_ESLINT:-${LEG_ESLINT}}"
+          check audit "${DOCS_HUB_LEG_AUDIT:-${LEG_AUDIT}}"
+          check actionlint "${DOCS_HUB_LEG_ACTIONLINT:-${LEG_ACTIONLINT}}"
+          check codeql "${DOCS_HUB_LEG_CODEQL:-${LEG_CODEQL}}"
+          check secrets "${DOCS_HUB_LEG_SECRETS:-${LEG_SECRETS}}"
+          check conflict-markers "${DOCS_HUB_LEG_CONFLICT_MARKERS:-${LEG_CONFLICT_MARKERS}}"
+          check base-freshness "${DOCS_HUB_LEG_BASE_FRESHNESS:-${LEG_BASE_FRESHNESS}}"
           exit "$failed"

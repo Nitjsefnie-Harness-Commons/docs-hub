@@ -35,7 +35,7 @@ def _fold_step() -> dict[str, Any]:
 
 
 def _env_name(leg: str) -> str:
-    return "LEG_" + leg.upper().replace("-", "_")
+    return "DOCS_HUB_LEG_" + leg.upper().replace("-", "_")
 
 
 def test_ci_gate_owns_every_push_and_pull_request() -> None:
@@ -57,7 +57,12 @@ def test_ci_gate_calls_all_eight_gates_with_minimal_permissions() -> None:
     assert set(jobs) == {*_LEGS, "aggregate"}
     for name in _CALLEES:
         job = jobs[name]
-        assert job["uses"] == f"$/.github/workflows/{name}.yml"
+        # The wiring under test is that the callee resolves within this
+        # repository; the local-reference prefix's spelling (./ or $/) is
+        # not the pin, so a migration of it need not touch this test.
+        prefix, slash, remainder = job["uses"].partition("/")
+        assert slash and prefix in ("$", ".")
+        assert remainder == f".github/workflows/{name}.yml"
         assert "with" not in job and "secrets" not in job
         if name == "codeql":
             assert job["permissions"] == {
@@ -109,7 +114,7 @@ def test_aggregate_always_folds_exactly_ten_legs_without_checkout() -> None:
                for step in job["steps"])
     assert _fold_step()["env"] == {
         **{_env_name(leg): "${{ needs." + leg + ".result }}" for leg in _LEGS},
-        "EVENT_NAME": "${{ github.event_name }}",
+        "DOCS_HUB_EVENT_NAME": "${{ github.event_name }}",
     }
 
 
@@ -131,7 +136,14 @@ def _run_script(tmp_path: Path, script: str,
                 env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     path = tmp_path / "step.sh"
     path.write_text(script, encoding="utf-8")
-    inherited = {key: value for key, value in os.environ.items() if not key.startswith("LEG_")}
+    # The prefixed verdict variables are set only through `env`; a stray one
+    # in the session environment must not fake a leg result. DOCS_HUB_API_KEY
+    # and every other real DOCS_HUB_* variable pass through untouched.
+    inherited = {
+        key: value for key, value in os.environ.items()
+        if not key.startswith(("LEG_", "DOCS_HUB_LEG_"))
+        and key != "DOCS_HUB_EVENT_NAME"
+    }
     return subprocess.run(
         ["bash", "-e", str(path)], cwd=tmp_path, check=False,
         capture_output=True, text=True, timeout=5,
@@ -145,9 +157,9 @@ def _run_fold(tmp_path: Path, results: dict[str, str],
     assert set(results) <= set(step["env"])
     env = dict(results)
     if event is None:
-        env.pop("EVENT_NAME", None)
+        env.pop("DOCS_HUB_EVENT_NAME", None)
     else:
-        env["EVENT_NAME"] = event
+        env["DOCS_HUB_EVENT_NAME"] = event
     return _run_script(tmp_path, step["run"], env)
 
 
@@ -175,7 +187,7 @@ def test_fold_refuses_every_unsuccessful_required_leg(tmp_path: Path, leg: str,
 def test_fold_accepts_only_the_designed_freshness_skip(tmp_path: Path, outcome: str,
                                                        exit_code: int) -> None:
     results = _success_env()
-    results["LEG_BASE_FRESHNESS"] = outcome
+    results[_env_name("base-freshness")] = outcome
     result = _run_fold(tmp_path, results)
     assert result.returncode == exit_code, result.stdout + result.stderr
     if exit_code:
@@ -188,7 +200,7 @@ def test_fold_accepts_only_the_designed_freshness_skip(tmp_path: Path, outcome: 
 def test_freshness_skip_exemption_needs_a_non_pull_request_event(
         tmp_path: Path, event: str | None, exit_code: int) -> None:
     results = _success_env()
-    results["LEG_BASE_FRESHNESS"] = "skipped"
+    results[_env_name("base-freshness")] = "skipped"
     result = _run_fold(tmp_path, results, event)
     assert result.returncode == exit_code, result.stdout + result.stderr
     if exit_code:
@@ -206,6 +218,26 @@ def test_fold_refuses_unset_and_empty_results(tmp_path: Path, leg: str, empty: b
     result = _run_fold(tmp_path, results)
     assert result.returncode == 1, result.stdout + result.stderr
     assert leg in result.stdout + result.stderr
+
+
+def test_fold_honours_the_legacy_name_when_the_prefixed_one_is_unset(
+        tmp_path: Path) -> None:
+    env = _success_env()
+    del env[_env_name("tests")]
+    env["LEG_TESTS"] = "failure"
+    result = _run_script(tmp_path, _fold_step()["run"], env)
+    assert result.returncode == 1, result.stdout + result.stderr
+    # Naming the leg with its legacy-carried result is the discriminator:
+    # with the fallback dropped the same leg is reported as missing instead.
+    assert "tests: failure" in result.stdout + result.stderr
+
+
+def test_fold_prefers_the_prefixed_name_when_both_names_are_set(
+        tmp_path: Path) -> None:
+    env = _success_env()
+    env["LEG_TESTS"] = "failure"
+    result = _run_script(tmp_path, _fold_step()["run"], env)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_fold_reports_every_offending_leg(tmp_path: Path) -> None:
