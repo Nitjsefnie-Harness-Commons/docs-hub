@@ -127,7 +127,8 @@ jobs:
           }
 
           for manifest in requirements.txt requirements-dev.txt requirements-test.txt \
-                          requirements-audit.txt requirements-zizmor.txt requirements-build.txt; do
+                          requirements-diff-cover.txt requirements-audit.txt \
+                          requirements-zizmor.txt requirements-build.txt; do
             audit_manifest "$manifest"
           done
 

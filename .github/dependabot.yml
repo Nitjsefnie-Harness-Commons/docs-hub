@@ -8,9 +8,9 @@
 
 version: 2
 updates:
-  # requirements-dev.txt (lint/type toolchain) and requirements-test.txt
-  # (coverage) are pinned; requirements.txt is deliberately unpinned, so
-  # Dependabot has nothing to raise there and will leave it alone.
+  # requirements-dev.txt (lint), requirements-test.txt (coverage) and
+  # requirements-diff-cover.txt (diff-cover) are pinned; requirements.txt
+  # is unpinned, so Dependabot leaves it alone.
   - package-ecosystem: pip
     directory: "/"
     schedule:
