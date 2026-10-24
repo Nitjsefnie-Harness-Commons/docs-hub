@@ -1,0 +1,170 @@
+{
+  ".github/ISSUE_TEMPLATE/config.yml": [
+    155,
+    408
+  ],
+  ".github/dependabot.yml": [
+    1317,
+    1958
+  ],
+  ".github/workflows/actionlint.yml": [
+    2018,
+    3371
+  ],
+  ".github/workflows/audit.yml": [
+    2598,
+    4168
+  ],
+  ".github/workflows/ci-gate.yml": [
+    1082,
+    3704
+  ],
+  ".github/workflows/codeql.yml": [
+    1596,
+    2505
+  ],
+  ".github/workflows/comment-share.yml": [
+    528,
+    1095
+  ],
+  ".github/workflows/eslint.yml": [
+    765,
+    1274
+  ],
+  ".github/workflows/lint.yml": [
+    687,
+    1761
+  ],
+  ".github/workflows/release.yml": [
+    2737,
+    6259
+  ],
+  ".github/workflows/secrets.yml": [
+    1299,
+    2294
+  ],
+  ".github/workflows/tag.yml": [
+    3162,
+    7815
+  ],
+  ".github/workflows/tests.yml": [
+    2840,
+    5888
+  ],
+  ".github/workflows/types.yml": [
+    678,
+    1329
+  ],
+  "backend/api.py": [
+    1001,
+    5502
+  ],
+  "backend/app.py": [
+    512,
+    1524
+  ],
+  "backend/auth.py": [
+    194,
+    1113
+  ],
+  "backend/db.py": [
+    879,
+    2878
+  ],
+  "backend/docs_repo.py": [
+    3863,
+    12105
+  ],
+  "backend/reaper.py": [
+    1291,
+    2762
+  ],
+  "backend/render.py": [
+    513,
+    2372
+  ],
+  "backend/session.py": [
+    999,
+    4196
+  ],
+  "backend/settings.py": [
+    332,
+    580
+  ],
+  "backend/storage.py": [
+    1133,
+    3409
+  ],
+  "backend/ttl.py": [
+    1258,
+    1795
+  ],
+  "backend/views.py": [
+    412,
+    1726
+  ],
+  "backend/workers.py": [
+    206,
+    489
+  ],
+  "docs_hub_cli/__init__.py": [
+    391,
+    415
+  ],
+  "docs_hub_cli/_settings.py": [
+    2002,
+    2881
+  ],
+  "docs_hub_cli/cli.py": [
+    3348,
+    12657
+  ],
+  "eslint.config.mjs": [
+    894,
+    1300
+  ],
+  "public/app.js": [
+    3597,
+    21615
+  ],
+  "scripts/install-hooks.sh": [
+    85,
+    312
+  ],
+  "scripts/pre-push": [
+    212,
+    408
+  ],
+  "scripts/secrecy-check.sh": [
+    478,
+    2177
+  ],
+  "tests/conftest.py": [
+    320,
+    1492
+  ],
+  "tests/test_cli.py": [
+    2093,
+    5826
+  ],
+  "tests/test_cli_filters.py": [
+    268,
+    1665
+  ],
+  "tests/test_cli_unit.py": [
+    6119,
+    33135
+  ],
+  "tests/test_db.py": [
+    2751,
+    6995
+  ],
+  "tests/test_reaper.py": [
+    2008,
+    12790
+  ],
+  "tests/test_ttl.py": [
+    565,
+    1373
+  ]
+}

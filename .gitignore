@@ -37,6 +37,7 @@
 .github/*
 !.github/PULL_REQUEST_TEMPLATE.md
 !.github/dependabot.yml
+!.github/comment-share.json
 !.github/ISSUE_TEMPLATE/
 .github/ISSUE_TEMPLATE/*
 !.github/ISSUE_TEMPLATE/*.md

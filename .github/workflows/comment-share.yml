@@ -1,0 +1,41 @@
+name: comment share
+
+# The fleet comment gate. Its own workflow, not a ci-gate leg: `mode: auto`
+# refuses a workflow_dispatch event, and ci-gate is dispatched by hand, so a
+# callee there would fail every manual run.
+#
+# On a master push, `mode: auto` tightens: it rewrites
+# .github/comment-share.json in this job's checkout and never commits or
+# pushes it (comment-ratchet README, "Ratchet and records"). This repository
+# ships no push chain, so records raise only via seeds committed in the pull
+# requests that need them; no push credential exists here. No path filter on
+# either trigger, so the check reports on every pull request.
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: comment-share-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  comment-share:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: Nitjsefnie-Actions/comment-ratchet@841a1da8b06b3f6db9eb67fcccb0ec81e608855f # v1.2.0
+        with:
+          target: '15'
+          records: '.github/comment-share.json'
+          mode: 'auto'
+          base-ref: ${{ github.event.pull_request.base.sha }}
