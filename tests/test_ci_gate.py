@@ -57,7 +57,7 @@ def test_ci_gate_calls_all_eight_gates_with_minimal_permissions() -> None:
     assert set(jobs) == {*_LEGS, "aggregate"}
     for name in _CALLEES:
         job = jobs[name]
-        assert job["uses"] == f"./.github/workflows/{name}.yml"
+        assert job["uses"] == f"$/.github/workflows/{name}.yml"
         assert "with" not in job and "secrets" not in job
         if name == "codeql":
             assert job["permissions"] == {
