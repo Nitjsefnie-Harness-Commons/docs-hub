@@ -201,7 +201,11 @@ jobs:
         # An annotated tag, not lightweight: it records who created it and
         # when, which a lightweight tag does not.
         run: |
-          if [[ ! "${DOCS_HUB_TAG:-${TAG}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([._a-z0-9-]*)$ ]]; then
+          # grep -qzE, not [[ =~ ]]: the comment-ratchet action's shell
+          # measurement refuses =~ operands (Nitjsefnie-Actions/comment-ratchet,
+          # README "Measurement rules"); -z keeps $ anchored to the whole
+          # value, so a tag with an embedded newline still refuses.
+          if ! printf '%s' "${DOCS_HUB_TAG:-${TAG}}" | grep -qzE '^v[0-9]+\.[0-9]+\.[0-9]+([._a-z0-9-]*)$'; then
             echo "Invalid tag: '${DOCS_HUB_TAG:-${TAG}}'" >&2
             exit 1
           fi
