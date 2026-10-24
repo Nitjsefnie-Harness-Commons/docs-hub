@@ -46,4 +46,4 @@ jobs:
           pip install --require-hashes -r requirements-dev.txt
 
       - name: pyright
-        run: pyright
+        run: pyright --project pyrightconfig.json
