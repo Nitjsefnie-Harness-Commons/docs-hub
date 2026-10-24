@@ -39,7 +39,9 @@ jobs:
         # `npm ci`, not `npm install`: it installs the lockfile exactly and
         # fails if package.json and the lock have drifted apart, so the gate
         # cannot quietly run a different eslint than the one that was reviewed.
-        run: npm ci
+        run: |
+          test -f package.json && test -f package-lock.json
+          npm ci
 
       - name: eslint
         run: npx eslint public
