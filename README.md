@@ -119,9 +119,17 @@ Optional environment:
 
 - `DOCS_HUB_PURGE_INTERVAL_SECONDS` — how often the reaper deletes expired
   documents (default `60`).
+- `DOCS_HUB_PRIVACY_NOTICE_FILE` — path to a Markdown file with the
+  operator's privacy notice. When set and readable, `/privacy` serves it
+  rendered as Markdown and a link to it appears on the sign-in form and on
+  anonymously served public documents; unset, empty or unreadable means
+  the link and the page are absent.
 
-The old unprefixed names keep working as a fallback; the prefixed name wins
-when both are set. Empty values count as unset for both spellings.
+The old unprefixed names keep working as a fallback for the settings read
+through `backend/settings.py` (the prefixed name wins when both are set).
+`DOCS_HUB_API_KEY` and `DOCS_HUB_PRIVACY_NOTICE_FILE` are read
+prefixed-only and have no unprefixed alias. Empty values count as unset
+everywhere.
 
 After pulling a version that changes `requirements.txt`, run
 `.venv/bin/pip install -r requirements.txt` before restarting the unit.

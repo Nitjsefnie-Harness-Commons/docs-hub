@@ -46,8 +46,10 @@ invocation keeps working unchanged.
 - Agent auth: a shared API key (`DOCS_HUB_API_KEY`, from the environment).
 - Public docs: a sticky per-slug `public` flag on the `docs` row (default
   false, survives re-publishes). When set, the hash-less `/d/<slug>` latest
-  route serves to anyone without auth — that is the ONLY anonymous surface.
-  `/d/<slug>/v<n>`, `/api/*` and the SPA shell stay auth-gated. Toggle via
+  route serves to anyone without auth; that and the operator-configured
+  `/privacy` notice route (`DOCS_HUB_PRIVACY_NOTICE_FILE`) are the two
+  anonymous surfaces, and the only ones. `/d/<slug>/v<n>`, `/api/*` and
+  the SPA shell stay auth-gated. Toggle via
   `POST /api/doc/<slug>/public` (auth required) or the SPA doc-view button.
   `db.migrate()` applies the idempotent `ALTER TABLE` at startup.
 - Ephemeral docs: a nullable `expires_at` on the `docs` row, set per publish
