@@ -62,6 +62,7 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+          cache-dependency-path: requirements-zizmor.txt
 
       - name: Install actionlint
         # Downloaded and checksum-verified rather than piped from the install
@@ -78,9 +79,7 @@ jobs:
 
       - name: Install zizmor
         id: install_zizmor
-        run: |
-          python -m pip install --upgrade pip
-          pip install zizmor==1.29.0
+        run: pip install --require-hashes -r requirements-zizmor.txt
 
       - name: actionlint
         id: actionlint

@@ -82,14 +82,16 @@ jobs:
         # a local port and drives the CLI against it. The client itself
         # declares no dependencies, which is the property the wheel ships.
         run: |
-          python -m pip install --upgrade pip build
+          pip install --require-hashes -r requirements-build.txt
           python -m pip install -r requirements.txt
 
       - name: Install the package itself
         # For the suite, not for the build: the moment the client gains a
         # runtime dependency, an uninstalled package dies at import — taking
         # the release with it, before anything is built.
-        run: pip install .
+        # --no-build-isolation keeps the backend from requirements-build.txt;
+        # an isolated install would download an unverified backend.
+        run: pip install . --no-build-isolation
 
       - name: Run the suite before publishing anything
         env:
@@ -97,7 +99,9 @@ jobs:
         run: python -m pytest -q -ra
 
       - name: Build the wheel
-        run: python -m build --wheel
+        # --no-isolation uses the hash-installed backend instead of downloading
+        # an unverified build environment.
+        run: python -m build --wheel --no-isolation
 
       - name: Prove the wheel is the client and nothing else
         # `packages = ["docs_hub_cli"]` in pyproject.toml exists to keep the

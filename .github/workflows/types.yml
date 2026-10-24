@@ -47,8 +47,8 @@ jobs:
         # without them installed pyright reports unresolved imports and then
         # treats every value that came from them as Unknown.
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt -r requirements-dev.txt
+          pip install -r requirements.txt
+          pip install --require-hashes -r requirements-dev.txt
 
       - name: pyright
         run: pyright

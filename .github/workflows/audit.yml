@@ -59,19 +59,17 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+          cache-dependency-path: requirements-audit.txt
 
       - name: Install pip-audit
-        run: |
-          python -m pip install --upgrade pip
-          pip install pip-audit==2.10.1
+        # The auditor is hash-installed and audited from its own manifest below.
+        run: pip install --require-hashes -r requirements-audit.txt
 
       - name: Audit the Python dependencies
-        # All three requirements files in one invocation so a package
-        # constrained by two of them resolves once, consistently — the same
-        # way an install would see it. requirements.txt is the deployed
-        # runtime; the other two are the CI toolchain, which runs with a
-        # repository token and is a supply-chain surface even though it never
-        # ships.
+        # One invocation per manifest: --require-hashes mode is per-invocation,
+        # and a joint resolution would reconcile across manifests this gate
+        # must audit independently. requirements.txt is the deployed runtime;
+        # every hashed manifest below is part of the CI supply-chain surface.
         #
         # No --ignore-vuln entries at present. Each one added here must carry
         # a comment naming the advisory, why it is not fixable, and what would
@@ -86,32 +84,38 @@ jobs:
         # carries a transport error, and reports anything else immediately and
         # verbatim.
         run: |
-          for attempt in 1 2 3; do
-            if pip-audit \
-                 --progress-spinner off \
-                 --requirement requirements.txt \
-                 --requirement requirements-dev.txt \
-                 --requirement requirements-test.txt \
-                 > audit.out 2>&1; then
-              cat audit.out
-              exit 0
-            fi
+          audit_manifest() {
+            local manifest="$1"
+            for attempt in 1 2 3; do
+              if pip-audit \
+                   --progress-spinner off \
+                   --requirement "$manifest" \
+                   > audit.out 2>&1; then
+                cat audit.out
+                return 0
+              fi
 
-            if grep -qiE 'connection (aborted|reset|error)|read timed out|temporary failure in name resolution' audit.out; then
-              echo "attempt $attempt: transport failure talking to PyPI, retrying"
-              tail -n 5 audit.out
-              sleep $(( attempt * 15 ))
-              continue
-            fi
+              if grep -qiE 'connection (aborted|reset|error)|read timed out|temporary failure in name resolution' audit.out; then
+                echo "$manifest attempt $attempt: transport failure talking to PyPI, retrying"
+                tail -n 5 audit.out
+                sleep $(( attempt * 15 ))
+                continue
+              fi
 
-            echo "pip-audit reported findings:" >&2
+              echo "pip-audit reported findings in $manifest:" >&2
+              cat audit.out >&2
+              exit 1
+            done
+
+            echo "pip-audit could not reach PyPI for $manifest after 3 attempts:" >&2
             cat audit.out >&2
             exit 1
-          done
+          }
 
-          echo "pip-audit could not reach PyPI after 3 attempts:" >&2
-          cat audit.out >&2
-          exit 1
+          for manifest in requirements.txt requirements-dev.txt requirements-test.txt \
+                          requirements-audit.txt requirements-zizmor.txt requirements-build.txt; do
+            audit_manifest "$manifest"
+          done
 
   npm-audit:
     # The npm surface is the eslint toolchain only — nothing in package.json
