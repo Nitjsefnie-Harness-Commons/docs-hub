@@ -1,4 +1,5 @@
 """The /privacy page and the injected link; the env stays unset suite-wide."""
+import os
 import re
 
 from fastapi.testclient import TestClient
@@ -101,6 +102,21 @@ def test_absent_when_file_empty(tmp_path, monkeypatch):
 def test_absent_when_path_is_a_directory(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV, str(tmp_path))
     _assert_notice_absent_everywhere()
+
+
+def test_absent_when_path_is_a_fifo(tmp_path, monkeypatch):
+    """A fifo reads as unconfigured: not a regular file."""
+    path = tmp_path / "notice.fifo"
+    os.mkfifo(path)
+    monkeypatch.setenv(ENV, str(path))
+    # O_RDWR so this open cannot block; the held writer turns a dropped
+    # regular-file check into a hang instead of a blocked open.
+    writer = os.open(path, os.O_RDWR)
+    os.write(writer, b"x")
+    try:
+        assert _client().get("/privacy").status_code == 404
+    finally:
+        os.close(writer)
 
 
 def test_sign_in_form_links_the_notice(tmp_path, monkeypatch):
