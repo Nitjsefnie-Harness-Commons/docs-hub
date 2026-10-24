@@ -158,6 +158,8 @@ def test_the_report_step_is_information_only() -> None:
     assert _conjuncts(step["if"]) >= _conjuncts(_step("Coverage summary")["if"]) | {
         "github.event_name == 'pull_request'"}
     assert "--fail-under" not in step["run"]
+    # A failing report shows at step level but cannot fail the job.
+    assert step.get("continue-on-error") is True
 
 
 def test_the_staging_step_runs_only_on_green_master_pushes() -> None:
