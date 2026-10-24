@@ -123,16 +123,15 @@ def test_dependabot_docker_directories_are_the_ones_the_images_jobs_read():
 def test_dependabot_docker_ignore_uses_update_types():
     # Dependabot's docker ecosystem rejects `versions` in an ignore condition
     # (invalid version requirements there); the semantic-versioning levels go
-    # in `update-types`.
+    # in `update-types`, and the ruling pins exactly the major level — any
+    # other list would silently change which updates are suppressed.
     updates = yaml.safe_load(
         (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
     docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")
     assert docker["ignore"]
     for condition in docker["ignore"]:
         assert "versions" not in condition, condition
-        assert "update-types" in condition, condition
-        assert all(update.startswith("version-update:semver-")
-                   for update in condition["update-types"]), condition
+        assert condition["update-types"] == ["version-update:semver-major"], condition
 
 
 @pytest.mark.parametrize("major", [16, 17])
