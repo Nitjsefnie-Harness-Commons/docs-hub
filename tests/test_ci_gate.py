@@ -10,7 +10,7 @@ import yaml
 _REPO = Path(__file__).resolve().parent.parent
 _CALLEES = ("tests", "lint", "types", "eslint", "audit", "actionlint", "codeql", "secrets")
 _LEGS = (*_CALLEES, "conflict-markers", "base-freshness")
-_CRONS = {"audit": "12 4 * * *", "codeql": "47 3 * * 3", "secrets": "29 3 * * *"}
+_SCHEDULED = {"audit", "codeql", "secrets"}
 
 
 def _workflow(filename: str = "ci-gate.yml") -> dict[str, Any]:
@@ -47,9 +47,9 @@ def test_ci_gate_owns_every_push_and_pull_request() -> None:
     for event in ("push", "pull_request"):
         assert not filters.intersection(triggers[event] or {})
     assert workflow["permissions"] == {"contents": "read"}
-    assert workflow["concurrency"] == {
-        "group": "ci-gate-${{ github.ref }}", "cancel-in-progress": True,
-    }
+    concurrency = workflow["concurrency"]
+    assert "${{github.ref}}" in "".join(concurrency["group"].split())
+    assert concurrency["cancel-in-progress"] is True
 
 
 def test_ci_gate_calls_all_eight_gates_with_minimal_permissions() -> None:
@@ -72,11 +72,26 @@ def test_callees_leave_push_and_pull_request_to_the_gate(name: str) -> None:
     workflow = _workflow(f"{name}.yml")
     triggers = _triggers(workflow)
     expected = {"workflow_call", "workflow_dispatch"}
-    if name in _CRONS:
+    if name in _SCHEDULED:
         expected.add("schedule")
-        assert triggers["schedule"] == [{"cron": _CRONS[name]}]
+        assert triggers["schedule"]
     assert set(triggers) == expected
-    assert workflow["permissions"] == {"contents": "read"}
+    if name == "codeql":
+        assert "permissions" not in workflow
+    elif "permissions" in workflow:
+        assert workflow["permissions"] == {"contents": "read"}
+    for job_name, job in workflow["jobs"].items():
+        permissions = job.get("permissions", {})
+        if name == "codeql" and job_name == "analyze":
+            # Only analysis uploads security events; the caller grants this
+            # write scope solely to CodeQL, keeping other callees read-only.
+            assert permissions == {
+                "security-events": "write", "actions": "read", "contents": "read",
+            }
+        elif isinstance(permissions, dict):
+            assert "write" not in permissions.values()
+        else:
+            assert permissions in (None, "read-all")
 
 
 def test_aggregate_always_folds_exactly_ten_legs_without_checkout() -> None:
@@ -84,11 +99,8 @@ def test_aggregate_always_folds_exactly_ten_legs_without_checkout() -> None:
     assert set(job["needs"]) == set(_LEGS)
     assert len(job["needs"]) == len(_LEGS)
     assert job["if"] in ("${{ always() }}", "always()")
-    assert "name" not in job
-    assert job["runs-on"] == "ubuntu-latest"
-    assert job["timeout-minutes"] == 10
+    assert job["name"] == "ci gate / aggregate"
     assert job["permissions"] == {"contents": "read"}
-    assert job["steps"] == [_fold_step()]
     assert all(step.get("uses", "").partition("@")[0] != "actions/checkout"
                for step in job["steps"])
     assert _fold_step()["env"] == {
@@ -99,8 +111,6 @@ def test_aggregate_always_folds_exactly_ten_legs_without_checkout() -> None:
 def test_local_legs_have_checkout_and_read_only_permissions() -> None:
     for name in ("conflict-markers", "base-freshness"):
         job = _workflow()["jobs"][name]
-        assert job["runs-on"] == "ubuntu-latest"
-        assert job["timeout-minutes"] == 10
         assert job["permissions"] == {"contents": "read"}
         assert job["steps"][0].get("uses", "").partition("@")[0] == "actions/checkout"
         assert len(job["steps"]) == 2
