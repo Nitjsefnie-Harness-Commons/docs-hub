@@ -77,7 +77,8 @@ and a temp blob store — see `tests/conftest.py`. No live network.
 
 One `ci gate` workflow owns the gate set's `push` and `pull_request`
 triggers without a path filter, so documentation-only pushes run it too.
-It folds eight gates: `tests` (Postgres 16 and 17, 90% coverage floor),
+It folds eight gates: `tests` (Postgres 16 and 17, plus the recorded
+coverage floor),
 `lint` (pycodestyle, pylint), `types` (pyright over `backend/`), `eslint`
 (over `public/`), `audit` (pip-audit, npm audit), `codeql`, `actionlint`
 (actionlint + zizmor), and `secrets` (gitleaks). Its `aggregate` job folds
@@ -86,6 +87,15 @@ and PR-only `base-freshness`, which fails when `master` holds a gate-input
 commit the head lacks, naming the commit and file. CONTRIBUTING.md's table
 gives the local commands; CodeQL runs on GitHub. Run the applicable local
 checks before pushing rather than using CI as the first check.
+
+The coverage floor is recorded, not fixed: `.github/ci-thresholds.json`
+holds a measurement and a floor exactly 1.5 points below it, and the
+`coverage` job fails under that floor. After a green `ci gate` run for a
+push to `master`, `ratchet push` commits a raise when that run measured
+more than 1.5 points above the recorded measurement and `master` has not
+moved since; nothing lowers it automatically. On a pull request the
+coverage of changed lines is reported in the job summary with no
+threshold of its own.
 
 Two more workflows are the release chain rather than gates: `tag` watches
 `docs_hub_cli/__init__.py` on `master`, requires `aggregate` to succeed and

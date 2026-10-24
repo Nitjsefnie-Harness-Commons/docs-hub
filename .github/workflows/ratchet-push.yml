@@ -7,8 +7,9 @@ name: ratchet push
 
 on:
   workflow_run:  # zizmor: ignore[dangerous-triggers]
-    # The job's own if re-checks event, branch and conclusion; the job runs
-    # fetched-master code with deploy-key auth and checks out nothing.
+    # The job's own if re-checks event, branch and conclusion; it downloads
+    # this repository's own artifacts, runs only fetched-master data
+    # helpers, pushes by deploy key and checks out nothing.
     workflows: [ci gate]
     types: [completed]
 
