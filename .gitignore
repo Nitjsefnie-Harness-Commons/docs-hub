@@ -47,6 +47,14 @@
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/*.yml
+!.github/postgres/
+.github/postgres/*
+!.github/postgres/16/
+.github/postgres/16/*
+!.github/postgres/16/Dockerfile
+!.github/postgres/17/
+.github/postgres/17/*
+!.github/postgres/17/Dockerfile
 
 # --- application ------------------------------------------------------
 !backend/
