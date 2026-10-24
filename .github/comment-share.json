@@ -8,16 +8,16 @@
     1958
   ],
   ".github/workflows/actionlint.yml": [
-    2018,
-    3371
+    2083,
+    3436
   ],
   ".github/workflows/audit.yml": [
-    2598,
-    4168
+    2863,
+    4987
   ],
   ".github/workflows/ci-gate.yml": [
     1082,
-    3704
+    4094
   ],
   ".github/workflows/codeql.yml": [
     1596,
@@ -48,8 +48,8 @@
     7815
   ],
   ".github/workflows/tests.yml": [
-    2840,
-    5888
+    2832,
+    5880
   ],
   ".github/workflows/types.yml": [
     678,
