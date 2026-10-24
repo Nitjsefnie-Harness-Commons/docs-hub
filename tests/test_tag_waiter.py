@@ -8,11 +8,7 @@ import pytest
 import yaml
 
 _REPO = Path(__file__).resolve().parent.parent
-_REQUIRED = (
-    "suites (3.13, 16)", "suites (3.13, 17)", "coverage", "pylint",
-    "pycodestyle", "pyright", "eslint", "pip-audit", "npm-audit",
-    "analyze (python)", "analyze (javascript-typescript)",
-)
+_REQUIRED = ("aggregate",)
 
 
 def _check(name: str, conclusion: str | None = "success",
@@ -87,14 +83,14 @@ def test_missing_required_check_waits_until_deadline(tmp_path: Path, missing: st
 @pytest.mark.parametrize("conclusion", ["skipped", "failure", "cancelled", "timed_out", "neutral"])
 def test_required_check_must_succeed(tmp_path: Path, conclusion: str):
     result = _run_waiter(tmp_path, [
-        _check(name, conclusion if name == "coverage" else "success") for name in _REQUIRED
+        _check(name, conclusion) for name in _REQUIRED
     ])
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Refusing to tag" in result.stderr
 
 
 def test_failed_tag_prefix_is_not_exempt(tmp_path: Path):
-    result = _run_waiter(tmp_path, [_check("tag-security", "failure"), _check("eslint")])
+    result = _run_waiter(tmp_path, [_check("tag-security", "failure"), _check("aggregate")])
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Refusing to tag" in result.stderr
 
@@ -116,10 +112,29 @@ def test_previous_failed_readiness_is_exempt(tmp_path: Path, include_tag: bool):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_additional_success_check_is_allowed(tmp_path: Path):
-    checks = [_check(name) for name in _REQUIRED] + [_check("security-review")]
+@pytest.mark.parametrize("name", ["security-review", "tests / suites (3.13, 16)"])
+def test_additional_success_check_is_allowed(tmp_path: Path, name: str):
+    checks = [_check(required) for required in _REQUIRED] + [_check(name)]
     result = _run_waiter(tmp_path, checks)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_nested_success_cannot_replace_aggregate(tmp_path: Path):
+    result = _run_waiter(tmp_path, [_check("tests / suites (3.13, 16)")])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Timed out" in result.stderr
+
+
+@pytest.mark.parametrize("aggregate_status", [None, "in_progress"])
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled"])
+def test_nested_failure_refuses_before_aggregate_completes(
+        tmp_path: Path, aggregate_status: str | None, conclusion: str):
+    checks = [_check("tests / suites (3.13, 16)", conclusion)]
+    if aggregate_status is not None:
+        checks.append(_check("aggregate", None, aggregate_status))
+    result = _run_waiter(tmp_path, checks)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Refusing to tag" in result.stderr
 
 
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out"])
@@ -139,8 +154,7 @@ def test_failed_readiness_prefix_is_not_exempt(tmp_path: Path):
 
 
 def test_running_required_check_waits_until_deadline(tmp_path: Path):
-    checks = [_check(name) for name in _REQUIRED if name != "coverage"]
-    checks.append(_check("coverage", None, "in_progress"))
+    checks = [_check(name, None, "in_progress") for name in _REQUIRED]
     result = _run_waiter(tmp_path, checks)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Timed out" in result.stderr
