@@ -9,7 +9,8 @@ name: ci gate
 #
 # The fold fails closed on failed, cancelled, skipped or missing results and
 # reports every offending leg. Its one narrowing is base-freshness: that job
-# is PR-only by design, so its skipped result is accepted on other events.
+# is PR-only by design, so its skipped result is accepted only when the event
+# is not a pull_request; an unset event refuses.
 
 on:
   pull_request:
@@ -89,10 +90,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The PR head itself, not the synthetic merge: the merge already
+          # contains base changes, so a head missing a gate-input commit
+          # would pass there. Full depth keeps the head's ancestry local.
+          fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Check the PR contains the target branch's gate definitions
-        run: python3 scripts/ci/gate_base_freshness.py
+        run: python3 scripts/ci/gate_base_freshness.py --head ${{ github.event.pull_request.head.sha }}
 
   aggregate:
     needs: [tests, lint, types, eslint, audit, actionlint, codeql, secrets,
@@ -115,13 +121,15 @@ jobs:
           LEG_SECRETS: ${{ needs.secrets.result }}
           LEG_CONFLICT_MARKERS: ${{ needs.conflict-markers.result }}
           LEG_BASE_FRESHNESS: ${{ needs.base-freshness.result }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           failed=0
           check() {
             if [ "$2" = success ]; then
               return
             fi
-            if [ "$1" = base-freshness ] && [ "$2" = skipped ]; then
+            if [ "$1" = base-freshness ] && [ "$2" = skipped ] && [ -n "$EVENT_NAME" ] \
+                && [ "$EVENT_NAME" != pull_request ]; then
               return
             fi
             echo "$1: ${2:-missing}"

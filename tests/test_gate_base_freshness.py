@@ -367,3 +367,65 @@ def test_workflow_refusal_edges(
     assert result.returncode == 1, result.stdout + result.stderr
     with pytest.raises(gate.GateError):
         gate.gate_paths(head)
+
+
+def test_merged_checkout_of_diverged_head_is_stale(
+        tmp_path: Path, gate: ModuleType) -> None:
+    origin, head = _fixture_repo(tmp_path)
+    pr_sha = _commit_file(head, "README.md", "pr-only change\n")
+    base_sha = _commit_file(origin, "inputs/data.txt", "new gate input\n")
+    result = _run(head)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert base_sha in result.stdout and "inputs/data.txt" in result.stdout
+    assert _git(head, "rev-list", "--count", f"{pr_sha}..origin/master") == "1"
+    _git(head, "fetch", "-q", "origin")
+    _git(head, "checkout", "-q", "--detach", "origin/master")
+    _git(head, "-c", "core.hooksPath=/dev/null", "merge", "--no-ff", "-q", "-m",
+         "synthetic PR merge", pr_sha)
+    # A merge of base and head contains master by construction, so the
+    # default spelling cannot name the base commit there; that is why the
+    # workflow passes the pull request's head sha instead of relying on the
+    # checked-out HEAD.
+    result = _run(head, "--head", pr_sha)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert base_sha in result.stdout and "inputs/data.txt" in result.stdout
+    assert pr_sha not in result.stdout
+    assert "Rebase onto master and push again" in result.stdout
+    assert gate.stale_commits(head, pr_sha, "origin/master", ["inputs/data.txt"])
+
+
+def test_workflow_added_on_master_is_stale(tmp_path: Path) -> None:
+    origin, head = _fixture_repo(tmp_path)
+    path = ".github/workflows/new.yml"
+    sha = _commit_file(origin, path,
+                       "jobs:\n  extra:\n    steps:\n      - run: echo extra\n")
+    result = _run(head)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert sha in result.stdout and path in result.stdout
+
+
+def test_input_added_on_master_is_stale(tmp_path: Path) -> None:
+    origin, head = _fixture_repo(tmp_path)
+    sha = _commit_file(origin, "inputs/new.txt", "new named-directory input\n")
+    result = _run(head)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert sha in result.stdout and "inputs/new.txt" in result.stdout
+
+
+def test_base_added_fold_and_named_input_are_stale(
+        tmp_path: Path, gate: ModuleType) -> None:
+    origin, head = _fixture_repo(tmp_path)
+    workflow = ".github/workflows/extra.yml"
+    input_sha = _commit_file(origin, "inputs/extra.txt", "extra gate input\n")
+    extra = _commit_file(origin, workflow,
+                         "jobs:\n  extra:\n    steps:\n      - run: cat inputs/extra.txt\n")
+    gate_path = ".github/workflows/ci-gate.yml"
+    fold = _commit_file(origin, gate_path,
+                        (origin / gate_path).read_text(encoding="utf-8")
+                        .replace("needs: [lint]", "needs: [lint, extra]"))
+    result = _run(head)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert extra in result.stdout and workflow in result.stdout
+    assert fold in result.stdout and gate_path in result.stdout
+    assert input_sha in result.stdout and "inputs/extra.txt" in result.stdout
+    assert "inputs/extra.txt" in gate.gate_paths(head)

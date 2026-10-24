@@ -104,7 +104,8 @@ def test_aggregate_always_folds_exactly_ten_legs_without_checkout() -> None:
     assert all(step.get("uses", "").partition("@")[0] != "actions/checkout"
                for step in job["steps"])
     assert _fold_step()["env"] == {
-        _env_name(leg): "${{ needs." + leg + ".result }}" for leg in _LEGS
+        **{_env_name(leg): "${{ needs." + leg + ".result }}" for leg in _LEGS},
+        "EVENT_NAME": "${{ github.event_name }}",
     }
 
 
@@ -117,7 +118,9 @@ def test_local_legs_have_checkout_and_read_only_permissions() -> None:
     freshness = _workflow()["jobs"]["base-freshness"]
     assert freshness["if"] == "github.event_name == 'pull_request'"
     assert "if" not in freshness["steps"][1]
-    assert freshness["steps"][1]["run"] == "python3 scripts/ci/gate_base_freshness.py"
+    assert freshness["steps"][1]["run"] == (
+        "python3 scripts/ci/gate_base_freshness.py"
+        " --head ${{ github.event.pull_request.head.sha }}")
 
 
 def _run_script(tmp_path: Path, script: str,
@@ -132,10 +135,16 @@ def _run_script(tmp_path: Path, script: str,
     )
 
 
-def _run_fold(tmp_path: Path, results: dict[str, str]) -> subprocess.CompletedProcess[str]:
+def _run_fold(tmp_path: Path, results: dict[str, str],
+              event: str | None = "push") -> subprocess.CompletedProcess[str]:
     step = _fold_step()
     assert set(results) <= set(step["env"])
-    return _run_script(tmp_path, step["run"], results)
+    env = dict(results)
+    if event is None:
+        env.pop("EVENT_NAME", None)
+    else:
+        env["EVENT_NAME"] = event
+    return _run_script(tmp_path, step["run"], env)
 
 
 def _success_env() -> dict[str, str]:
@@ -164,6 +173,19 @@ def test_fold_accepts_only_the_designed_freshness_skip(tmp_path: Path, outcome: 
     results = _success_env()
     results["LEG_BASE_FRESHNESS"] = outcome
     result = _run_fold(tmp_path, results)
+    assert result.returncode == exit_code, result.stdout + result.stderr
+    if exit_code:
+        assert "base-freshness" in result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("event,exit_code", [
+    ("push", 0), ("workflow_dispatch", 0), ("pull_request", 1), ("", 1), (None, 1),
+])
+def test_freshness_skip_exemption_needs_a_non_pull_request_event(
+        tmp_path: Path, event: str | None, exit_code: int) -> None:
+    results = _success_env()
+    results["LEG_BASE_FRESHNESS"] = "skipped"
+    result = _run_fold(tmp_path, results, event)
     assert result.returncode == exit_code, result.stdout + result.stderr
     if exit_code:
         assert "base-freshness" in result.stdout + result.stderr
