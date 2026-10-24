@@ -34,6 +34,10 @@ def _publish(c, slug, body=b"<h1>x</h1>"):
                   files={"file": ("d.html", body, "text/html")}, headers=KEY)
 
 
+# KEY is a module constant that nothing mutates, and it cannot become a None
+# sentinel: `headers=None` is a meaningful argument here -- it is how a test
+# asks for an unauthenticated request.
+# pylint: disable-next=dangerous-default-value
 def _set_public(c, slug, public, headers=KEY):
     return c.post(f"/api/doc/{slug}/public",
                   json={"public": public}, headers=headers)

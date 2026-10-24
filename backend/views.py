@@ -3,10 +3,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from starlette.responses import HTMLResponse, Response
 
-from backend import docs_repo, render
+from backend import docs_repo, privacy, render
 from backend.workers import run_db
 
 router = APIRouter()
@@ -49,8 +49,15 @@ async def render_version(slug: str, version: int) -> Response:
 
 
 @router.get("/d/{slug:path}")
-async def render_latest(slug: str) -> Response:
+async def render_latest(request: Request, slug: str) -> Response:
     doc = await run_db(docs_repo.get_latest, slug)
     if doc is None:
         return Response("Not found", status_code=404, media_type="text/plain")
-    return await run_db(_serve, doc)
+    resp = await run_db(_serve, doc)
+    # The middleware marks exactly the hash-less public-doc anonymous read;
+    # every other viewer gets the document exactly as published.
+    if getattr(request.state, "principal", None) == "anonymous":
+        # Starlette types the body as bytes|memoryview; injection works on bytes.
+        resp.body = privacy.inject_link(bytes(resp.body))
+        resp.headers["content-length"] = str(len(resp.body))
+    return resp

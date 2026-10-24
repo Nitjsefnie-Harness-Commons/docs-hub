@@ -8,7 +8,7 @@ from threading import Lock
 from fastapi import APIRouter, Form, Request
 from starlette.responses import HTMLResponse, RedirectResponse, Response
 
-from backend import auth, db, session, settings
+from backend import auth, db, privacy, session, settings
 from backend.workers import run_db
 
 router = APIRouter()
@@ -73,9 +73,17 @@ _LOGIN_HTML = """<!DOCTYPE html>
 """
 
 
+def _login_page(err: str, status_code: int = 200) -> HTMLResponse:
+    """The sign-in form, carrying the privacy link when the operator
+    configured the notice (privacy.inject_link is availability-gated)."""
+    return HTMLResponse(
+        privacy.inject_link(_LOGIN_HTML.format(err=err).encode("utf-8")),
+        status_code=status_code)
+
+
 @router.get("/login")
 def login_page() -> HTMLResponse:
-    return HTMLResponse(_LOGIN_HTML.format(err=""))
+    return _login_page("")
 
 
 @router.post("/login")
@@ -83,16 +91,14 @@ async def login_post(request: Request, user_id: str = Form(""),
                      password: str = Form("")) -> Response:
     ip = request.client.host if request.client else "unknown"
     if _rate_limited(ip):
-        return HTMLResponse(_LOGIN_HTML.format(err="Too many attempts."),
-                            status_code=429)
+        return _login_page("Too many attempts.", status_code=429)
     try:
         uid = int(user_id.strip())
     except ValueError:
         uid = 0
     if uid <= 0 or not await run_db(_verify_credentials, uid, password):
         _record_failure(ip)
-        return HTMLResponse(_LOGIN_HTML.format(err="Invalid credentials."),
-                            status_code=401)
+        return _login_page("Invalid credentials.", status_code=401)
     token = session.make_session_token(uid)
     resp = RedirectResponse("/", status_code=303)
     resp.set_cookie(

@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from backend import api, db, login, reaper, session, views
+from backend import api, db, login, privacy, reaper, session, views
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 db.load_dotenv(str(_REPO_ROOT / ".env"))
@@ -46,6 +46,7 @@ app.middleware("http")(session.auth_middleware)
 app.include_router(login.router)
 app.include_router(api.router)
 app.include_router(views.router)
+app.include_router(privacy.router)
 
 _PUBLIC_DIR = _REPO_ROOT / "public"
 
