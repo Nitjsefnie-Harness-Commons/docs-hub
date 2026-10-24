@@ -60,6 +60,7 @@ _LOGIN_HTML = """<!DOCTYPE html>
  button{{margin-top:18px;width:100%;padding:10px;background:#1f6f9c;color:#fff;
    border:0;border-radius:4px;font-weight:600;cursor:pointer}}
  .err{{color:#e76;font-size:12px;min-height:16px;margin-top:8px}}
+ a.priv{{display:block;margin-top:12px;font-size:12px;color:#8aa}}
 </style></head><body>
 <form method="post" action="/login">
  <h1>docs.nitjsefni.eu</h1>
@@ -69,15 +70,15 @@ _LOGIN_HTML = """<!DOCTYPE html>
  <input id="password" name="password" type="password" required>
  <button type="submit">Sign in</button>
  <div class="err">{err}</div>
-</form></body></html>
+{privacy}</form></body></html>
 """
 
 
 def _login_page(err: str, status_code: int = 200) -> HTMLResponse:
-    """The sign-in form, carrying the privacy link when the operator
-    configured the notice (privacy.inject_link is availability-gated)."""
+    """The sign-in form; the {privacy} slot inside the form fills only when
+    the operator configured the notice."""
     return HTMLResponse(
-        privacy.inject_link(_LOGIN_HTML.format(err=err).encode("utf-8")),
+        _LOGIN_HTML.format(err=err, privacy=privacy.link("priv")),
         status_code=status_code)
 
 
