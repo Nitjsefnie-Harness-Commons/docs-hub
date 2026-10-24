@@ -222,7 +222,7 @@ def test_comparison_refuses_empty_and_oversized_pathsets(gate: ModuleType) -> No
     with pytest.raises(gate.GateError, match="empty"):
         gate.stale_commits(_REPO, "HEAD", "HEAD", [])
     with pytest.raises(gate.GateError, match="argument list"):
-        gate.stale_commits(_REPO, "HEAD", "HEAD", ["é" * gate.PATHSPECS_MAX_BYTES])
+        gate.stale_commits(_REPO, "HEAD", "HEAD", ["é" * 32768])
 
 
 def test_shallow_checkout_fetches_full_base_history(tmp_path: Path, gate: ModuleType) -> None:
@@ -292,3 +292,78 @@ def test_merge_row_names_its_limit(tmp_path: Path, gate: ModuleType) -> None:
     assert "a merge commit" in result.stdout
     assert "checker.py" in result.stdout and "inputs/data.txt" in result.stdout
     assert gate.stale_commits(head, "HEAD", "origin/master", ["checker.py", "inputs/data.txt"])
+
+
+def test_called_aggregate_input_is_stale_but_root_aggregate_input_is_not(
+        tmp_path: Path, gate: ModuleType) -> None:
+    origin, head = _fixture_repo(tmp_path)
+    _commit_file(origin, ".github/workflows/tests.yml", """jobs:
+  aggregate:
+    steps:
+      - run: cat inputs/sentinel.txt
+""")
+    _commit_file(origin, "inputs/sentinel.txt", "initial\n")
+    _git(head, "fetch", "-q", "origin")
+    _git(head, "merge", "--ff-only", "origin/master")
+    root_only = _commit_file(origin, "aggregate-only.txt", "root aggregate input\n")
+    result = _run(head)
+    assert result.returncode == 0, result.stdout + result.stderr
+    called = _commit_file(origin, "inputs/sentinel.txt", "called aggregate input\n")
+    result = _run(head)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert called in result.stdout and "inputs/sentinel.txt" in result.stdout
+    assert root_only not in result.stdout and "aggregate-only.txt" not in result.stdout
+    paths = gate.gate_paths(head)
+    assert "inputs/sentinel.txt" in paths
+    assert "aggregate-only.txt" not in paths
+
+
+@pytest.mark.parametrize("reference", [
+    '"./inputs"', "'./inputs'", "|\n          ./inputs", ">-\n          ./inputs",
+])
+def test_unmodeled_local_action_scalar_refuses(
+        tmp_path: Path, gate: ModuleType, reference: str) -> None:
+    _, head = _fixture_repo(tmp_path)
+    _commit_file(head, ".github/workflows/ci-gate.yml", f"""jobs:
+  lint:
+    steps:
+      - uses: {reference}
+  aggregate:
+    needs: [lint]
+""")
+    result = _run(head)
+    assert result.returncode == 1, result.stdout + result.stderr
+    with pytest.raises(gate.GateError):
+        gate.gate_paths(head)
+
+
+def test_comparison_accepts_pathset_at_byte_ceiling(
+        gate: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
+    candidate = "é" * 32767 + "a"
+    forwarded: list[str] = []
+
+    def git_boundary(root: Path, *arguments: str, what: str) -> str:
+        assert root == _REPO and what
+        assert arguments[:5] == ("log", "HEAD..HEAD", "--name-only", "--format=%x00%H%x09%s",
+                                 "--")
+        forwarded.extend(arguments[5:])
+        return ""
+
+    monkeypatch.setattr(gate, "git", git_boundary)
+    assert gate.stale_commits(_REPO, "HEAD", "HEAD", [candidate]) == []
+    assert forwarded == [candidate]
+
+
+@pytest.mark.parametrize("text", [
+    "jobs:\n  check:\njobs:\n  another:\n",
+    "jobs:\n  check:\n    steps:\n      - run: [cat, inputs/data.txt]\n",
+    "jobs:\n  check:\n    steps:\n      - uses: {path: ./inputs}\n",
+])
+def test_workflow_refusal_edges(
+        tmp_path: Path, gate: ModuleType, text: str) -> None:
+    _, head = _fixture_repo(tmp_path)
+    _commit_file(head, ".github/workflows/edge.yml", text)
+    result = _run(head, "--print-paths")
+    assert result.returncode == 1, result.stdout + result.stderr
+    with pytest.raises(gate.GateError):
+        gate.gate_paths(head)
