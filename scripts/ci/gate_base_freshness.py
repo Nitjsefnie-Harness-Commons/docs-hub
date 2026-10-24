@@ -13,7 +13,13 @@ computed paths and files read from inside scripts are invisible unless a run:
 step names them. This derives named inputs, rather than every file a gate reads.
 Only the explicit block workflow layout below is modeled; other shapes refuse.
 
-    scripts/ci/gate_base_freshness.py [--root DIR] [--print-paths]
+The watched universe is the union of this head's and origin/master's trees, so
+a file master added is watched before any rebase. --head checks a named commit
+instead of HEAD; the workflow passes the pull request's head sha, because a
+pull_request checkout may be the synthetic merge, whose tree already contains
+base changes.
+
+    scripts/ci/gate_base_freshness.py [--root DIR] [--head SHA] [--print-paths]
 """
 import re
 import subprocess
@@ -238,9 +244,9 @@ def step_fields(lines: list[str], start: int, end: int, workflow: str, dash: str
     return step
 
 
-def tracked_files(root: Path) -> tuple[str, ...]:
+def tracked_files(root: Path, commit: str = "HEAD") -> tuple[str, ...]:
     command = ("git", "-C", str(root), "ls-tree", "-z", "-r", "--name-only",
-               "--full-tree", "HEAD")
+               "--full-tree", commit)
     done = subprocess.run(command, capture_output=True, check=False)
     if done.returncode:
         raise GateError("cannot list the tracked tree: "
@@ -251,19 +257,29 @@ def tracked_files(root: Path) -> tuple[str, ...]:
         raise GateError("a tracked path is not valid UTF-8") from refusal
 
 
-def read_workflows(root: Path) -> dict[str, dict[str, Job]]:
-    files = tracked_files(root)
+def read_workflows(root: Path, commit: str = "HEAD") -> dict[str, dict[str, Job]]:
+    files = tracked_files(root, commit)
     names = sorted(path for path in files if path.startswith(WORKFLOW_DIR + "/")
                    and path.endswith((".yml", ".yaml")))
-    return {name: workflow_jobs(git(root, "cat-file", "blob", f"HEAD:{name}",
+    return {name: workflow_jobs(git(root, "cat-file", "blob", f"{commit}:{name}",
                                     what=f"read {name}"), name) for name in names}
 
 
-def required_jobs(parsed: dict[str, dict[str, Job]]) -> set[str]:
-    aggregate = parsed.get(GATE_WORKFLOW, {}).get("aggregate")
+def fold_needs(parsed: dict[str, dict[str, Job]]) -> set[str]:
+    """This tree's aggregate needs; a tree without the gate workflow adds none."""
+    if GATE_WORKFLOW not in parsed:
+        return set()
+    aggregate = parsed[GATE_WORKFLOW].get("aggregate")
     if aggregate is None or not aggregate.needs or "aggregate" in aggregate.needs:
         raise GateError(f"{GATE_WORKFLOW}: aggregate must need explicit folded jobs")
     return aggregate.needs
+
+
+def required_jobs(parsed: dict[str, dict[str, Job]]) -> set[str]:
+    needs = fold_needs(parsed)
+    if not needs:
+        raise GateError(f"{GATE_WORKFLOW}: aggregate must need explicit folded jobs")
+    return needs
 
 
 def candidates(text: str) -> list[str]:
@@ -281,12 +297,9 @@ def resolve(candidate: str, files: Sequence[str]) -> tuple[str, ...]:
     return tuple(path for path in files if path.startswith(candidate + "/"))
 
 
-def folded_steps(parsed: dict[str, dict[str, Job]]) -> list[Step]:
-    pending = [(workflow, name) for name in sorted(required_jobs(parsed))
+def folded_steps(parsed: dict[str, dict[str, Job]], required: set[str]) -> list[Step]:
+    pending = [(workflow, name) for name in sorted(required)
                for workflow, jobs in parsed.items() if name in jobs]
-    for name in required_jobs(parsed):
-        if not any(name in jobs for jobs in parsed.values()):
-            raise GateError(f"no workflow under {WORKFLOW_DIR}/ defines required job `{name}`")
     seen: set[tuple[str, str]] = set()
     steps: list[Step] = []
     while pending:
@@ -304,16 +317,25 @@ def folded_steps(parsed: dict[str, dict[str, Job]]) -> list[Step]:
     return steps
 
 
-def gate_paths(root: Path) -> list[str]:
-    files = tracked_files(root)
-    parsed = read_workflows(root)
+def gate_paths(root: Path, head: str = "HEAD") -> list[str]:
+    head_commit = commit_of(root, head, "resolve the derivation's head")
+    base_commit = commit_of(root, f"refs/remotes/origin/{BASE_BRANCH}",
+                            f"resolve origin/{BASE_BRANCH} for the derivation")
+    files = sorted(set(tracked_files(root, head_commit))
+                   | set(tracked_files(root, base_commit)))
+    parsed = [read_workflows(root, commit) for commit in (head_commit, base_commit)]
+    required = required_jobs(parsed[0]) | fold_needs(parsed[1])
+    for name in sorted(required):
+        if not any(name in jobs for side in parsed for jobs in side.values()):
+            raise GateError(f"no workflow under {WORKFLOW_DIR}/ defines required job `{name}`")
     derived = set(resolve(WORKFLOW_DIR, files))
-    for step in folded_steps(parsed):
-        uses = step["uses"] or ""
-        if uses.startswith("./"):
-            derived.update(files if uses == "./" else resolve(uses, files))
-        for candidate in candidates(step["run"] or ""):
-            derived.update(resolve(candidate, files))
+    for side in parsed:
+        for step in folded_steps(side, required):
+            uses = step["uses"] or ""
+            if uses.startswith("./"):
+                derived.update(files if uses == "./" else resolve(uses, files))
+            for candidate in candidates(step["run"] or ""):
+                derived.update(resolve(candidate, files))
     if not derived:
         raise GateError("the derived path set is empty, so there is nothing to compare")
     return sorted(derived)
@@ -350,14 +372,17 @@ def stale_commits(root: Path, head: str, base: str,
     return stale
 
 
-def check(root: Path) -> int:
-    head = git(root, "rev-parse", "--verify", "HEAD^{commit}",
-               what="resolve the checked-out head").strip()
+def commit_of(root: Path, revision: str, what: str) -> str:
+    return git(root, "rev-parse", "--verify", f"{revision}^{{commit}}", what=what).strip()
+
+
+def check(root: Path, head: str) -> int:
+    head_commit = commit_of(root, head, f"resolve the checked-out head {head}")
     fetch_base(root)
-    base = git(root, "rev-parse", "--verify", f"refs/remotes/origin/{BASE_BRANCH}^{{commit}}",
-               what=f"resolve origin/{BASE_BRANCH}").strip()
-    paths = gate_paths(root)
-    stale = stale_commits(root, head, base, paths)
+    base_commit = commit_of(root, f"refs/remotes/origin/{BASE_BRANCH}",
+                            what=f"resolve origin/{BASE_BRANCH}")
+    paths = gate_paths(root, head_commit)
+    stale = stale_commits(root, head_commit, base_commit, paths)
     if not stale:
         print(f"This head carries every commit on {BASE_BRANCH} that touches "
               f"the {len(paths)} file(s) a required check reads BY NAME.")
@@ -379,22 +404,26 @@ def check(root: Path) -> int:
 
 def main(argv: Sequence[str]) -> int:
     root = Path(__file__).resolve().parents[2]
+    head = "HEAD"
     print_paths = False
     rest = list(argv[1:])
     while rest:
         argument = rest.pop(0)
         if argument == "--print-paths":
             print_paths = True
+        elif argument == "--head" and rest:
+            head = rest.pop(0)
         elif argument == "--root" and rest:
             root = Path(rest.pop(0))
         else:
-            print("usage: gate_base_freshness.py [--root DIR] [--print-paths]", file=sys.stderr)
+            print("usage: gate_base_freshness.py [--root DIR] [--head SHA] [--print-paths]",
+                  file=sys.stderr)
             return 2
     try:
         if print_paths:
             print("\n".join(gate_paths(root)))
             return 0
-        return check(root)
+        return check(root, head)
     except (GateError, OSError, UnicodeError) as refusal:
         print(f"head freshness: {refusal}", file=sys.stderr)
         return 1
