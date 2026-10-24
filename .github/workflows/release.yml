@@ -40,7 +40,7 @@ jobs:
       postgres:
         # Docker Hub multi-arch index, resolved with
         # docker buildx imagetools inspect postgres:17; updates go through this
-        # repository's review flow. No weekly bump exists yet (PM decision).
+        # repository's review flow. No automated digest bump yet; see #59.
         image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
         env:
           POSTGRES_PASSWORD: postgres
