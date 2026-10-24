@@ -204,11 +204,10 @@ jobs:
 
       - name: Coverage of changed lines (informational)
         if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'pull_request' }}
-        # Information only: the report goes to the job summary, adds no
-        # required check and is not folded into any aggregate verdict. There
-        # is deliberately no --fail-under; a broken tool run still fails the
-        # step, because a silent absence of report is a silent absence of
-        # information.
+        # Information only: the report goes to the job summary, with no
+        # --fail-under. A broken tool run shows this step as failed, but
+        # continue-on-error stops that failing the job, and so aggregate.
+        continue-on-error: true
         run: |
           git fetch --no-tags origin master
           pip install --require-hashes -r requirements-diff-cover.txt
