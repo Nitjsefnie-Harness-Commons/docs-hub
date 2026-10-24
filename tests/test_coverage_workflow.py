@@ -12,7 +12,6 @@ import pytest
 import yaml
 
 _REPO = Path(__file__).resolve().parent.parent
-_THRESHOLDS = _REPO / ".github/ci-thresholds.json"
 
 
 def _coverage_job() -> dict[str, Any]:
@@ -112,19 +111,15 @@ def test_the_staging_step_writes_exactly_the_artifact_files(
         tmp_path: Path, line_rate: str, expected: str) -> None:
     (tmp_path / "coverage.xml").write_text(
         f'<coverage line-rate="{line_rate}"></coverage>\n', encoding="utf-8")
-    github = tmp_path / ".github"
-    github.mkdir()
-    (github / "ci-thresholds.json").write_bytes(_THRESHOLDS.read_bytes())
     sha = "a" * 40
     result = _run_script(tmp_path, _step("Stage the coverage raise artifact")["run"],
                          {"GITHUB_SHA": sha})
     assert result.returncode == 0, result.stdout + result.stderr
     staged = tmp_path / _step("Upload the coverage raise artifact")["with"]["path"]
     assert sorted(path.name for path in staged.iterdir()) == [
-        "base.txt", "ci-thresholds.json", "measured.txt"]
+        "base.txt", "measured.txt"]
     assert (staged / "measured.txt").read_text() == f"{expected}\n"
     assert (staged / "base.txt").read_text() == f"{sha}\n"
-    assert (staged / "ci-thresholds.json").read_bytes() == _THRESHOLDS.read_bytes()
 
 
 def test_the_report_step_appends_the_tool_output_to_the_summary(

@@ -220,14 +220,11 @@ jobs:
       - name: Stage the coverage raise artifact
         if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
         # The push workflow (ratchet-push.yml) consumes this artifact: the
-        # 1-dp overall line coverage, the commit it was measured at and the
-        # thresholds file as measured, so the raise decision there can be
-        # replayed from exactly these bytes.
+        # 1-dp overall line coverage and the commit it was measured at.
         run: |
           mkdir coverage-raise
           python3 - <<'PY'
           import os
-          import shutil
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
@@ -235,7 +232,6 @@ jobs:
           rate = ET.parse("coverage.xml").getroot().attrib["line-rate"]
           (out / "measured.txt").write_text(f"{100 * float(rate):.1f}\n", encoding="utf-8")
           (out / "base.txt").write_text(os.environ["GITHUB_SHA"] + "\n", encoding="utf-8")
-          shutil.copyfile(".github/ci-thresholds.json", out / "ci-thresholds.json")
           PY
 
       - name: Upload the coverage raise artifact
