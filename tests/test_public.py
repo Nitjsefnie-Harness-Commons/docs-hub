@@ -162,6 +162,18 @@ def test_keyed_v_tail_slug_renders_latest_not_422():
     assert r.content == body
 
 
+def test_mid_path_v_segment_slug_renders_latest():
+    """A `/v<digits>` segment in the MIDDLE of a slug is slug text, not a
+    version tail: `a/v123/b` is one slug and its latest render is what the
+    keyed reader gets."""
+    c = _client()
+    body = b"<h1>mid-path v</h1>"
+    assert _publish(c, "a/v123/b", body=body).status_code == 200
+    r = c.get("/d/a/v123/b", headers=KEY)
+    assert r.status_code == 200
+    assert r.content == body
+
+
 def test_anonymous_public_v_tail_slug_renders_latest():
     """Anonymous on a public `a/vx`: the hash-less route renders the latest
     version; only the /v<digits> tail form addresses a version."""
