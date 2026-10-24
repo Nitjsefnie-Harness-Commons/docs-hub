@@ -23,12 +23,7 @@ name: audit
 # would clear it — never silence the whole gate.
 
 on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
-      - '.gitignore'
-  pull_request:
+  workflow_call:
   schedule:
     # 04:12 UTC daily. Off the hour deliberately: the top of the hour is when
     # every cron on GitHub fires at once and jobs queue.

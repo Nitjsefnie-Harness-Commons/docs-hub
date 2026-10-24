@@ -10,12 +10,7 @@ name: eslint
 # a dead assignment reaches the browser and shows up as a blank screen.
 
 on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
-      - '.gitignore'
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:

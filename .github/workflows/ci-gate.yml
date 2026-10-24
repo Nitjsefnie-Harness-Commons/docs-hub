@@ -1,0 +1,141 @@
+name: ci gate
+
+# One workflow owns the required context: rulesets require one context per
+# name. The paths-ignore gates disappeared on docs-only pushes, leaving no
+# check that could be required on every commit.
+#
+# This file owns every push and pull request. Callees keep workflow_call,
+# their crons and workflow_dispatch; they carry no push or pull_request trigger.
+#
+# The fold fails closed on failed, cancelled, skipped or missing results and
+# reports every offending leg. Its one narrowing is base-freshness: that job
+# is PR-only by design, so its skipped result is accepted on other events.
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+
+  lint:
+    uses: ./.github/workflows/lint.yml
+
+  types:
+    uses: ./.github/workflows/types.yml
+
+  eslint:
+    uses: ./.github/workflows/eslint.yml
+
+  audit:
+    uses: ./.github/workflows/audit.yml
+
+  actionlint:
+    uses: ./.github/workflows/actionlint.yml
+
+  codeql:
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    uses: ./.github/workflows/codeql.yml
+
+  secrets:
+    uses: ./.github/workflows/secrets.yml
+
+  conflict-markers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check no tracked file carries a merge-conflict marker
+        # A marker in Markdown can look like prose to the other gates, so
+        # check every tracked file even on docs-only pushes.
+        run: |
+          # git grep exits 1 for "no match" and above 1 for an error it could
+          # not run, and a guard that reads its own error as a clean tree is
+          # the false green this step exists to prevent.
+          found=0
+          git grep -nI -E '^(<{7}( |$)|>{7}( |$)|={7}$)' -- . || found=$?
+          if [ "$found" -gt 1 ]; then
+            echo "git grep exited $found, so no marker was looked for."
+            exit "$found"
+          fi
+          if [ "$found" -eq 0 ]; then
+            echo "A merge-conflict marker is committed. Resolve the conflict, rebase onto the target branch and push again."
+            exit 1
+          fi
+
+  base-freshness:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the PR contains the target branch's gate definitions
+        run: python3 scripts/ci/gate_base_freshness.py
+
+  aggregate:
+    needs: [tests, lint, types, eslint, audit, actionlint, codeql, secrets,
+            conflict-markers, base-freshness]
+    if: ${{ always() }}
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Fold the leg results into one verdict
+        env:
+          LEG_TESTS: ${{ needs.tests.result }}
+          LEG_LINT: ${{ needs.lint.result }}
+          LEG_TYPES: ${{ needs.types.result }}
+          LEG_ESLINT: ${{ needs.eslint.result }}
+          LEG_AUDIT: ${{ needs.audit.result }}
+          LEG_ACTIONLINT: ${{ needs.actionlint.result }}
+          LEG_CODEQL: ${{ needs.codeql.result }}
+          LEG_SECRETS: ${{ needs.secrets.result }}
+          LEG_CONFLICT_MARKERS: ${{ needs.conflict-markers.result }}
+          LEG_BASE_FRESHNESS: ${{ needs.base-freshness.result }}
+        run: |
+          failed=0
+          check() {
+            if [ "$2" = success ]; then
+              return
+            fi
+            if [ "$1" = base-freshness ] && [ "$2" = skipped ]; then
+              return
+            fi
+            echo "$1: ${2:-missing}"
+            failed=1
+          }
+
+          check tests "${LEG_TESTS:-}"
+          check lint "${LEG_LINT:-}"
+          check types "${LEG_TYPES:-}"
+          check eslint "${LEG_ESLINT:-}"
+          check audit "${LEG_AUDIT:-}"
+          check actionlint "${LEG_ACTIONLINT:-}"
+          check codeql "${LEG_CODEQL:-}"
+          check secrets "${LEG_SECRETS:-}"
+          check conflict-markers "${LEG_CONFLICT_MARKERS:-}"
+          check base-freshness "${LEG_BASE_FRESHNESS:-}"
+          exit "$failed"
