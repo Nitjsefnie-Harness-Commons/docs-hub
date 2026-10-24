@@ -153,15 +153,21 @@ failure paths a real server will not produce on demand, is in
 
 Two further workflows are the **release chain**, not gates: `tag` watches
 `docs_hub_cli/__init__.py` on `master`, requires `aggregate` to succeed and
-waits for all other reported checks to finish without failure, pushes
-`v<version>`, and then dispatches `release` — which rebuilds,
-re-runs the suite and publishes the wheel with a `SHA256SUMS` file. The
-dispatch is not redundant: a tag pushed with the built-in `GITHUB_TOKEN`
+judges every other check run produced for the commit by a `push` or
+`pull_request` run before tagging, skipping checks from any other event
+(issue-comment commands, scheduled crons); a check whose producing run
+cannot be identified is still judged. It then pushes `v<version>` and
+dispatches `release` — which rebuilds, re-runs the suite and publishes the
+wheel with a `SHA256SUMS` file. The dispatch is not redundant: a tag pushed
+with the built-in `GITHUB_TOKEN`
 triggers no workflow at all, so without it the tag lands and no release is
 ever cut. After the release ships, its PR's author moves `master` to the next
 patch's `.dev0` version in a separate commit, right away. `tag.yml` skips
 `.dev` versions with a message; nothing is tagged and `release.yml` is not
 dispatched. Neither runs on a pull request; there is nothing to run locally.
+
+The `claim` workflow is not a gate either: it answers `/claim`, `/unclaim`
+and `/release` comments on issues and blocks nothing.
 
 ## Pull requests
 
@@ -178,3 +184,7 @@ tried that *should* fail and confirm it did.
 If you are unsure whether something is a bug or intended, open an issue and
 ask — a wrong premise caught early is cheaper than a correct fix to the
 wrong problem.
+
+To work on an issue, claim it first: comment `/claim` on an open,
+unassigned issue and the claim workflow assigns it to you; `/unclaim` or
+`/release` hands it back.
