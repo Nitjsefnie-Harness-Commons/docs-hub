@@ -95,6 +95,7 @@ jobs:
         run: python3 scripts/ci/gate_base_freshness.py
 
   aggregate:
+    name: ci gate / aggregate
     needs: [tests, lint, types, eslint, audit, actionlint, codeql, secrets,
             conflict-markers, base-freshness]
     if: ${{ always() }}
