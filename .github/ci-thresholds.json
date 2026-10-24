@@ -1,8 +1,8 @@
 {
   "coverage": {
     "python": {
-      "floor": 94.4,
-      "measured": 95.9
+      "floor": 95.3,
+      "measured": 96.8
     }
   },
   "schema_version": 1
