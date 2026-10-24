@@ -14,6 +14,9 @@ name: ci gate
 
 on:
   pull_request:
+  # Unfiltered on purpose: issue #65 requires the conflict-marker check to
+  # run on every push to every branch, and an unfiltered push trigger is
+  # what makes that possible.
   push:
   workflow_dispatch:
 
