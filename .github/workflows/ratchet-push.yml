@@ -18,7 +18,7 @@ permissions: {}
 concurrency:
   # Never cancel in progress: a cancelled run can stop between the commit
   # and the push.
-  group: ratchet-push
+  group: ratchet-push-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
 
 jobs:
@@ -75,6 +75,7 @@ jobs:
           eval "$(ssh-agent -s)" >/dev/null
           trap 'kill "$SSH_AGENT_PID" 2>/dev/null || true' EXIT
           ssh-add <(printf '%s\n' "$MASTER_PUSH_DEPLOY_KEY") >/dev/null
+          unset MASTER_PUSH_DEPLOY_KEY
           mkdir -p ~/.ssh
           # https://docs.github.com/en/rest/meta/meta#get-github-meta-information
           printf '%s\n' \

@@ -65,8 +65,21 @@ def test_the_push_job_runs_in_the_master_push_environment() -> None:
 
 def test_the_push_never_cancels_a_run_mid_push() -> None:
     concurrency = _workflow()["concurrency"]
-    assert concurrency["group"] == "ratchet-push"
+    # Keyed on the triggering run, so a pull request's completion can never
+    # supersede a pending master raise.
+    for field in ("event", "head_branch"):
+        assert f"github.event.workflow_run.{field}" in concurrency["group"]
     assert concurrency["cancel-in-progress"] is False
+
+
+def test_the_deploy_key_leaves_the_environment_before_fetched_code_runs() -> None:
+    lines = [line.strip() for line in
+             _step("Push the raise commit to master")["run"].splitlines()]
+    loaded = next(i for i, line in enumerate(lines) if line.startswith("ssh-add"))
+    unset = lines.index("unset MASTER_PUSH_DEPLOY_KEY")
+    python = next(i for i, line in enumerate(lines) if "python3" in line)
+    assert loaded < unset < python
+    assert not any("MASTER_PUSH_DEPLOY_KEY" in line for line in lines[unset + 1:])
 
 
 def test_the_download_names_the_uploader_artifact() -> None:
