@@ -120,6 +120,21 @@ def test_dependabot_docker_directories_are_the_ones_the_images_jobs_read():
     assert docker["directories"] == ["/.github/postgres/16", "/.github/postgres/17"]
 
 
+def test_dependabot_docker_ignore_uses_update_types():
+    # Dependabot's docker ecosystem rejects `versions` in an ignore condition
+    # (invalid version requirements there); the semantic-versioning levels go
+    # in `update-types`.
+    updates = yaml.safe_load(
+        (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
+    docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")
+    assert docker["ignore"]
+    for condition in docker["ignore"]:
+        assert "versions" not in condition, condition
+        assert "update-types" in condition, condition
+        assert all(update.startswith("version-update:semver-")
+                   for update in condition["update-types"]), condition
+
+
 @pytest.mark.parametrize("major", [16, 17])
 def test_postgres_dockerfile_holds_one_from_line_of_its_major(major: int):
     # Major only: the digest is data Dependabot rewrites, never a value to pin.

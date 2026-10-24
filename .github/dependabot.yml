@@ -96,5 +96,5 @@ updates:
       - dependencies
     ignore:
       - dependency-name: postgres
-        versions:
+        update-types:
           - "version-update:semver-major"
