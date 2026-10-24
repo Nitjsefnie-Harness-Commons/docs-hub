@@ -1,8 +1,17 @@
-"""Structure pins over ratchet-push.yml, related across the two workflows."""
+"""Structure pins over ratchet-push.yml, related across the two workflows.
+
+The run-id fallback is pinned behaviourally: the listing step's script
+runs under bash -e against a stub `gh` that records the artifacts
+endpoint it was called with (the pattern of tests/test_tag_waiter.py).
+"""
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -72,11 +81,92 @@ def test_the_push_never_cancels_a_run_mid_push() -> None:
     assert concurrency["cancel-in-progress"] is False
 
 
+def test_the_listing_step_sets_only_the_prefixed_run_id_variable() -> None:
+    # Issue #92: workflow-set variables carry the DOCS_HUB_ prefix. The
+    # old name is never set; the script below still reads it as a
+    # fallback so anything still exporting it keeps working.
+    env = _step("List the triggering run's artifacts")["env"]
+    assert "DOCS_HUB_RUN_ID" in env
+    assert "RUN_ID" not in env
+
+
+def _bash() -> str:
+    if os.name != "nt":
+        return "bash"
+    # On Windows the first bash on PATH is the WSL launcher, which cannot
+    # run Windows-path arguments; the workflow scripts need Git for
+    # Windows' bash.
+    git = shutil.which("git")
+    assert git, "Git for Windows supplies the bash that runs workflow scripts"
+    return next(str(candidate) for ancestor in Path(git).parents
+                for candidate in (ancestor / "usr" / "bin" / "bash.exe",
+                                  ancestor / "bin" / "bash.exe")
+                if candidate.is_file())
+
+
+def _run_list_step(tmp_path: Path,
+                   workflow_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    step = _step("List the triggering run's artifacts")
+    script = tmp_path / "step.sh"
+    # LF: bash rejects the carriage returns write_text emits on Windows.
+    script.write_text(step["run"], encoding="utf-8", newline="\n")
+    gh = tmp_path / "gh"
+    gh.write_text("""#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    repos/*/artifacts) printf '%s\\n' "$arg" >> "$GH_LOG" ;;
+  esac
+done
+""", encoding="utf-8", newline="\n")
+    gh.chmod(0o755)
+    env = {key: value for key, value in os.environ.items()
+           if key not in {"REPO", "RUN_ID", "DOCS_HUB_RUN_ID"}}
+    return subprocess.run(
+        [_bash(), "-e", str(script)], check=False, capture_output=True,
+        text=True, timeout=5,
+        env={**env, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", **workflow_env,
+             "REPO": "example/repository",
+             "GITHUB_OUTPUT": str(tmp_path / "output.txt"),
+             "GH_LOG": str(tmp_path / "gh-calls.log")},
+    )
+
+
+@pytest.mark.parametrize("workflow_env, expected_run_id", [
+    ({"DOCS_HUB_RUN_ID": "1" * 10}, "1" * 10),
+    ({"RUN_ID": "2" * 10}, "2" * 10),
+    ({"DOCS_HUB_RUN_ID": "1" * 10, "RUN_ID": "2" * 10}, "1" * 10),
+])
+def test_the_run_id_reaches_the_artifacts_url(
+        tmp_path: Path, workflow_env: dict[str, str],
+        expected_run_id: str) -> None:
+    # The prefixed name wins when both are set; the old name alone still
+    # reaches the endpoint.
+    result = _run_list_step(tmp_path, workflow_env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    log = (tmp_path / "gh-calls.log").read_text(encoding="utf-8").splitlines()
+    assert log == [
+        f"repos/example/repository/actions/runs/{expected_run_id}/artifacts"]
+
+
+def test_the_deploy_key_is_prefixed_and_falls_back_to_the_old_secret() -> None:
+    # GitHub's || is falsy-on-empty: both secrets set -> the prefixed
+    # name wins; only the old one set -> it still authenticates. The old
+    # name survives only inside the fallback, never as its own variable.
+    env = _step("Push the raise commit to master")["env"]
+    # The secret cannot be run locally; check the names and their order.
+    expression = env["DOCS_HUB_MASTER_PUSH_DEPLOY_KEY"]
+    assert "secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY" in expression
+    assert "secrets.MASTER_PUSH_DEPLOY_KEY" in expression
+    assert (expression.index("secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
+            < expression.index("secrets.MASTER_PUSH_DEPLOY_KEY"))
+    assert "MASTER_PUSH_DEPLOY_KEY" not in env
+
+
 def test_the_deploy_key_leaves_the_environment_before_fetched_code_runs() -> None:
     lines = [line.strip() for line in
              _step("Push the raise commit to master")["run"].splitlines()]
     loaded = next(i for i, line in enumerate(lines) if line.startswith("ssh-add"))
-    unset = lines.index("unset MASTER_PUSH_DEPLOY_KEY")
+    unset = lines.index("unset DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
     python = next(i for i, line in enumerate(lines) if "python3" in line)
     assert loaded < unset < python
     assert not any("MASTER_PUSH_DEPLOY_KEY" in line for line in lines[unset + 1:])

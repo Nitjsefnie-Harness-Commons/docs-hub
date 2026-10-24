@@ -39,11 +39,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          DOCS_HUB_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -o pipefail
           names="$(gh api -H 'Cache-Control: no-cache' --paginate \
-            "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+            "repos/$REPO/actions/runs/${DOCS_HUB_RUN_ID:-$RUN_ID}/artifacts" \
             --jq '.artifacts[] | select(.expired != true) | .name' \
             | sort -u)"
           staged=false
@@ -64,18 +64,20 @@ jobs:
       - name: Push the raise commit to master
         if: steps.list.outputs.staged == 'true'
         env:
-          MASTER_PUSH_DEPLOY_KEY: ${{ secrets.MASTER_PUSH_DEPLOY_KEY }}
+          # The prefixed secret wins when both are set; the old name stays
+          # readable as a fallback for environments not yet renamed.
+          DOCS_HUB_MASTER_PUSH_DEPLOY_KEY: ${{ secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY || secrets.MASTER_PUSH_DEPLOY_KEY }}
           REPO: ${{ github.repository }}
         run: |
           # Fail closed: an empty key cannot authenticate the push.
-          if [ -z "${MASTER_PUSH_DEPLOY_KEY:-}" ]; then
-            echo "MASTER_PUSH_DEPLOY_KEY is empty: the master-push environment is missing its secret" >&2
+          if [ -z "${DOCS_HUB_MASTER_PUSH_DEPLOY_KEY:-}" ]; then
+            echo "DOCS_HUB_MASTER_PUSH_DEPLOY_KEY is empty: the master-push environment is missing its secret" >&2
             exit 1
           fi
           eval "$(ssh-agent -s)" >/dev/null
           trap 'kill "$SSH_AGENT_PID" 2>/dev/null || true' EXIT
-          ssh-add <(printf '%s\n' "$MASTER_PUSH_DEPLOY_KEY") >/dev/null
-          unset MASTER_PUSH_DEPLOY_KEY
+          ssh-add <(printf '%s\n' "$DOCS_HUB_MASTER_PUSH_DEPLOY_KEY") >/dev/null
+          unset DOCS_HUB_MASTER_PUSH_DEPLOY_KEY
           mkdir -p ~/.ssh
           # https://docs.github.com/en/rest/meta/meta#get-github-meta-information
           printf '%s\n' \
