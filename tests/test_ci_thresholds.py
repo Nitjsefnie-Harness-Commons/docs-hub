@@ -165,6 +165,22 @@ def test_a_document_that_is_not_an_object_refuses(
     assert result.stderr != ""
 
 
+def test_coverage_that_is_not_an_object_refuses(
+        thresholds: ModuleType, tmp_path: Path) -> None:
+    target = _mutated(tmp_path, lambda data: data.update(coverage=[]))
+    with pytest.raises(ValueError, match="coverage must be a JSON object"):
+        thresholds.load(target)
+
+
+def test_a_string_measured_refuses(
+        thresholds: ModuleType, tmp_path: Path) -> None:
+    target = _mutated(tmp_path, lambda data: data["coverage"]["python"].update(
+        measured="95.9"))
+    with pytest.raises(ValueError,
+                       match="coverage.python.measured must be a JSON number"):
+        thresholds.load(target)
+
+
 def test_coverage_returns_none_for_an_absent_language(
         thresholds: ModuleType) -> None:
     assert thresholds.coverage({"schema_version": 1}, "python") == (None, None)
@@ -197,6 +213,14 @@ def test_coverage_floor_prints_nothing_for_an_absent_language(
         tmp_path: Path) -> None:
     target = _mutated(tmp_path, lambda data: data["coverage"].pop("python"))
     result = _run("--coverage-floor", "python", "--thresholds", str(target))
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == ""
+
+
+def test_coverage_measured_prints_nothing_for_an_absent_language(
+        tmp_path: Path) -> None:
+    target = _mutated(tmp_path, lambda data: data["coverage"].pop("python"))
+    result = _run("--coverage-measured", "python", "--thresholds", str(target))
     assert result.returncode == 0, result.stderr
     assert result.stdout == ""
 

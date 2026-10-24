@@ -106,7 +106,7 @@ def load(path: str | Path = THRESHOLDS) -> dict:
     return normalise(_decode(raw))
 
 
-def coverage(data, language) -> tuple[Decimal | None, Decimal | None]:
+def coverage(data: dict, language: str) -> tuple[Decimal | None, Decimal | None]:
     """One language's (measured, floor), or (None, None) when absent."""
     if language not in COVERAGE_LANGUAGES:
         raise ValueError(f"unknown coverage language: {language}")
@@ -126,7 +126,7 @@ def _render(data: dict) -> bytes:
     return encoded
 
 
-def write(path, data) -> None:
+def write(path: str | Path, data: dict) -> None:
     """Atomically replace ``path`` with canonical JSON bytes."""
     target = Path(path)
     payload = _render(data)
