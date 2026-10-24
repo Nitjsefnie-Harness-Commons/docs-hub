@@ -105,7 +105,11 @@ at startup and is what upgrades a deployed instance.
 
 ## CI
 
-Seven gates in `.github/workflows/`, all of them runnable locally:
+One `ci gate` workflow owns the gate set's `push` and `pull_request`
+triggers, with no path filter — documentation-only pushes run it too. It
+folds eight gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
+`actionlint`, and `secrets`. Their local commands are listed below; CodeQL
+runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
@@ -116,6 +120,12 @@ Seven gates in `.github/workflows/`, all of them runnable locally:
 | `audit` | pip-audit over all three requirements files, `npm audit`; also on a daily cron | `pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-test.txt` |
 | `codeql` | security analysis of the Python and JavaScript, weekly cron | — (GitHub-hosted) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
+| `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
+
+The `aggregate` job folds every leg and fails closed, with two local legs
+of its own: `conflict-markers` on every push and PR, and `base-freshness`
+on PRs, which fails when `master` holds a gate-input commit the head lacks,
+naming the commit and file.
 
 `pip install -r requirements-dev.txt -r requirements-test.txt` gets the
 Python toolchain. `package.json` exists only to pin eslint — **it is not a
@@ -129,8 +139,9 @@ failure paths a real server will not produce on demand, is in
 `tests/test_cli_unit.py`.
 
 Two further workflows are the **release chain**, not gates: `tag` watches
-`docs_hub_cli/__init__.py` on `master`, waits for every other check on the
-commit, pushes `v<version>`, and then dispatches `release` — which rebuilds,
+`docs_hub_cli/__init__.py` on `master`, requires `aggregate` to succeed and
+waits for all other reported checks to finish without failure, pushes
+`v<version>`, and then dispatches `release` — which rebuilds,
 re-runs the suite and publishes the wheel with a `SHA256SUMS` file. The
 dispatch is not redundant: a tag pushed with the built-in `GITHUB_TOKEN`
 triggers no workflow at all, so without it the tag lands and no release is
