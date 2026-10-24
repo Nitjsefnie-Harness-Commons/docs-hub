@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Store and reader for the CI coverage thresholds document.
-
-.github/ci-thresholds.json is committed data: per language, the coverage
-the raising run measured and the floor the next runs must clear, one
-calibration gap below measured. load() validates a document in full;
-write() republishes canonical bytes atomically; the CLI prints one value
-or validates, exiting nonzero on any refusal.
-"""
+"""Store and reader for the CI coverage thresholds document."""
 from __future__ import annotations
 
 import argparse
@@ -18,15 +11,11 @@ import tempfile
 from decimal import Decimal
 from pathlib import Path
 
-# The committed document this module is the store for, named from the
-# module's own location so a checkout anywhere answers the same path.
 THRESHOLDS = Path(__file__).resolve().parents[2] / ".github" / "ci-thresholds.json"
-# The fixed distance between a recorded measured value and its floor: a
-# yardstick, not a tunable — both values move together in one publish.
+# A yardstick, not a tunable: both values move together in one publish.
 CALIBRATION_GAP = Decimal("1.5")
 SCHEMA_VERSION = 1
-# Every coverage language the store gates. A closed domain: a language
-# outside it would sit ungated forever, so unknown names refuse.
+# Closed domain: an unlisted language would sit ungated forever.
 COVERAGE_LANGUAGES = ("python",)
 _TOP_LEVEL_FIELDS = ("schema_version", "coverage")
 _COVERAGE_FIELDS = ("measured", "floor")
@@ -37,11 +26,7 @@ def _reject_constant(token: str) -> None:
 
 
 def _number(value: object, name: str) -> Decimal:
-    """One JSON number as a Decimal; a JSON true is not a number.
-
-    A finite Decimal passes through as itself: normalise() reads its own
-    output when write() republishes an already-normalised document.
-    """
+    # A finite Decimal passes through: normalise() re-reads its own output.
     if isinstance(value, Decimal):
         if not value.is_finite():
             raise ValueError(f"{name} must be a JSON number")
@@ -52,13 +37,7 @@ def _number(value: object, name: str) -> Decimal:
 
 
 def normalise(data: dict) -> dict:
-    """Return the canonical document, or refuse an unknown or bad value.
-
-    schema_version is required; coverage and each language record are
-    optional, but a present record is validated in full and carries
-    exactly measured and floor. Unknown top-level fields and unknown
-    languages refuse, so only the schema's own shapes survive.
-    """
+    """Canonical document, or refuse an unknown or bad value."""
     if not isinstance(data, dict):
         raise ValueError("thresholds must be a JSON object")
     unknown = sorted(set(data) - set(_TOP_LEVEL_FIELDS))
@@ -148,14 +127,14 @@ def _render(data: dict) -> bytes:
 
 
 def write(path, data) -> None:
-    """Validate and atomically replace ``path`` with canonical JSON bytes."""
+    """Atomically replace ``path`` with canonical JSON bytes."""
     target = Path(path)
     payload = _render(data)
     mode = None
     try:
         mode = stat.S_IMODE(target.stat().st_mode)
     except FileNotFoundError:
-        # A new destination keeps mkstemp's restrictive default mode.
+        # A new destination keeps mkstemp's mode.
         pass
     fd, temporary = tempfile.mkstemp(
         prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
@@ -177,14 +156,12 @@ def write(path, data) -> None:
             try:
                 os.close(open_fd)
             except OSError:
-                # Preserve the primary failure when redundant close fails.
-                pass
+                pass  # A redundant close never hides the real failure.
         if not replaced:
             try:
                 os.unlink(temporary_path)
             except OSError:
-                # Cleanup must not hide the publication failure that prompted it.
-                pass
+                pass  # Cleanup never hides the failure that prompted it.
 
 
 def _parser() -> argparse.ArgumentParser:
