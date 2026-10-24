@@ -83,12 +83,14 @@ def _fixture_repo(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_guard_is_executable() -> None:
-    result = _run(_REPO, "--print-paths")
+    result = _run(_REPO, "--print-paths", "--base", "HEAD")
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_print_paths_covers_this_repos_named_gate_inputs(gate: ModuleType) -> None:
-    result = _run(_REPO, "--print-paths")
+    # A pinned-sha checkout carries no fetched origin/master, so the
+    # repo-level derivation spells its second tree as HEAD.
+    result = _run(_REPO, "--print-paths", "--base", "HEAD")
     assert result.returncode == 0, result.stdout + result.stderr
     paths = set(result.stdout.splitlines())
     workflows = set(_git(_REPO, "ls-files", ".github/workflows").splitlines())
@@ -106,11 +108,11 @@ def test_removing_folded_job_shrinks_derivation(tmp_path: Path, gate: ModuleType
     _git(tmp_path, "clone", "-q", "--no-hardlinks", str(_REPO), str(copy))
     _git(copy, "config", "user.name", "CI test")
     _git(copy, "config", "user.email", "ci@example.invalid")
-    before = set(gate.gate_paths(copy))
+    before = set(gate.gate_paths(copy, "HEAD", "HEAD"))
     path = ".github/workflows/ci-gate.yml"
     text = (copy / path).read_text(encoding="utf-8")
     _commit_file(copy, path, text.replace("tests, lint, types,", "tests, types,", 1))
-    after = set(gate.gate_paths(copy))
+    after = set(gate.gate_paths(copy, "HEAD", "HEAD"))
     assert after < before
     assert ".pylintrc" in before - after
     assert gate.required_jobs(gate.read_workflows(copy)) == _needs(copy)
