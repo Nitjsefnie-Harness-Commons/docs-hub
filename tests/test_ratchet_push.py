@@ -72,11 +72,34 @@ def test_the_push_never_cancels_a_run_mid_push() -> None:
     assert concurrency["cancel-in-progress"] is False
 
 
+def test_the_run_id_is_prefixed_and_reads_the_old_name_as_fallback() -> None:
+    # Issue #92: workflow-set variables carry the DOCS_HUB_ prefix. The
+    # old name is never set; the read falls back to it so anything still
+    # exporting it keeps working, and the prefixed name wins when both
+    # are set.
+    step = _step("List the triggering run's artifacts")
+    assert step["env"]["DOCS_HUB_RUN_ID"] == "${{ github.event.workflow_run.id }}"
+    assert "RUN_ID" not in step["env"]
+    run = step["run"]
+    assert "runs/${DOCS_HUB_RUN_ID:-$RUN_ID}/artifacts" in run
+    assert "$RUN_ID" not in run.replace("${DOCS_HUB_RUN_ID:-$RUN_ID}", "")
+
+
+def test_the_deploy_key_is_prefixed_and_falls_back_to_the_old_secret() -> None:
+    # GitHub's || is falsy-on-empty: both secrets set -> the prefixed
+    # name wins; only the old one set -> it still authenticates. The old
+    # name survives only inside the fallback, never as its own variable.
+    env = _step("Push the raise commit to master")["env"]
+    assert env["DOCS_HUB_MASTER_PUSH_DEPLOY_KEY"] == (
+        "${{ secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY || secrets.MASTER_PUSH_DEPLOY_KEY }}")
+    assert "MASTER_PUSH_DEPLOY_KEY" not in env
+
+
 def test_the_deploy_key_leaves_the_environment_before_fetched_code_runs() -> None:
     lines = [line.strip() for line in
              _step("Push the raise commit to master")["run"].splitlines()]
     loaded = next(i for i, line in enumerate(lines) if line.startswith("ssh-add"))
-    unset = lines.index("unset MASTER_PUSH_DEPLOY_KEY")
+    unset = lines.index("unset DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
     python = next(i for i, line in enumerate(lines) if "python3" in line)
     assert loaded < unset < python
     assert not any("MASTER_PUSH_DEPLOY_KEY" in line for line in lines[unset + 1:])
