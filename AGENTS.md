@@ -92,8 +92,8 @@ The coverage floor is recorded, not fixed: `.github/ci-thresholds.json`
 holds a measurement and a floor exactly 1.5 points below it, and the
 `coverage` job fails under that floor. After a green `ci gate` run for a
 push to `master`, `ratchet push` commits a raise when that run measured
-more than 1.5 points above the recorded measurement and `master` has not
-moved since; nothing lowers it automatically. On a pull request the
+above the recorded measurement and `master` has not moved since; nothing
+lowers it automatically. On a pull request the
 coverage of changed lines is reported in the job summary with no
 threshold of its own.
 

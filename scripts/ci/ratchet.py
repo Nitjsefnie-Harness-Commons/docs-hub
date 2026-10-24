@@ -22,20 +22,15 @@ def _thresholds():
 
 thresholds = _thresholds()
 
-# A raise must clear the record by strictly more than one calibration gap,
-# so the new floor clears the old floor.
-RAISE_HYSTERESIS = thresholds.CALIBRATION_GAP
-
 
 def update(data: dict, measured: Decimal,
            language: str = "python") -> dict | None:
-    """The raised document, or None when no raise is justified: the
-    language is unrecorded (seed) or measured beats the record by
-    strictly more than RAISE_HYSTERESIS.
+    """The raised document, or None when no raise is justified: a raise
+    needs the language unrecorded (seed) or measured strictly above the
+    recorded measurement.
     """
     recorded, _floor = thresholds.coverage(data, language)
-    if (recorded is not None
-            and measured - recorded <= RAISE_HYSTERESIS):
+    if recorded is not None and measured <= recorded:
         return None
     updated = thresholds.normalise(data)
     record = {"measured": measured,
