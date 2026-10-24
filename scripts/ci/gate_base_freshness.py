@@ -338,8 +338,8 @@ def gate_paths(root: Path, head: str = "HEAD",
     for side in parsed:
         for step in folded_steps(side, required):
             uses = step["uses"] or ""
-            if uses.startswith("./"):
-                derived.update(files if uses == "./" else resolve(uses, files))
+            if uses.startswith(("./", "$/")):
+                derived.update(resolve(uses[2:], files) if uses[2:] else files)
             for candidate in candidates(step["run"] or ""):
                 derived.update(resolve(candidate, files))
     if not derived:

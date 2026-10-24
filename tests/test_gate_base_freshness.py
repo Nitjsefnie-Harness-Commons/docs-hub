@@ -297,6 +297,21 @@ def test_block_needs_and_local_action_inputs(tmp_path: Path, gate: ModuleType) -
     assert gate.required_jobs(gate.read_workflows(head)) == {"lint"}
 
 
+def test_self_repository_step_action_inputs(tmp_path: Path, gate: ModuleType) -> None:
+    # A step-level `$/` action resolves to the same tree as `./`, so its
+    # files join the derived set the same way.
+    _, head = _fixture_repo(tmp_path)
+    _commit_file(head, "actions/setup/action.yml", "runs:\n  using: composite\n")
+    _commit_file(head, ".github/workflows/ci-gate.yml", """jobs:
+  lint:
+    steps:
+      - uses: $/actions/setup
+  aggregate:
+    needs: [lint]
+""")
+    assert "actions/setup/action.yml" in gate.gate_paths(head)
+
+
 def test_merge_row_names_its_limit(tmp_path: Path, gate: ModuleType) -> None:
     origin, head = _fixture_repo(tmp_path)
     _git(origin, "checkout", "-qb", "side")
