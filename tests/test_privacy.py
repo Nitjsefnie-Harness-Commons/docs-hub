@@ -1,10 +1,4 @@
-"""The operator-supplied privacy notice: /privacy page and the injected link.
-
-`DOCS_HUB_PRIVACY_NOTICE_FILE` is unset suite-wide (tests/conftest.py never
-sets it), so every absence test here holds against the suite's default
-environment; the configured tests monkeypatch it per test with throwaway
-fixture text under tmp_path.
-"""
+"""The /privacy page and the injected link; the env stays unset suite-wide."""
 import re
 
 from fastapi.testclient import TestClient
@@ -16,6 +10,7 @@ KEY = {"x-docs-key": "test-api-key"}
 
 ENV = "DOCS_HUB_PRIVACY_NOTICE_FILE"
 LINK = b'<a href="/privacy">Privacy notice</a>'
+LOGIN_LINK = b'<a class="priv" href="/privacy">Privacy notice</a>'
 
 
 def _client():
@@ -34,11 +29,7 @@ def _publish(c, slug, body=b"<h1>x</h1>"):
                   files={"file": ("d.html", body, "text/html")}, headers=KEY)
 
 
-# KEY is a module constant that nothing mutates, and it cannot become a None
-# sentinel: `headers=None` is a meaningful argument here -- it is how a test
-# asks for an unauthenticated request.
-# pylint: disable-next=dangerous-default-value
-def _set_public(c, slug, public, headers=KEY):
+def _set_public(c, slug, public, headers):
     return c.post(f"/api/doc/{slug}/public",
                   json={"public": public}, headers=headers)
 
@@ -47,7 +38,7 @@ def _anon_public_doc(slug="pub/notice", body=b"<h1>pub</h1>"):
     """Publish + public `slug`, then fetch it with no credentials at all."""
     c = _client()
     assert _publish(c, slug, body=body).status_code == 200
-    assert _set_public(c, slug, True).status_code == 200
+    assert _set_public(c, slug, True, KEY).status_code == 200
     return _client().get(f"/d/{slug}")
 
 
@@ -162,7 +153,7 @@ def test_anonymous_public_markdown_doc_renders_with_the_link(
                   data={"slug": "pub/mdn", "title": "MD", "from": "analyst"},
                   files={"file": ("d.md", b"# open md\n", "text/markdown")},
                   headers=KEY).status_code == 200
-    assert _set_public(c, "pub/mdn", True).status_code == 200
+    assert _set_public(c, "pub/mdn", True, KEY).status_code == 200
     r = _client().get("/d/pub/mdn")
     assert r.status_code == 200
     assert "<h1>open md</h1>" in r.text
@@ -170,9 +161,7 @@ def test_anonymous_public_markdown_doc_renders_with_the_link(
 
 
 def test_the_injected_link_opens_the_page(tmp_path, monkeypatch):
-    """Span: the link every consumer injects and the route behind /privacy
-    are one contract — the anchor is walked end to end, and it is the ONLY
-    anchor the anonymous response carries."""
+    """Span: the injected anchor is the ONLY one, and it opens the page."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
     r = _anon_public_doc(slug="pub/walk")
     assert r.status_code == 200
@@ -188,7 +177,7 @@ def test_stored_blob_is_untouched_by_the_anonymous_view(tmp_path, monkeypatch):
     body = b"<h1>verbatim</h1>"
     c = _client()
     assert _publish(c, "pub/stored", body=body).status_code == 200
-    assert _set_public(c, "pub/stored", True).status_code == 200
+    assert _set_public(c, "pub/stored", True, KEY).status_code == 200
     path = storage.blob_path("pub/stored", 1)
     with open(path, "rb") as f:
         before = f.read()
@@ -204,7 +193,7 @@ def test_keyed_reader_gets_the_document_verbatim(tmp_path, monkeypatch):
     body = b"<h1>agent view</h1></body>"
     c = _client()
     assert _publish(c, "pub/agentview", body=body).status_code == 200
-    assert _set_public(c, "pub/agentview", True).status_code == 200
+    assert _set_public(c, "pub/agentview", True, KEY).status_code == 200
     assert c.get("/d/pub/agentview", headers=KEY).content == body
 
 
@@ -213,7 +202,7 @@ def test_signed_in_reader_gets_the_document_verbatim(tmp_path, monkeypatch):
     body = b"<h1>human view</h1></body>"
     c = _client()
     assert _publish(c, "pub/humanview", body=body).status_code == 200
-    assert _set_public(c, "pub/humanview", True).status_code == 200
+    assert _set_public(c, "pub/humanview", True, KEY).status_code == 200
     c.cookies.set("session", session.make_session_token(1))
     assert c.get("/d/pub/humanview").content == body
 
@@ -235,7 +224,7 @@ def test_version_route_stays_gated_while_the_notice_is_configured(
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
     c = _client()
     assert _publish(c, "pub/gatever").status_code == 200
-    assert _set_public(c, "pub/gatever", True).status_code == 200
+    assert _set_public(c, "pub/gatever", True, KEY).status_code == 200
     r = _client().get("/d/pub/gatever/v1", follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == "/login"

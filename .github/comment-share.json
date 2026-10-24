@@ -75,10 +75,6 @@
     3863,
     12105
   ],
-  "backend/privacy.py": [
-    1037,
-    2004
-  ],
   "backend/reaper.py": [
     1291,
     2762
@@ -162,10 +158,6 @@
   "tests/test_db.py": [
     2751,
     6995
-  ],
-  "tests/test_privacy.py": [
-    1565,
-    8324
   ],
   "tests/test_reaper.py": [
     2008,
