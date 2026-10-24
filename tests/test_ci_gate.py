@@ -25,8 +25,9 @@ def _triggers(workflow: dict[str, Any]) -> dict[str, Any]:
     return workflow.get("on", workflow.get(True, {}))
 
 
-def _step(job: str, name: str) -> dict[str, Any]:
-    return next(step for step in _workflow()["jobs"][job]["steps"]
+def _step(job: str, name: str,
+          filename: str = "ci-gate.yml") -> dict[str, Any]:
+    return next(step for step in _workflow(filename)["jobs"][job]["steps"]
                 if step.get("name") == name)
 
 
@@ -284,3 +285,87 @@ def test_conflict_marker_scan_propagates_grep_error(tmp_path: Path) -> None:
     result = _run_script(tmp_path, step["run"], {})
     assert result.returncode == 2, result.stdout + result.stderr
     assert "no marker was looked for" in result.stdout
+
+
+# One line of real pip-audit output per failure class the audit step's retry
+# classifier names. Every retryable fixture matches exactly one retry branch
+# and none of the others, so removing that branch is what fails the case.
+_AUDIT_RETRYABLE = {
+    "connection-reset": "Connection reset by peer",
+    "http-429": ("requests.exceptions.HTTPError: 429 Client Error: Too Many"
+                 " Requests for url: https://pypi.org/simple/urllib3/"),
+    "http-5xx": ("requests.exceptions.HTTPError: 500 Server Error: Internal"
+                 " Server Error for url: https://pypi.org/simple/urllib3/"),
+    "ssl-error": ("pip._vendor.urllib3.exceptions.SSLError:"
+                  " certificate verify failed"),
+    "service-error": "pip_audit._service.interface.ServiceError: boom",
+}
+
+# The immediate fixtures. The 403 arrives wrapped in a ServiceError — the
+# compound shape the classifier's ordering exists for: the non-429 client-error
+# check runs before the retry set, so a client error through the service layer
+# exits immediately instead of retrying. The finding table matches nothing at
+# all and leaves through the findings report.
+_AUDIT_IMMEDIATE_FIXTURE_403 = (
+    "pip_audit._service.interface.ServiceError: 403 Client Error: Forbidden"
+    " for url: https://pypi.org/simple/private-package/")
+_AUDIT_IMMEDIATE_FIXTURE_FINDING = (
+    "Package Version ID Fix Versions\n"
+    "------- ------- -------- ------------\n"
+    "pyyaml 5.4 GHSA-8q59-q68h-6hv4 >=6.0.1\n"
+    "Found 1 known vulnerability in 1 package")
+
+
+def _run_audit_step(tmp_path: Path, first_failure_output: str
+                    ) -> tuple[subprocess.CompletedProcess[str], int]:
+    step = _step("pip-audit", "Audit the Python dependencies", "audit.yml")
+    # The pip-audit double writes the fixture and fails on its first
+    # invocation and exits 0 on every later one, counting its calls beside
+    # itself; the sleep double makes the attempt-scaled backoff a no-op.
+    shim = tmp_path / "pip-audit"
+    shim.write_text(
+        "#!/bin/sh\n"
+        'calls_file="$0.calls"\n'
+        'calls=$(cat "$calls_file" 2>/dev/null || echo 0)\n'
+        'calls=$((calls + 1))\n'
+        'echo "$calls" > "$calls_file"\n'
+        'if [ "$calls" -gt 1 ]; then exit 0; fi\n'
+        "cat <<'FIXTURE'\n"
+        f"{first_failure_output}\n"
+        "FIXTURE\n"
+        "exit 1\n",
+        encoding="utf-8")
+    shim.chmod(0o755)
+    sleeper = tmp_path / "sleep"
+    sleeper.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    sleeper.chmod(0o755)
+    result = _run_script(tmp_path, step["run"], {})
+    calls = int((tmp_path / "pip-audit.calls").read_text(encoding="utf-8"))
+    return result, calls
+
+
+@pytest.mark.parametrize("failure_output", _AUDIT_RETRYABLE.values(),
+                         ids=_AUDIT_RETRYABLE)
+def test_audit_step_retries_each_retryable_failure_class(
+        tmp_path: Path, failure_output: str) -> None:
+    result, calls = _run_audit_step(tmp_path, failure_output)
+    # Attempt 2 ran (and succeeded), so the manifest loop completes green.
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert calls >= 2
+
+
+@pytest.mark.parametrize("failure_output,refusal", [
+    pytest.param(_AUDIT_IMMEDIATE_FIXTURE_403, "non-retryable 4xx",
+                 id="http-403"),
+    pytest.param(_AUDIT_IMMEDIATE_FIXTURE_FINDING, "reported findings",
+                 id="finding"),
+])
+def test_audit_step_reports_each_immediate_failure_once(
+        tmp_path: Path, failure_output: str, refusal: str) -> None:
+    result, calls = _run_audit_step(tmp_path, failure_output)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert calls == 1
+    # The refusal names its branch: the 4xx case must leave through the
+    # non-retryable-4xx check — which runs before the retry checks — not
+    # through the findings report a fall-through into them would produce.
+    assert refusal in result.stderr
