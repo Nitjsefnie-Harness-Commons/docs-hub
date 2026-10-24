@@ -87,10 +87,10 @@ def test_the_push_step_consumes_exactly_the_staged_files() -> None:
     stager = next(step["run"] for step in tests["jobs"]["coverage"]["steps"]
                   if step.get("name") == "Stage the coverage raise artifact")
     push = _step("Push the raise commit to master")["run"]
-    staged = {"measured.txt", "base.txt", "ci-thresholds.json"}
+    staged = set(re.findall(r'out / "([^"]+)"', stager))
+    consumed = set(re.findall(r"raise-data/([A-Za-z0-9._-]+)", push))
     # Both directions: every staged file is read, and nothing else is.
-    assert {name for name in staged if name in stager} == staged
-    assert set(re.findall(r"[A-Za-z0-9._-]+\.(?:txt|json)", push)) == staged
+    assert staged and staged == consumed
 
 
 def test_the_push_step_runs_the_fetched_trees_own_ratchet() -> None:
