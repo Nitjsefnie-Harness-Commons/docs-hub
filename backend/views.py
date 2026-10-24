@@ -54,10 +54,9 @@ async def render_latest(request: Request, slug: str) -> Response:
     if doc is None:
         return Response("Not found", status_code=404, media_type="text/plain")
     resp = await run_db(_serve, doc)
-    # The middleware marks exactly the hash-less public-doc anonymous read;
-    # every other viewer gets the document exactly as published.
+    # set only for anonymous public-doc reads.
     if getattr(request.state, "principal", None) == "anonymous":
-        # Starlette types the body as bytes|memoryview; injection works on bytes.
+        # body may be memoryview.
         resp.body = privacy.inject_link(bytes(resp.body))
         resp.headers["content-length"] = str(len(resp.body))
     return resp
