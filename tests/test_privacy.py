@@ -219,6 +219,17 @@ def test_keyed_reader_gets_the_document_verbatim(tmp_path, monkeypatch):
     assert c.get("/d/pub/agentview", headers=KEY).content == body
 
 
+def test_anonymous_public_v_tail_slug_gets_the_injected_link(
+        tmp_path, monkeypatch):
+    """A public `a/vx` is a latest slug for the anonymous reader: rendered
+    with the injected notice, exactly as on any anonymous public read."""
+    monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
+    r = _anon_public_doc(slug="a/vx",
+                         body=b"<html><body><h1>vt</h1></body></html>")
+    assert r.status_code == 200
+    assert r.content.endswith(LINK + b"</body></html>")
+
+
 def test_signed_in_reader_gets_the_document_verbatim(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
     body = b"<h1>human view</h1></body>"
