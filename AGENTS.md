@@ -75,17 +75,22 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Tests build an isolated `docs_test` database from `backend/schema.sql`
 and a temp blob store — see `tests/conftest.py`. No live network.
 
-CI runs seven gates on every push — `tests` (the suite against Postgres
-16 and 17, plus a 90% coverage floor), `lint` (pycodestyle, pylint),
-`types` (pyright over `backend/`), `eslint` (over `public/`), `audit`
-(pip-audit, npm audit), `codeql`, and `actionlint` (actionlint + zizmor
-over the workflows). All of them are runnable locally; the table in
-CONTRIBUTING.md gives the exact command for each. Run the ones your
-change touches before pushing rather than using CI as the first check.
+One `ci gate` workflow owns the gate set's `push` and `pull_request`
+triggers without a path filter, so documentation-only pushes run it too.
+It folds eight gates: `tests` (Postgres 16 and 17, 90% coverage floor),
+`lint` (pycodestyle, pylint), `types` (pyright over `backend/`), `eslint`
+(over `public/`), `audit` (pip-audit, npm audit), `codeql`, `actionlint`
+(actionlint + zizmor), and `secrets` (gitleaks). Its `aggregate` job folds
+every leg and fails closed, with `conflict-markers` on every push and PR
+and PR-only `base-freshness`, which fails when `master` holds a gate-input
+commit the head lacks, naming the commit and file. CONTRIBUTING.md's table
+gives the local commands; CodeQL runs on GitHub. Run the applicable local
+checks before pushing rather than using CI as the first check.
 
 Two more workflows are the release chain rather than gates: `tag` watches
-`docs_hub_cli/__init__.py` on `master`, waits for every other check on the
-commit, pushes `v<version>` and then dispatches `release`, which rebuilds,
+`docs_hub_cli/__init__.py` on `master`, requires `aggregate` to succeed and
+waits for all other reported checks to finish without failure, pushes
+`v<version>` and then dispatches `release`, which rebuilds,
 re-runs the suite and publishes the wheel plus `SHA256SUMS`. The dispatch is
 load-bearing — a tag pushed with `GITHUB_TOKEN` triggers no workflow at all.
 
