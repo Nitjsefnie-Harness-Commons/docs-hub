@@ -117,7 +117,7 @@ runs on GitHub:
 | `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
 | `types` | pyright over `backend/` | `pyright` |
 | `eslint` | eslint over `public/` | `npm ci && npx eslint public` |
-| `audit` | pip-audit over each of the six requirements manifests separately (a joint `--require-hashes` run fails), plus `npm audit`; also on a daily cron | `pip-audit -r requirements.txt` and the same again for each of the other five: `requirements-dev.txt`, `requirements-test.txt`, `requirements-audit.txt`, `requirements-zizmor.txt`, `requirements-build.txt` |
+| `audit` | pip-audit over each of the seven requirements manifests separately (a joint `--require-hashes` run fails), plus `npm audit`; also on a daily cron | `pip-audit -r requirements.txt` and the same again for each of the other six: `requirements-dev.txt`, `requirements-test.txt`, `requirements-diff-cover.txt`, `requirements-audit.txt`, `requirements-zizmor.txt`, `requirements-build.txt` |
 | `codeql` | security analysis of the Python, JavaScript and Actions (the workflows language), weekly cron | — (GitHub-hosted) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |

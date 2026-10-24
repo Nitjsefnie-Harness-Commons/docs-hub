@@ -198,13 +198,61 @@ jobs:
           path: coverage.xml
           if-no-files-found: error
 
+      - name: Coverage of changed lines (informational)
+        if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'pull_request' }}
+        # Information only: the report goes to the job summary, adds no
+        # required check and is not folded into any aggregate verdict. There
+        # is deliberately no --fail-under; a broken tool run still fails the
+        # step, because a silent absence of report is a silent absence of
+        # information.
+        run: |
+          git fetch --no-tags origin master
+          pip install --require-hashes -r requirements-diff-cover.txt
+          {
+            echo '### Coverage of changed lines (informational)'
+            echo
+            diff-cover coverage.xml --compare-branch=origin/master
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stage the coverage raise artifact
+        if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        # The push workflow (ratchet-push.yml) consumes this artifact: the
+        # 1-dp overall line coverage, the commit it was measured at and the
+        # thresholds file as measured, so the raise decision there can be
+        # replayed from exactly these bytes.
+        run: |
+          mkdir coverage-raise
+          python3 - <<'PY'
+          import os
+          import shutil
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          out = Path("coverage-raise")
+          rate = ET.parse("coverage.xml").getroot().attrib["line-rate"]
+          (out / "measured.txt").write_text(f"{100 * float(rate):.1f}\n", encoding="utf-8")
+          (out / "base.txt").write_text(os.environ["GITHUB_SHA"] + "\n", encoding="utf-8")
+          shutil.copyfile(".github/ci-thresholds.json", out / "ci-thresholds.json")
+          PY
+
+      - name: Upload the coverage raise artifact
+        if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-raise
+          path: coverage-raise
+          if-no-files-found: error
+
       - name: Coverage gate
         if: ${{ !cancelled() && steps.measure.conclusion == 'success' }}
-        # A RATCHET, not a target. 90 sits under the 94.4% backend +
-        # docs_hub_cli measures today, so ordinary churn stays green and a real
-        # regression goes red. Raise the floor by hand as coverage climbs,
-        # only until the automated ratchet in #57 lands. Never
-        # lower it to make a red build green, and never widen the source
-        # list to let new code in under a floor it did not earn: docs_hub_cli
-        # reaches 98.4% on its own before it was added here.
-        run: python -m coverage report --fail-under=90 --precision=1
+        # A RATCHET, not a target. The floor is read from the recorded file
+        # (.github/ci-thresholds.json) through scripts/ci/thresholds.py, and
+        # the automated ratchet (ratchet-push.yml) raises it on green master
+        # pushes. Never lower it to make a red build green, and never widen
+        # the source list to let new code in under a floor it did not earn:
+        # docs_hub_cli reaches 98.4% on its own before it was added here.
+        # An assignment's exit status is its command substitution's, so a
+        # corrupt thresholds file fails the step instead of gating on "".
+        run: |
+          floor="$(python3 scripts/ci/thresholds.py --coverage-floor python)"
+          python -m coverage report --fail-under="$floor" --precision=1
