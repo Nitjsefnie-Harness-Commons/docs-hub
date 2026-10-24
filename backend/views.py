@@ -40,7 +40,7 @@ def _serve(doc: dict) -> HTMLResponse:
     return HTMLResponse(doc["html"], headers=headers)
 
 
-@router.get("/d/{slug:path}/v{version}")
+@router.get("/d/{slug:path}/v{version:int}")
 async def render_version(slug: str, version: int) -> Response:
     doc = await run_db(docs_repo.get_version, slug, version)
     if doc is None:

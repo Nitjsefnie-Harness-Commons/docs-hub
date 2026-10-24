@@ -150,6 +150,41 @@ def test_anonymous_version_url_still_gated():
     assert r.headers["location"] == "/login"
 
 
+def test_keyed_v_tail_slug_renders_latest_not_422():
+    """Slug `a/vx` — `/v` plus non-digits — is a latest slug: the keyed
+    reader gets its latest render instead of the version route's 422
+    int_parsing."""
+    c = _client()
+    body = b"<h1>v-tail latest</h1>"
+    assert _publish(c, "a/vx", body=body).status_code == 200
+    r = c.get("/d/a/vx", headers=KEY)
+    assert r.status_code == 200
+    assert r.content == body
+
+
+def test_anonymous_public_v_tail_slug_renders_latest():
+    """Anonymous on a public `a/vx`: the hash-less route renders the latest
+    version; only the /v<digits> tail form addresses a version."""
+    c = _client()
+    body = b"<h1>v-tail open</h1>"
+    assert _publish(c, "a/vx", body=body).status_code == 200
+    assert _set_public(c, "a/vx", True).status_code == 200
+    r = _client().get("/d/a/vx")
+    assert r.status_code == 200
+    assert r.content == body
+
+
+def test_private_v_tail_slug_still_gated_anonymously():
+    """A non-public `a/vx` stays login-gated: its non-digit tail is not a
+    version path, so the hash-less classification reaches it."""
+    c = _client()
+    _publish(c, "a/vx")
+    anon = _client()
+    r = anon.get("/d/a/vx", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/login"
+
+
 def test_anonymous_api_doc_path_still_gated():
     c = _client()
     _publish(c, "pub/apidoc")
