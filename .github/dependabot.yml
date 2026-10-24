@@ -3,8 +3,8 @@
 # choice is that pins go stale silently, and a stale pin is how a fixed CVE
 # stays exploitable. Dependabot pays that cost back — it is the counterpart to
 # audit.yml, which detects the problem but cannot fix it.
-# Service-image digests change only through manual, reviewed edits to this
-# repository; no automated update mechanism is planned.
+# Service-image digests are pinned and updated by reviewed edits until
+# #59's update mechanism lands (see #59).
 
 version: 2
 updates:

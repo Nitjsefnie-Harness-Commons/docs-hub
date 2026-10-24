@@ -42,7 +42,7 @@ jobs:
         # Digest pins keep immutable bytes for an unchanged commit.
         # Docker Hub multi-arch indexes for postgres:<major>, resolved with
         # docker buildx imagetools inspect postgres:<major>; updates go through
-        # this repository's review flow. No weekly bump exists yet (PM decision).
+        # this repository's review flow. No automated digest bump yet; see #59.
         include:
           - postgres: 16
             python: "3.13"
