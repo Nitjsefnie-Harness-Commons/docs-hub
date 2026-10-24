@@ -99,7 +99,7 @@ def test_aggregate_always_folds_exactly_ten_legs_without_checkout() -> None:
     assert set(job["needs"]) == set(_LEGS)
     assert len(job["needs"]) == len(_LEGS)
     assert job["if"] in ("${{ always() }}", "always()")
-    assert job["name"] == "ci gate / aggregate"
+    assert "name" not in job
     assert job["permissions"] == {"contents": "read"}
     assert all(step.get("uses", "").partition("@")[0] != "actions/checkout"
                for step in job["steps"])
