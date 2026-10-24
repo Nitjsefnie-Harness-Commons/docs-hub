@@ -203,7 +203,7 @@ jobs:
         # A RATCHET, not a target. 90 sits under the 94.4% backend +
         # docs_hub_cli measures today, so ordinary churn stays green and a real
         # regression goes red. Raise the floor by hand as coverage climbs,
-        # only until the automated ratchet in #57 lands (see #57). Never
+        # only until the automated ratchet in #57 lands. Never
         # lower it to make a red build green, and never widen the source
         # list to let new code in under a floor it did not earn: docs_hub_cli
         # reaches 98.4% on its own before it was added here.
