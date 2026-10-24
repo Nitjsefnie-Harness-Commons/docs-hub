@@ -154,6 +154,17 @@ def test_nan_literal_refuses(thresholds: ModuleType, tmp_path: Path) -> None:
         thresholds.load(target)
 
 
+def test_a_document_that_is_not_an_object_refuses(
+        thresholds: ModuleType, tmp_path: Path) -> None:
+    target = tmp_path / "ci-thresholds.json"
+    target.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        thresholds.load(target)
+    result = _run("--check", "--thresholds", str(target))
+    assert result.returncode == 1
+    assert result.stderr != ""
+
+
 def test_coverage_returns_none_for_an_absent_language(
         thresholds: ModuleType) -> None:
     assert thresholds.coverage({"schema_version": 1}, "python") == (None, None)
