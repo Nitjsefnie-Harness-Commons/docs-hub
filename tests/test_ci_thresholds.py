@@ -5,7 +5,8 @@ document it accepts is a document CI acts on: these cases pin the
 document shape (schema_version, the closed python domain, floor below
 measured and exactly the calibration gap below it, unknown fields and
 languages refused, strict JSON) and the canonical byte layout write()
-publishes, including that the committed file is itself canonical.
+publishes. The committed file is rewritten by the ratchet, so its tests
+check invariants only, and check them again on a raised copy.
 """
 from __future__ import annotations
 
@@ -23,21 +24,21 @@ import pytest
 _REPO = Path(__file__).resolve().parent.parent
 _SCRIPT = _REPO / "scripts/ci/thresholds.py"
 _THRESHOLDS = _REPO / ".github/ci-thresholds.json"
-# The committed seed: python coverage measured 95.9, its floor one
-# calibration gap below.
-MEASURED = Decimal("95.9")
-FLOOR = Decimal("94.4")
 
 
-@pytest.fixture(name="thresholds")
-def _thresholds() -> ModuleType:
-    assert _SCRIPT.is_file(), "The coverage gate needs its thresholds module"
-    spec = importlib.util.spec_from_file_location("ci_thresholds", _SCRIPT)
+def _load(name: str, path: Path) -> ModuleType:
+    assert path.is_file(), f"The coverage gate needs {path.name}"
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+@pytest.fixture(name="thresholds")
+def _thresholds() -> ModuleType:
+    return _load("ci_thresholds", _SCRIPT)
 
 
 def _run(*args: str) -> subprocess.CompletedProcess[str]:
@@ -55,19 +56,41 @@ def _mutated(tmp_path: Path, mutate: Callable[[dict], None]) -> Path:
     return target
 
 
-def test_committed_document_is_canonical(
+def _assert_record_invariants(
+        thresholds: ModuleType, path: Path, tmp_path: Path) -> None:
+    """What holds for any record the ratchet may publish, whatever values."""
+    data = thresholds.load(path)
+    # The ratchet republishes with the same renderer: any other bytes show
+    # up as a spurious diff on every raise.
+    canonical = tmp_path / "canonical.json"
+    thresholds.write(canonical, data)
+    assert canonical.read_bytes() == path.read_bytes()
+    measured, floor = thresholds.coverage(data, "python")
+    assert measured - floor == thresholds.CALIBRATION_GAP
+    for flag, value in (("--coverage-floor", floor),
+                        ("--coverage-measured", measured)):
+        result = _run(flag, "python", "--thresholds", str(path))
+        assert result.returncode == 0, result.stderr
+        assert result.stdout == f"{value:.1f}\n"
+
+
+def test_the_committed_record_holds_the_invariants(
         thresholds: ModuleType, tmp_path: Path) -> None:
-    # The ratchet republishes the file with the same renderer, so the
-    # committed bytes must equal write()'s output for the same content;
-    # anything else shows up as a spurious diff on every raise.
-    target = tmp_path / "canonical.json"
-    thresholds.write(target, thresholds.load(_THRESHOLDS))
-    assert target.read_bytes() == _THRESHOLDS.read_bytes()
+    _assert_record_invariants(thresholds, _THRESHOLDS, tmp_path)
 
 
-def test_committed_seed_records_python(thresholds: ModuleType) -> None:
-    measured, floor = thresholds.coverage(thresholds.load(_THRESHOLDS), "python")
-    assert (measured, floor) == (MEASURED, FLOOR)
+def test_the_record_still_holds_the_invariants_after_a_raise(
+        thresholds: ModuleType, tmp_path: Path) -> None:
+    # The suite must survive the ratchet's own rewrite of the committed file.
+    ratchet = _load("ci_ratchet_for_thresholds", _REPO / "scripts/ci/ratchet.py")
+    data = thresholds.load(_THRESHOLDS)
+    measured, _floor = thresholds.coverage(data, "python")
+    raised = ratchet.update(data, measured + 2)
+    assert raised is not None
+    target = tmp_path / "raised.json"
+    thresholds.write(target, raised)
+    assert target.read_bytes() != _THRESHOLDS.read_bytes()
+    _assert_record_invariants(thresholds, target, tmp_path)
 
 
 def test_valid_document_round_trips_unchanged(
@@ -197,14 +220,16 @@ def test_check_exits_zero_on_the_committed_file() -> None:
     assert result.stdout == "thresholds valid\n"
 
 
-def test_coverage_floor_prints_the_committed_floor() -> None:
-    result = _run("--coverage-floor", "python")
+def test_coverage_floor_prints_the_recorded_floor(tmp_path: Path) -> None:
+    target = _mutated(tmp_path, lambda data: None)
+    result = _run("--coverage-floor", "python", "--thresholds", str(target))
     assert result.returncode == 0, result.stderr
     assert result.stdout == "94.4\n"
 
 
-def test_coverage_measured_prints_the_committed_measured() -> None:
-    result = _run("--coverage-measured", "python")
+def test_coverage_measured_prints_the_recorded_measured(tmp_path: Path) -> None:
+    target = _mutated(tmp_path, lambda data: None)
+    result = _run("--coverage-measured", "python", "--thresholds", str(target))
     assert result.returncode == 0, result.stderr
     assert result.stdout == "95.9\n"
 
