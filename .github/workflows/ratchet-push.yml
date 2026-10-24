@@ -1,0 +1,120 @@
+name: ratchet push
+
+# The push half of the coverage ratchet: an environment secret reads empty
+# inside a workflow_call callee, so the deploy-key push lives top-level. A
+# raise publishes only on a fully green gate run for a master push, and is
+# computed only from fetched-master code, under python3 -I.
+
+on:
+  workflow_run:  # zizmor: ignore[dangerous-triggers]
+    # The job's own if re-checks event, branch and conclusion; the job runs
+    # fetched-master code with deploy-key auth and checks out nothing.
+    workflows: [ci gate]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  # Never cancel in progress: a cancelled run can stop between the commit
+  # and the push.
+  group: ratchet-push
+  cancel-in-progress: false
+
+jobs:
+  push:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      github.event.workflow_run.conclusion == 'success'
+    environment: master-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+
+    steps:
+      - name: List the triggering run's artifacts
+        id: list
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -o pipefail
+          names="$(gh api -H 'Cache-Control: no-cache' --paginate \
+            "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+            --jq '.artifacts[] | select(.expired != true) | .name' \
+            | sort -u)"
+          staged=false
+          if printf '%s\n' "$names" | grep -qx 'coverage-raise'; then
+            staged=true
+          fi
+          echo "staged=$staged" >> "$GITHUB_OUTPUT"
+
+      - name: Download the coverage raise artifact
+        if: steps.list.outputs.staged == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-raise
+          path: ${{ runner.temp }}/raise-data
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push the raise commit to master
+        if: steps.list.outputs.staged == 'true'
+        env:
+          MASTER_PUSH_DEPLOY_KEY: ${{ secrets.MASTER_PUSH_DEPLOY_KEY }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Fail closed: an empty key cannot authenticate the push.
+          if [ -z "${MASTER_PUSH_DEPLOY_KEY:-}" ]; then
+            echo "MASTER_PUSH_DEPLOY_KEY is empty: the master-push environment is missing its secret" >&2
+            exit 1
+          fi
+          eval "$(ssh-agent -s)" >/dev/null
+          trap 'kill "$SSH_AGENT_PID" 2>/dev/null || true' EXIT
+          ssh-add <(printf '%s\n' "$MASTER_PUSH_DEPLOY_KEY") >/dev/null
+          mkdir -p ~/.ssh
+          # https://docs.github.com/en/rest/meta/meta#get-github-meta-information
+          printf '%s\n' \
+            'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' \
+            'github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=' \
+            >> ~/.ssh/known_hosts
+          export GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=yes'
+          git init -q "$RUNNER_TEMP/raise-repo"
+          git -C "$RUNNER_TEMP/raise-repo" remote add origin "git@github.com:${REPO}.git"
+          git -C "$RUNNER_TEMP/raise-repo" fetch --quiet origin master
+          git -C "$RUNNER_TEMP/raise-repo" checkout -B push FETCH_HEAD
+          fetched="$(git -C "$RUNNER_TEMP/raise-repo" rev-parse HEAD)"
+          base="$(cat "$RUNNER_TEMP/raise-data/base.txt")"
+          if [ "$fetched" != "$base" ]; then
+            echo "::notice::Master moved while this run measured; the next push raises instead"
+            {
+              echo "### Dropped: master moved while this run measured; the next push raises instead"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # The fetched tree's own ratchet: master code only, no pip.
+          python3 -I "$RUNNER_TEMP/raise-repo/scripts/ci/ratchet.py" \
+            --measured "$(cat "$RUNNER_TEMP/raise-data/measured.txt")" \
+            --thresholds "$RUNNER_TEMP/raise-repo/.github/ci-thresholds.json" \
+            --base "$base" --tip "$fetched"
+          git -C "$RUNNER_TEMP/raise-repo" add .github/ci-thresholds.json
+          git -C "$RUNNER_TEMP/raise-repo" config user.name 'github-actions[bot]'
+          git -C "$RUNNER_TEMP/raise-repo" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          if [ -z "$(git -C "$RUNNER_TEMP/raise-repo" status --porcelain .github/ci-thresholds.json)" ]; then
+            echo "No raise is justified by this run: nothing to commit."
+            exit 0
+          fi
+          git -C "$RUNNER_TEMP/raise-repo" commit -m 'Raise the recorded coverage calibration (automated)'
+          if ! git -C "$RUNNER_TEMP/raise-repo" push origin HEAD:master; then
+            git -C "$RUNNER_TEMP/raise-repo" fetch --quiet origin master
+            if [ "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse HEAD^)" = "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse FETCH_HEAD)" ]; then
+              echo "the raise push was rejected while master stood still" >&2
+              exit 1
+            fi
+            echo "::notice::Master moved before the raise landed; the next push raises instead"
+            {
+              echo "### Dropped: master moved before the raise landed; the next push raises instead"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
