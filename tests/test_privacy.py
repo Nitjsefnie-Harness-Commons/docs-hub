@@ -142,6 +142,16 @@ def test_link_injection_reads_a_uppercase_body_close(tmp_path, monkeypatch):
     assert r.content.endswith(LINK + b"</BODY>")
 
 
+def test_link_is_appended_when_the_document_has_no_body_close(
+        tmp_path, monkeypatch):
+    """Fragment HTML (no closing body tag) gets the link appended after the
+    document's own bytes."""
+    monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
+    r = _anon_public_doc(slug="pub/frag", body=b"<h1>fragment</h1>")
+    assert r.status_code == 200
+    assert r.content == b"<h1>fragment</h1>" + LINK
+
+
 def test_anonymous_public_markdown_doc_renders_with_the_link(
         tmp_path, monkeypatch):
     """The Markdown render path gets the same injection: the link sits after
