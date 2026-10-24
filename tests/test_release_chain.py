@@ -104,9 +104,20 @@ def test_postgres_services_need_images_and_read_its_outputs():
 
 
 def test_workflows_hold_no_postgres_digest_literal():
-    # The Dockerfiles under .github/postgres/ are the only home of the digest.
+    # The Dockerfiles under .github/postgres/ are the only home of the digest,
+    # whether spelled with a floating tag (postgres:16@sha256:...) or a full
+    # version (postgres:16.15@sha256:...).
     for filename in ("tests.yml", "release.yml"):
-        assert re.search(r"postgres:\d+@sha256:", _workflow_text(filename)) is None, filename
+        assert re.search(
+            r"postgres:\d+(?:\.\d+)?@sha256:", _workflow_text(filename)) is None, filename
+
+
+def test_dependabot_docker_directories_are_the_ones_the_images_jobs_read():
+    # Span: the update route must name the directories the images jobs read.
+    updates = yaml.safe_load(
+        (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
+    docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")
+    assert docker["directories"] == ["/.github/postgres/16", "/.github/postgres/17"]
 
 
 @pytest.mark.parametrize("major", [16, 17])
