@@ -173,14 +173,15 @@ The `pr gate` workflow is not a gate leg either. On a non-draft pull
 request whose author is not a bot, it checks the description against the
 pull request template, the referenced issues against their assignees and
 the commits' attribution; a pull request that fails is commented on and
-closed, and one the gate closed is reopened once it passes. `aggregate`
-remains the only required check, and the workflow always runs from
-`master`'s definition of it rather than the pull request's. The
-`pull_request_target` trigger is load-bearing: a `pull_request` run's
-token cannot close a pull request, so the base repository's token does
-the closing. The template is read at the pull request's base SHA, no
-pull-request code is run, and a pull request it reopens stays held for
-approval.
+closed unless the failure is one of the comment-only shapes the pull
+requests section lists, and one the gate closed is reopened once it
+passes. `aggregate` remains the only required check, and the workflow
+always runs from `master`'s definition of it rather than the pull
+request's. The `pull_request_target` trigger is load-bearing: a fork's
+token on a `pull_request` run cannot close a pull request, so the base
+repository's token does the closing. The template is read at the pull
+request's base SHA, no pull-request code is run, and a pull request it
+reopens has its CI runs held until its author pushes once more.
 
 ## Pull requests
 
@@ -208,4 +209,9 @@ it must reference an issue assigned to its author, and its commits must
 be its author's, a push-access account's or web-flow's, or carry a
 `Co-Authored-By` trailer for the author — model trailers at a noreply@
 address are outside this check. A pull request that does not conform is
-commented on and closed, and reopened once corrected.
+commented on and closed, and reopened once corrected; with more than
+twenty references, or with no checked reference but reference-like text,
+the gate only comments and leaves the pull request open. Assigning an
+issue does not re-trigger the gate, so after an issue is assigned or
+reassigned, edit the pull request body to have the pull request
+rechecked.
