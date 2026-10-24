@@ -169,6 +169,19 @@ dispatched. Neither runs on a pull request; there is nothing to run locally.
 The `claim` workflow is not a gate either: it answers `/claim`, `/unclaim`
 and `/release` comments on issues and blocks nothing.
 
+The `pr gate` workflow is not a gate leg either. On a non-draft pull
+request whose author is not a bot, it checks the description against the
+pull request template, the referenced issues against their assignees and
+the commits' attribution; a pull request that fails is commented on and
+closed, and one the gate closed is reopened once it passes. `aggregate`
+remains the only required check, and the workflow always runs from
+`master`'s definition of it rather than the pull request's. The
+`pull_request_target` trigger is load-bearing: a `pull_request` run's
+token cannot close a pull request, so the base repository's token does
+the closing. The template is read at the pull request's base SHA, no
+pull-request code is run, and a pull request it reopens stays held for
+approval.
+
 ## Pull requests
 
 Small and single-purpose beats large and comprehensive. GitHub fills the
@@ -188,3 +201,11 @@ wrong problem.
 To work on an issue, claim it first: comment `/claim` on an open,
 unassigned issue and the claim workflow assigns it to you; `/unclaim` or
 `/release` hands it back.
+
+Once open, a non-draft pull request is admitted by the `pr gate`
+workflow: its description is checked against the pull request template,
+it must reference an issue assigned to its author, and its commits must
+be its author's, a push-access account's or web-flow's, or carry a
+`Co-Authored-By` trailer for the author — model trailers at a noreply@
+address are outside this check. A pull request that does not conform is
+commented on and closed, and reopened once corrected.
