@@ -113,7 +113,7 @@ runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
-| `tests` | the suite against Postgres 16 and 17, plus a coverage job with a 90% floor | `.venv/bin/pytest -v` |
+| `tests` | the suite against Postgres 16 and 17, plus a coverage job gated on the floor recorded in `.github/ci-thresholds.json` (below) | `.venv/bin/pytest -v` |
 | `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
 | `types` | pyright over `backend/` | `pyright` |
 | `eslint` | eslint over `public/` | `npm ci && npx eslint public` |
@@ -126,6 +126,19 @@ The `aggregate` job folds every leg and fails closed, with two local legs
 of its own: `conflict-markers` on every push and PR, and `base-freshness`
 on PRs, which fails when `master` holds a gate-input commit the head lacks,
 naming the commit and file.
+
+The coverage floor is a ratchet, not a fixed number.
+`.github/ci-thresholds.json` records a measurement and a floor exactly 1.5
+points below it; the `coverage` job reads the floor through
+`python3 scripts/ci/thresholds.py --coverage-floor python` and fails under
+it. After a green `ci gate` run for a push to `master`, the `ratchet push`
+workflow (`.github/workflows/ratchet-push.yml`) commits a raise to
+`master` when that run measured more than 1.5 points above the recorded
+measurement and `master` has not moved since; nothing lowers the floor
+automatically, and lowering it by hand to turn a red build green is not a
+fix. On a pull request the coverage of changed lines (diff-cover against
+`origin/master`) is reported in the job summary with no threshold of its
+own.
 
 `pip install -r requirements-dev.txt -r requirements-test.txt` gets the
 Python toolchain. `package.json` exists only to pin eslint — **it is not a
