@@ -5,7 +5,8 @@ Adapted from claim's tests/gate_base_freshness.py: its fail-closed stdlib block
 parser, tracked-path resolution, anonymous fetch and commit comparison form the
 starting point. Here ci-gate.yml's aggregate.needs defines the required jobs;
 local reusable workflows contribute every job they execute. Definitions sharing
-a required job name across workflows are unioned. Every workflow file is watched.
+a required job name across workflows are unioned. Only ci-gate.yml's own
+aggregate is excluded from the walk. Every workflow file is watched.
 
 Reach limits: `.` resolves to nothing; implicit tool configuration, expression-
 computed paths and files read from inside scripts are invisible unless a run:
@@ -227,8 +228,8 @@ def step_fields(lines: list[str], start: int, end: int, workflow: str, dash: str
                 raise WorkflowError(f"{workflow}: unmodeled run scalar {value!r}")
             step["run"] = value
         elif key == "uses":
-            if not value:
-                raise WorkflowError(f"{workflow}: empty action reference")
+            if not value or value.startswith(("'", '"', "|", ">", "{", "[", "&", "*", "!")):
+                raise WorkflowError(f"{workflow}: unmodeled action reference {value!r}")
             step["uses"] = value.split()[0]
         elif not value or BLOCK_SCALAR.fullmatch(value):
             index = min(end, block_end(lines, index, 8))
@@ -290,7 +291,7 @@ def folded_steps(parsed: dict[str, dict[str, Job]]) -> list[Step]:
     steps: list[Step] = []
     while pending:
         workflow, name = pending.pop()
-        if (workflow, name) in seen:
+        if (workflow, name) == (GATE_WORKFLOW, "aggregate") or (workflow, name) in seen:
             continue
         seen.add((workflow, name))
         job = parsed[workflow][name]
@@ -299,7 +300,7 @@ def folded_steps(parsed: dict[str, dict[str, Job]]) -> list[Step]:
             target = job.uses.removeprefix("./")
             if not job.uses.startswith("./") or target not in parsed or not parsed[target]:
                 raise GateError(f"{workflow}: cannot model reusable workflow {job.uses!r}")
-            pending.extend((target, child) for child in parsed[target] if child != "aggregate")
+            pending.extend((target, child) for child in parsed[target])
     return steps
 
 
