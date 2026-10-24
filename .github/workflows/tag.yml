@@ -133,19 +133,8 @@ jobs:
           # with 20 seconds between reads.
           TAG_WAIT_DEADLINE_SECONDS="${TAG_WAIT_DEADLINE_SECONDS:-2700}"
           TAG_WAIT_SLEEP_SECONDS="${TAG_WAIT_SLEEP_SECONDS:-20}"
-          # Explicit checks a push changing docs_hub_cli/__init__.py starts.
-          # Change this list when the aggregate CI check (#46) replaces it.
-          required='suites (3.13, 16)
-          suites (3.13, 17)
-          coverage
-          pylint
-          pycodestyle
-          pyright
-          eslint
-          pip-audit
-          npm-audit
-          analyze (python)
-          analyze (javascript-typescript)'
+          # The ci gate aggregate is the one check a master push must carry.
+          required='aggregate'
           deadline=$(( SECONDS + TAG_WAIT_DEADLINE_SECONDS ))
           while [ "$SECONDS" -lt "$deadline" ]; do
             runs="$(gh api --paginate \
