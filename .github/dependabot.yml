@@ -3,8 +3,12 @@
 # choice is that pins go stale silently, and a stale pin is how a fixed CVE
 # stays exploitable. Dependabot pays that cost back — it is the counterpart to
 # audit.yml, which detects the problem but cannot fix it.
-# Service-image digests are pinned and updated by reviewed edits until
-# #59's update mechanism lands (see #59).
+# The Postgres service images live as one-line digest-pinned Dockerfiles under
+# .github/postgres/<major>/ — each full-version tag there resolves to the same
+# Docker Hub multi-arch index digest `docker buildx imagetools inspect` shows
+# for postgres:<major> — and the docker entry below is their update route: a
+# weekly pull request moves the tag and digest within the major, or the digest
+# alone when the tag is rebuilt.
 
 version: 2
 updates:
@@ -71,3 +75,26 @@ updates:
         applies-to: security-updates
         patterns:
           - "*"
+
+  # The CI service images. Like the actions above, a digest pin never moves on
+  # its own — and these Dockerfiles are the only place the digest is written,
+  # so the bump lands where CI reads it. The major-ignore keeps the same
+  # reviewed-upgrade flow as every other pin here.
+  - package-ecosystem: docker
+    directories:
+      - "/.github/postgres/16"
+      - "/.github/postgres/17"
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "04:30"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+    ignore:
+      - dependency-name: postgres
+        versions:
+          - "version-update:semver-major"

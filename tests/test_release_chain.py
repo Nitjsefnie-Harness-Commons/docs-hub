@@ -67,6 +67,58 @@ def test_release_build_is_read_only_and_hands_off_artifact():
     assert download["with"]["name"] == artifact_name
 
 
+def _workflow_text(filename: str) -> str:
+    return (_REPO / ".github/workflows" / filename).read_text(encoding="utf-8")
+
+
+def _needs(job: dict[str, Any]) -> set[str]:
+    needs = job.get("needs", [])
+    return {needs} if isinstance(needs, str) else set(needs)
+
+
+def test_images_job_reads_both_postgres_dockerfiles():
+    # Both workflows resolve their Postgres service image from the images job,
+    # whose reading step spells both Dockerfiles literally — that spelling is
+    # what puts them in gate_base_freshness.py's derived watch set, so a
+    # digest bump landing on master demands a rebase before any PR merges.
+    for filename in ("tests.yml", "release.yml"):
+        job = _workflow(filename)["jobs"]["images"]
+        assert {"image16", "image17"} <= set(job["outputs"]), filename
+        reading = next(step for step in job["steps"] if step.get("id") == "pins")
+        for path in (".github/postgres/16/Dockerfile", ".github/postgres/17/Dockerfile"):
+            assert path in reading["run"], (filename, path)
+
+
+def test_postgres_services_need_images_and_read_its_outputs():
+    # The service image is the images job's output expression, never a literal:
+    # a digest stated anywhere else would be a second copy Dependabot's docker
+    # ecosystem cannot update.
+    for filename, job_names in (("tests.yml", ("suites", "coverage")),
+                                ("release.yml", ("build",))):
+        jobs = _workflow(filename)["jobs"]
+        for job_name in job_names:
+            job = jobs[job_name]
+            assert "images" in _needs(job), (filename, job_name)
+            image = job["services"]["postgres"]["image"]
+            assert "needs.images.outputs." in image, (filename, job_name)
+
+
+def test_workflows_hold_no_postgres_digest_literal():
+    # The Dockerfiles under .github/postgres/ are the only home of the digest.
+    for filename in ("tests.yml", "release.yml"):
+        assert re.search(r"postgres:\d+@sha256:", _workflow_text(filename)) is None, filename
+
+
+@pytest.mark.parametrize("major", [16, 17])
+def test_postgres_dockerfile_holds_one_from_line_of_its_major(major: int):
+    # Major only: the digest is data Dependabot rewrites, never a value to pin.
+    dockerfile = _REPO / f".github/postgres/{major}/Dockerfile"
+    froms = [line for line in dockerfile.read_text(encoding="utf-8").splitlines()
+             if line.startswith("FROM ")]
+    assert len(froms) == 1
+    assert froms[0].startswith(f"FROM postgres:{major}.")
+
+
 def test_release_publish_has_only_the_writer_permissions():
     publish = _workflow("release.yml")["jobs"]["publish"]
     assert publish["needs"] == "build"

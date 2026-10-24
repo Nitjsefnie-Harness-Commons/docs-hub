@@ -23,7 +23,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  images:
+    # Single source of the Postgres service images: the one-line Dockerfiles
+    # under .github/postgres/<major>/, updated by Dependabot's docker
+    # ecosystem. The run step names both paths literally so
+    # gate_base_freshness.py watches them, and the outputs are the only place
+    # the jobs below get an image from.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image16: ${{ steps.pins.outputs.image16 }}
+      image17: ${{ steps.pins.outputs.image17 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: pins
+        name: Read the Postgres image pins
+        run: |
+          image16="$(sed -n 's/^FROM //p' .github/postgres/16/Dockerfile)"
+          image17="$(sed -n 's/^FROM //p' .github/postgres/17/Dockerfile)"
+          case "$image16" in postgres:16.*@sha256:*) ;;
+            *) echo ".github/postgres/16/Dockerfile does not pin a postgres 16 image: $image16" >&2; exit 1 ;;
+          esac
+          case "$image17" in postgres:17.*@sha256:*) ;;
+            *) echo ".github/postgres/17/Dockerfile does not pin a postgres 17 image: $image17" >&2; exit 1 ;;
+          esac
+          {
+            echo "image16=$image16"
+            echo "image17=$image17"
+          } >> "$GITHUB_OUTPUT"
+
   build:
+    needs: images
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -38,10 +70,9 @@ jobs:
     # tests job does, on the version the deployment runs.
     services:
       postgres:
-        # Docker Hub multi-arch index, resolved with
-        # docker buildx imagetools inspect postgres:17; updates go through this
-        # repository's review flow. No automated digest bump yet; see #59.
-        image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+        # The same digest-pinned Dockerfile the tests workflow's 17 leg reads;
+        # Dependabot's docker ecosystem updates it weekly.
+        image: ${{ needs.images.outputs.image17 }} # zizmor: ignore[unpinned-images] — resolved at runtime from the digest-pinned Dockerfile this workflow's images job reads
         env:
           POSTGRES_PASSWORD: postgres
         options: >-
