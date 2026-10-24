@@ -20,10 +20,11 @@ name: actionlint
 # other gate is a supply-chain position worth defending. The pin is the
 # Nitjsefnie-OSC/actionlint fork, not stock rhysd/actionlint: the fork
 # release carries the `concurrency` `queue:` key and the `$/` self-repository
-# `uses:` form that stock 1.7.12 rejects, so a future `queue: max` (needed by
-# #43's claim workflow) would false-red this gate while passing everywhere
-# else. Neither key is used in this repository today; the fork pin is
-# forward-compatibility with the fleet, and it unblocks #43.
+# `uses:` form that stock 1.7.12 rejects, so a `queue: max` (needed by #43's
+# claim workflow) would false-red this gate while passing everywhere else. The
+# `$/` form is used here: zizmor 1.31's self-repository audit asks for it, and
+# ci-gate.yml's callee calls carry it. The `queue:` key is the remaining
+# fleet forward-compatibility, and it unblocks #43.
 #
 # Suppressions belong at the offending line as a `# zizmor: ignore[rule]`
 # comment WITH a justification, never as a raised --min-severity here: a

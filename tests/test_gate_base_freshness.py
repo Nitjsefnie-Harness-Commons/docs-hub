@@ -56,12 +56,13 @@ def _needs(root: Path) -> set[str]:
     return set(workflow["jobs"]["aggregate"]["needs"])
 
 
-def _fixture_repo(tmp_path: Path) -> tuple[Path, Path]:
+def _fixture_repo(tmp_path: Path,
+                  callee_uses: str = "./.github/workflows/tests.yml") -> tuple[Path, Path]:
     origin = tmp_path / "origin"
     _init(origin)
-    _commit_file(origin, ".github/workflows/ci-gate.yml", """jobs:
+    _commit_file(origin, ".github/workflows/ci-gate.yml", f"""jobs:
   lint:
-    uses: ./.github/workflows/tests.yml
+    uses: {callee_uses}
   aggregate:
     needs: [lint]
     steps:
@@ -141,6 +142,23 @@ def test_fresh_base_is_green(tmp_path: Path, gate: ModuleType) -> None:
     assert "README.md" not in paths
     assert "aggregate-only.txt" not in paths
     assert "expression-only.txt" not in paths
+
+
+def test_self_repository_callee_spelling_is_modeled(tmp_path: Path, gate: ModuleType) -> None:
+    # `$/.github/...` is GitHub's self-repository spelling (announced July
+    # 2026), resolving to the same tree as the workspace-relative form, so
+    # the callee walk must descend through it the same way.
+    _, head = _fixture_repo(tmp_path, callee_uses="$/.github/workflows/tests.yml")
+    result = _run(head)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert {"checker.py", ".config", "inputs/data.txt"} <= set(gate.gate_paths(head))
+
+
+def test_callee_reference_without_a_modeled_prefix_refuses(
+        tmp_path: Path, gate: ModuleType) -> None:
+    _, head = _fixture_repo(tmp_path, callee_uses="x/.github/workflows/tests.yml")
+    with pytest.raises(gate.GateError, match="cannot model reusable workflow"):
+        gate.gate_paths(head)
 
 
 def test_workflow_change_is_stale(tmp_path: Path, gate: ModuleType) -> None:

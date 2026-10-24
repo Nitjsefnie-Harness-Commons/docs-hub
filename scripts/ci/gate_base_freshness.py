@@ -312,8 +312,10 @@ def folded_steps(parsed: dict[str, dict[str, Job]], required: set[str]) -> list[
         job = parsed[workflow][name]
         steps.extend(job.steps)
         if job.uses:
-            target = job.uses.removeprefix("./")
-            if not job.uses.startswith("./") or target not in parsed or not parsed[target]:
+            # `$/.github/...` is GitHub's self-repository spelling (announced
+            # July 2026), resolving to the same tree as the relative form.
+            target = job.uses[2:] if job.uses.startswith(("./", "$/")) else None
+            if target is None or target not in parsed or not parsed[target]:
                 raise GateError(f"{workflow}: cannot model reusable workflow {job.uses!r}")
             pending.extend((target, child) for child in parsed[target])
     return steps
