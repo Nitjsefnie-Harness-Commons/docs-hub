@@ -51,10 +51,16 @@ def _assert_notice_absent_everywhere():
     assert r.status_code == 404
     login = _client().get("/login")
     assert login.status_code == 200
-    assert LINK not in login.content
+    assert b'href="/privacy"' not in login.content
     doc = _anon_public_doc()
     assert doc.status_code == 200
     assert LINK not in doc.content
+
+
+def _login_form(content: bytes) -> bytes:
+    match = re.search(rb"<form\b.*?</form>", content, re.DOTALL)
+    assert match is not None
+    return match.group(0)
 
 
 def test_privacy_page_serves_the_operator_markdown(tmp_path, monkeypatch):
@@ -101,16 +107,16 @@ def test_sign_in_form_links_the_notice(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
     login = _client().get("/login")
     assert login.status_code == 200
-    assert LINK in login.content
+    assert LOGIN_LINK in _login_form(login.content)
 
 
 def test_invalid_credentials_response_links_the_notice(tmp_path, monkeypatch):
-    """The second login render site (the 401 body) carries the link too."""
+    """The 401 body's form carries the link too."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
     r = _client().post("/login",
                        data={"user_id": "1", "password": "fixture-not-it"})
     assert r.status_code == 401
-    assert LINK in r.content
+    assert LOGIN_LINK in _login_form(r.content)
 
 
 def test_anonymous_public_html_doc_gains_the_link_before_its_last_body_close(
