@@ -62,6 +62,7 @@ jobs:
       contents: read
       # Reading the other workflows' results for this SHA.
       checks: read
+      actions: read
 
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -126,8 +127,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DOCS_HUB_SHA: ${{ steps.version.outputs.sha }}
           DOCS_HUB_REPO: ${{ github.repository }}
-        # Exclude only the exact tag and release-readiness jobs, including
-        # earlier attempts on this SHA. Every required gate must exist and succeed.
+        # Only checks whose run was triggered for this SHA by push or
+        # pull_request gate the tag; an unidentifiable row is still judged.
         run: |
           # Timing overrides are test hooks; production defaults to 45 minutes
           # with 20 seconds between reads.
@@ -137,18 +138,32 @@ jobs:
           required='aggregate'
           deadline=$(( SECONDS + TAG_WAIT_DEADLINE_SECONDS ))
           while [ "$SECONDS" -lt "$deadline" ]; do
+            workflow_runs="$(gh api --paginate \
+              -H "Cache-Control: no-cache" \
+              "repos/${DOCS_HUB_REPO:-${REPO}}/actions/runs?head_sha=${DOCS_HUB_SHA:-${SHA}}" \
+              --jq '.workflow_runs[] | "\(.id)\t\(.event)"')"
             runs="$(gh api --paginate \
               -H "Cache-Control: no-cache" \
               "repos/${DOCS_HUB_REPO:-${REPO}}/commits/${DOCS_HUB_SHA:-${SHA}}/check-runs" \
               --jq '.check_runs[] | select(.name != "tag" and .name != "release-readiness")
-                    | "\(.status)\t\(.conclusion)\t\(.name)"')"
+                    | "\(.status)\t\(.conclusion)\t\(.name)\t\(.html_url)"')"
 
-            verdict="$(echo "$runs" | awk -F'\t' -v required="$required" '
+            verdict="$(echo "$runs" | awk -F'\t' -v required="$required" -v events="$workflow_runs" '
               BEGIN {
                 n = split(required, names, "\n")
                 for (i = 1; i <= n; i++) needed[names[i]] = 1
+                m = split(events, arrived, "\n")
+                for (i = 1; i <= m; i++) {
+                  k = split(arrived[i], fields, "\t")
+                  if (k == 2) by_id[fields[1]] = fields[2]
+                }
               }
               NF {
+                id = ""
+                if (match($4, /\/actions\/runs\/[0-9]+/))
+                  id = substr($4, RSTART + 14, RLENGTH - 14)
+                if (id != "" && (id in by_id) &&
+                    by_id[id] != "push" && by_id[id] != "pull_request") next
                 seen[$3] = 1
                 if ($1 != "completed") pending = 1
                 if ($2 == "failure" || $2 == "cancelled" || $2 == "timed_out" ||

@@ -12,13 +12,21 @@ _REQUIRED = ("aggregate",)
 
 
 def _check(name: str, conclusion: str | None = "success",
-           status: str = "completed") -> dict[str, str | None]:
-    return {"name": name, "status": status, "conclusion": conclusion}
+           status: str = "completed",
+           html_url: str | None = None) -> dict[str, str | None]:
+    return {"name": name, "status": status, "conclusion": conclusion,
+            "html_url": html_url}
+
+
+def _run(run_id: int, event: str) -> dict[str, str | int]:
+    return {"id": run_id, "event": event}
 
 
 def _run_waiter(tmp_path: Path, checks: list[dict[str, str | None]],
                 deadline: int = 1,
-                workflow_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+                workflow_env: dict[str, str] | None = None,
+                runs: list[dict[str, str | int]] | None = None
+                ) -> subprocess.CompletedProcess[str]:
     with (_REPO / ".github/workflows/tag.yml").open(encoding="utf-8") as stream:
         workflow = yaml.safe_load(stream)
     step = next(step for step in workflow["jobs"]["release-readiness"]["steps"]
@@ -31,11 +39,16 @@ import os
 import subprocess
 import sys
 args = sys.argv[1:]
-endpoint = 'repos/example/repository/commits/' + '0' * 40 + '/check-runs'
-if endpoint not in args:
-    raise SystemExit('unexpected check-run endpoint: ' + repr(args))
+checks = 'repos/example/repository/commits/' + '0' * 40 + '/check-runs'
+runs = 'repos/example/repository/actions/runs?head_sha=' + '0' * 40
+if runs in args:
+    payload = os.environ.get('RUNS', '{"workflow_runs": []}')
+elif checks in args:
+    payload = os.environ['CHECKS']
+else:
+    raise SystemExit('unexpected endpoint: ' + repr(args))
 query = args[args.index('--jq') + 1]
-result = subprocess.run(['jq', '-r', query], input=os.environ['CHECKS'], text=True)
+result = subprocess.run(['jq', '-r', query], input=payload, text=True)
 raise SystemExit(result.returncode)
 """, encoding="utf-8")
     gh.chmod(0o755)
@@ -43,11 +56,14 @@ raise SystemExit(result.returncode)
            if key not in {"REPO", "SHA", "DOCS_HUB_REPO", "DOCS_HUB_SHA"}}
     if workflow_env is None:
         workflow_env = {"DOCS_HUB_REPO": "example/repository", "DOCS_HUB_SHA": "0" * 40}
+    env["PATH"] = f"{tmp_path}:{os.environ['PATH']}"
+    extra = {**workflow_env, "CHECKS": json.dumps({"check_runs": checks})}
+    if runs is not None:
+        extra["RUNS"] = json.dumps({"workflow_runs": runs})
     return subprocess.run(
         ["bash", "-e", str(script)], check=False, capture_output=True, text=True,
         timeout=5,
-        env={**env, "PATH": f"{tmp_path}:{os.environ['PATH']}", **workflow_env,
-             "CHECKS": json.dumps({"check_runs": checks}),
+        env={**env, **extra,
              "TAG_WAIT_DEADLINE_SECONDS": str(deadline),
              "TAG_WAIT_SLEEP_SECONDS": "0.05"},
     )
@@ -158,3 +174,66 @@ def test_running_required_check_waits_until_deadline(tmp_path: Path):
     result = _run_waiter(tmp_path, checks)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Timed out" in result.stderr
+
+
+def _gate_row(name: str, run_id: int) -> dict[str, str | None]:
+    return _check(name, "failure",
+                  html_url=f"https://github.com/example/repository/actions/runs/{run_id}/job/1")
+
+
+def test_push_produced_checks_are_judged(tmp_path: Path):
+    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED],
+                         runs=[_run(1, "push")])
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("event,name", [("push", "security-review"),
+                                        ("pull_request", "security-review"),
+                                        ("push", "aggregate")])
+def test_failed_push_and_pull_request_checks_refuse(tmp_path: Path, event: str,
+                                                    name: str):
+    checks = [_check(required) for required in _REQUIRED if name != "aggregate"]
+    checks.append(_gate_row(name, 2))
+    result = _run_waiter(tmp_path, checks, runs=[_run(1, "push"), _run(2, event)])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Refusing to tag" in result.stderr
+
+
+@pytest.mark.parametrize("conclusion,status", [("failure", "completed"),
+                                               (None, "in_progress")])
+def test_issue_comment_rows_are_skipped(tmp_path: Path, conclusion: str | None,
+                                        status: str):
+    checks = [_check(name) for name in _REQUIRED] + [
+        _check("claim", conclusion, status,
+               html_url="https://github.com/example/repository/actions/runs/11/job/1")]
+    result = _run_waiter(tmp_path, checks, runs=[_run(11, "issue_comment")])
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_schedule_rows_are_skipped(tmp_path: Path):
+    checks = [_check(name) for name in _REQUIRED] + [_gate_row("security-review", 3)]
+    result = _run_waiter(tmp_path, checks, runs=[_run(3, "schedule")])
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_missing_aggregate_with_push_rows_times_out(tmp_path: Path):
+    row = _check("security-review",
+                 html_url="https://github.com/example/repository/actions/runs/1/job/1")
+    result = _run_waiter(tmp_path, [row], runs=[_run(1, "push")])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Timed out" in result.stderr
+
+
+@pytest.mark.parametrize("url,run_id", [
+    ("https://github.com/example/repository/runs/11/job/1", 11),
+    ("https://github.com/example/repository/actions/runs/99/job/1", 99),
+])
+def test_unidentified_rows_are_judged(tmp_path: Path, url: str, run_id: int):
+    # Fail closed: a row whose producing run cannot be identified (no
+    # /actions/runs/<id> in its html_url, or an id the runs listing never
+    # returned) is judged even when an identified push run exists.
+    checks = [_check(name) for name in _REQUIRED]
+    checks.append(_check("security-review", "failure", html_url=url))
+    result = _run_waiter(tmp_path, checks, runs=[_run(run_id, "push")])
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Refusing to tag" in result.stderr
