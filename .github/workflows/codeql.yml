@@ -21,17 +21,15 @@ name: codeql
 # applied to a file last touched last year.
 
 on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
-      - '.gitignore'
-  pull_request:
+  workflow_call:
   schedule:
     # Wednesday 03:47 UTC. Off the hour and off Monday deliberately: the top
     # of the hour is when every cron on GitHub fires at once and jobs queue.
     - cron: '47 3 * * 3'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: codeql-${{ github.ref }}

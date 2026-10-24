@@ -25,14 +25,7 @@ name: actionlint
 # has thought about yet.
 
 on:
-  push:
-    paths:
-      - '.github/workflows/**'
-      - '.github/dependabot.yml'
-  pull_request:
-    paths:
-      - '.github/workflows/**'
-      - '.github/dependabot.yml'
+  workflow_call:
   workflow_dispatch:
 
 permissions:

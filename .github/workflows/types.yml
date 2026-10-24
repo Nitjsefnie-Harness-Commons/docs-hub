@@ -9,12 +9,7 @@ name: types
 # platform behind nginx, and there are no Windows branches to type-check.
 
 on:
-  push:
-    paths-ignore:
-      - '**/*.md'
-      - 'LICENSE'
-      - '.gitignore'
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
