@@ -157,7 +157,8 @@ def test_tag_readiness_is_read_only_and_exports_skip():
     workflow = _workflow("tag.yml")
     assert workflow["permissions"] == {"contents": "read"}
     readiness = workflow["jobs"]["release-readiness"]
-    assert readiness["permissions"] == {"contents": "read", "checks": "read"}
+    assert readiness["permissions"] == {"contents": "read", "checks": "read",
+                                        "actions": "read"}
     assert readiness["timeout-minutes"] == 60
     assert set(readiness["outputs"]) == {"tag", "sha", "skip"}
     for name in ("Refuse to re-tag an existing version", "Wait for the other gates on this commit"):
