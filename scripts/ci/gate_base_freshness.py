@@ -17,9 +17,11 @@ The watched universe is the union of this head's and origin/master's trees, so
 a file master added is watched before any rebase. --head checks a named commit
 instead of HEAD; the workflow passes the pull request's head sha, because a
 pull_request checkout may be the synthetic merge, whose tree already contains
-base changes.
+base changes. The check mode always fetches origin/master; --print-paths
+accepts --base to name the second tree explicitly, for a checkout that does
+not carry the fetched ref.
 
-    scripts/ci/gate_base_freshness.py [--root DIR] [--head SHA] [--print-paths]
+    scripts/ci/gate_base_freshness.py [--root DIR] [--head SHA] [--base REV] [--print-paths]
 """
 import re
 import subprocess
@@ -317,10 +319,12 @@ def folded_steps(parsed: dict[str, dict[str, Job]], required: set[str]) -> list[
     return steps
 
 
-def gate_paths(root: Path, head: str = "HEAD") -> list[str]:
+def gate_paths(root: Path, head: str = "HEAD",
+               base: str | None = None) -> list[str]:
+    base_revision = base or f"refs/remotes/origin/{BASE_BRANCH}"
     head_commit = commit_of(root, head, "resolve the derivation's head")
-    base_commit = commit_of(root, f"refs/remotes/origin/{BASE_BRANCH}",
-                            f"resolve origin/{BASE_BRANCH} for the derivation")
+    base_commit = commit_of(root, base_revision,
+                            f"resolve {base_revision} for the derivation")
     files = sorted(set(tracked_files(root, head_commit))
                    | set(tracked_files(root, base_commit)))
     parsed = [read_workflows(root, commit) for commit in (head_commit, base_commit)]
@@ -381,7 +385,7 @@ def check(root: Path, head: str) -> int:
     fetch_base(root)
     base_commit = commit_of(root, f"refs/remotes/origin/{BASE_BRANCH}",
                             what=f"resolve origin/{BASE_BRANCH}")
-    paths = gate_paths(root, head_commit)
+    paths = gate_paths(root, head_commit, base_commit)
     stale = stale_commits(root, head_commit, base_commit, paths)
     if not stale:
         print(f"This head carries every commit on {BASE_BRANCH} that touches "
@@ -405,6 +409,7 @@ def check(root: Path, head: str) -> int:
 def main(argv: Sequence[str]) -> int:
     root = Path(__file__).resolve().parents[2]
     head = "HEAD"
+    base = ""
     print_paths = False
     rest = list(argv[1:])
     while rest:
@@ -413,15 +418,21 @@ def main(argv: Sequence[str]) -> int:
             print_paths = True
         elif argument == "--head" and rest:
             head = rest.pop(0)
+        elif argument == "--base" and rest:
+            base = rest.pop(0)
         elif argument == "--root" and rest:
             root = Path(rest.pop(0))
         else:
-            print("usage: gate_base_freshness.py [--root DIR] [--head SHA] [--print-paths]",
-                  file=sys.stderr)
+            print("usage: gate_base_freshness.py [--root DIR] [--head SHA] "
+                  "[--base REV] [--print-paths]", file=sys.stderr)
             return 2
+    if base and not print_paths:
+        print("--base names the second tree of a --print-paths derivation; the "
+              "check mode always fetches origin/master", file=sys.stderr)
+        return 2
     try:
         if print_paths:
-            print("\n".join(gate_paths(root)))
+            print("\n".join(gate_paths(root, base=base or None)))
             return 0
         return check(root, head)
     except (GateError, OSError, UnicodeError) as refusal:
