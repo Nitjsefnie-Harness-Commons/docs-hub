@@ -2,8 +2,8 @@ name: eslint
 
 # The SPA in public/ is 680 lines of plain browser JavaScript served
 # byte-for-byte with no build step, which is the invariant CONTRIBUTING.md
-# states and this gate does not change: package.json exists only to pin the
-# linter, and nothing it installs is ever shipped.
+# states and this gate does not change: package.json pins only CI
+# tooling, and nothing it installs is ever shipped.
 #
 # No build step is also exactly why the gate matters. There is no bundler and
 # no module system to catch a typo'd identifier, so an undeclared variable or

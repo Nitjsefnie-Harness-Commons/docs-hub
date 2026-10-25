@@ -28,8 +28,8 @@ updates:
     labels:
       - dependencies
 
-  # The eslint toolchain. Nothing here is served to a browser — see
-  # package.json — so a bump can only ever affect the lint gate.
+  # The eslint and jsdom toolchain. Nothing here is served to a browser,
+  # so a bump can only affect the eslint and app.js test jobs.
   - package-ecosystem: npm
     directory: "/"
     schedule:
