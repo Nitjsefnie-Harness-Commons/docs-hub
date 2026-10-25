@@ -8,7 +8,8 @@ import pytest
 import yaml
 
 _REPO = Path(__file__).resolve().parent.parent
-_CALLEES = ("tests", "lint", "types", "eslint", "audit", "actionlint", "codeql", "secrets")
+_CALLEES = ("tests", "lint", "types", "eslint", "audit", "actionlint", "codeql", "secrets",
+            "speed")
 _LEGS = (*_CALLEES, "conflict-markers", "base-freshness")
 _SCHEDULED = {"audit", "codeql", "secrets"}
 
@@ -53,7 +54,7 @@ def test_ci_gate_owns_every_push_and_pull_request() -> None:
     assert concurrency["cancel-in-progress"] is True
 
 
-def test_ci_gate_calls_all_eight_gates_with_minimal_permissions() -> None:
+def test_ci_gate_calls_all_nine_gates_with_minimal_permissions() -> None:
     jobs = _workflow()["jobs"]
     assert set(jobs) == {*_LEGS, "aggregate"}
     for name in _CALLEES:
@@ -104,7 +105,7 @@ def test_callees_leave_push_and_pull_request_to_the_gate(name: str) -> None:
             assert permissions in (None, "read-all")
 
 
-def test_aggregate_always_folds_exactly_ten_legs_without_checkout() -> None:
+def test_aggregate_always_folds_exactly_eleven_legs_without_checkout() -> None:
     job = _workflow()["jobs"]["aggregate"]
     assert set(job["needs"]) == set(_LEGS)
     assert len(job["needs"]) == len(_LEGS)
@@ -168,7 +169,7 @@ def _success_env() -> dict[str, str]:
     return dict.fromkeys(_fold_step()["env"], "success")
 
 
-def test_fold_accepts_all_ten_successes(tmp_path: Path) -> None:
+def test_fold_accepts_all_eleven_successes(tmp_path: Path) -> None:
     result = _run_fold(tmp_path, _success_env())
     assert result.returncode == 0, result.stdout + result.stderr
 
