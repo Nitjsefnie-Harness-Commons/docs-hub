@@ -8,9 +8,9 @@
 // Rules are the recommended set (real defects: undeclared identifiers, unused
 // bindings, unreachable code, duplicate keys) plus four for the mistakes
 // public/app.js is exposed to: one script, no modules, so a stray
-// `var` or an accidental `==` is hard to see. The tests block adds no rules.
-// Style opinions -- quotes, semicolons, indentation -- are deliberately
-// absent.
+// `var` or an accidental `==` is hard to see. tests/**/*.mjs gets Node
+// globals, no extra rules. Style opinions -- quotes, semicolons,
+// indentation -- are absent.
 
 import js from "@eslint/js";
 import globals from "globals";
