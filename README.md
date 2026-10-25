@@ -147,6 +147,18 @@ backed up under whatever procedure its owner provides.
 This repository provides the procedure below; the operator supplies the
 backup schedule, retention, off-host storage, and who runs them.
 
+The commands read `DOCS_HUB_DATABASE_URL_DOCS` and `DOCS_HUB_STORE_ROOT`
+from your shell, each written as `"${…:?}"` so an unset or empty value
+stops the command instead of defaulting. The unit itself loads them from
+the checkout's `.env` (`backend/app.py`), so load the same file — or the
+unit's environment, if it carries the values — before running them:
+
+```bash
+set -a
+. <deployment checkout>/.env
+set +a
+```
+
 #### Backup
 
 Stop the unit (`deploy/docs-hub.service`) first: publishes write a version's
@@ -156,8 +168,8 @@ can guarantee the two agree.
 
 ```bash
 systemctl stop docs-hub.service
-pg_dump -Fc "$DOCS_HUB_DATABASE_URL_DOCS" > docs-hub-<date>.dump
-cp -a "$DOCS_HUB_STORE_ROOT" /backup/docs-hub-store-<date>
+pg_dump -Fc "${DOCS_HUB_DATABASE_URL_DOCS:?}" > docs-hub-<date>.dump
+cp -a "${DOCS_HUB_STORE_ROOT:?}" /backup/docs-hub-store-<date>
 ```
 
 With the unit stopped, nothing can write either side, so the dump and the
@@ -172,8 +184,8 @@ the new name — and copy the blobs into `DOCS_HUB_STORE_ROOT`:
 ```bash
 createdb <db>
 pg_restore -d <db> docs-hub-<date>.dump
-mkdir -p "$DOCS_HUB_STORE_ROOT"
-cp -a /backup/docs-hub-store-<date>/. "$DOCS_HUB_STORE_ROOT"/
+mkdir -p "${DOCS_HUB_STORE_ROOT:?}"
+cp -a /backup/docs-hub-store-<date>/. "${DOCS_HUB_STORE_ROOT:?}"/
 ```
 
 Each stored `file_path` is the realpath of
@@ -183,9 +195,10 @@ the original, rewrite the prefix — reads refuse any stored path outside the
 current store, so an unrewritten restore fails loudly rather than silently
 missing; the one quiet case is a new root that contains the old one, where
 unrewritten rows keep reading from the old subtree until it is removed.
-Spell both roots as realpaths with a
-trailing slash, and rewrite the anchored prefix — a bare `replace()` also
-rewrites a second occurrence of the old spelling inside a slug segment:
+Spell both roots as realpaths without a trailing slash — the template
+appends the `/` it anchors on — and rewrite the anchored prefix; a bare
+`replace()` also rewrites a second occurrence of the old spelling inside a
+slug segment:
 
 ```sql
 UPDATE doc_versions
@@ -194,8 +207,9 @@ WHERE starts_with(file_path, '<old root>/');
 ```
 
 The rewrite covers only rows carrying the old prefix; this query must
-return zero rows afterwards, and every row it returns needs a hand fix
-before the unit starts:
+return zero rows afterwards — it is what catches any row whose `file_path`
+is not under the current `DOCS_HUB_STORE_ROOT` — and every row it returns
+needs a hand fix before the unit starts:
 
 ```sql
 SELECT file_path FROM doc_versions
@@ -204,17 +218,20 @@ WHERE NOT starts_with(file_path, '<new root>/');
 
 #### Verify the restore
 
-Run this check before starting the unit — the reaper purges once at
-startup, deleting documents whose expiry has passed, so the check is the
-last look at the restored state as restored. It stops on any row whose file
-is missing, or whose size or SHA-256 disagrees with the stored `byte_size` /
-`sha256`. Slugs are `[a-z0-9_-/]`, so the `|` separator cannot occur in the
-store-relative part of a stored path; a `|` in the store root itself, which
-no charset constrains, would only misdirect the split into a missing-file or
-mismatch exit — still loud, never a silent pass:
+Save this check as a file and run it with `bash`, not pasted into a shell —
+its `exit` lines stop the script, and would close an interactive shell. Run
+it before starting the unit: the reaper purges once at startup, deleting
+documents whose expiry has passed, so the check is the last look at the
+restored state as restored. It stops on any row whose file is missing, or
+whose size or SHA-256 disagrees with the stored `byte_size` / `sha256`.
+Slugs are per-segment `[a-z0-9_-]` joined by `/` (`backend/storage.py`), so
+the `|` separator cannot occur in the store-relative part of a stored path;
+a `|` in the store root itself, which no charset constrains, would only
+misdirect the split into a missing-file or mismatch exit — still loud,
+never a silent pass:
 
 ```bash
-rows=$(psql "$DOCS_HUB_DATABASE_URL_DOCS" -At -F '|' \
+rows=$(psql -X "${DOCS_HUB_DATABASE_URL_DOCS:?}" -At -F '|' \
     -c "SELECT file_path, byte_size, sha256 FROM doc_versions") || exit
 n=0
 while IFS='|' read -r path size want; do
