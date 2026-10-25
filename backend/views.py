@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Request
+from starlette.convertors import IntegerConvertor, register_url_convertor
 from starlette.responses import HTMLResponse, Response
 
 from backend import docs_repo, privacy, render
@@ -40,7 +41,16 @@ def _serve(doc: dict) -> HTMLResponse:
     return HTMLResponse(doc["html"], headers=headers)
 
 
-@router.get("/d/{slug:path}/v{version:int}")
+class _Int10Convertor(IntegerConvertor):
+    """At most 10 digits; a longer tail is slug text."""
+
+    regex = "[0-9]{1,10}"
+
+
+register_url_convertor("int10", _Int10Convertor())
+
+
+@router.get("/d/{slug:path}/v{version:int10}")
 async def render_version(slug: str, version: int) -> Response:
     doc = await run_db(docs_repo.get_version, slug, version)
     if doc is None:

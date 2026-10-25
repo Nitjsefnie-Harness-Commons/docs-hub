@@ -174,6 +174,49 @@ def test_mid_path_v_segment_slug_renders_latest():
     assert r.content == body
 
 
+def test_oversized_version_tail_is_404_not_500():
+    """A /v<4301 digits> tail is slug text: 404, not 500."""
+    c = _client()
+    _publish(c, "cap/big", body=b"<h1>big</h1>")
+    r = c.get(f"/d/cap/big/v{'9' * 4301}", headers=KEY)
+    assert r.status_code == 404, r.text
+
+
+def test_version_above_int4_max_is_404_not_500():
+    c = _client()
+    _publish(c, "cap/one", body=b"<h1>one</h1>")
+    r = c.get(f"/d/cap/one/v{2147483647 + 1}", headers=KEY)
+    assert r.status_code == 404, r.text
+
+
+def test_version_at_2_to_the_63_is_404_not_500():
+    c = _client()
+    _publish(c, "cap/two", body=b"<h1>two</h1>")
+    r = c.get(f"/d/cap/two/v{2 ** 63}", headers=KEY)
+    assert r.status_code == 404, r.text
+
+
+def test_anonymous_oversized_version_tail_stays_gated():
+    """The gate runs before routing: oversized tails still 302 to /login."""
+    c = _client()
+    _publish(c, "cap/pub", body=b"<h1>pub</h1>")
+    assert _set_public(c, "cap/pub", True).status_code == 200
+    r = _client().get(f"/d/cap/pub/v{'9' * 4301}", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/login"
+
+
+def test_public_v_digit_slug_past_the_cap_stays_gated():
+    """The gate's digit rule is unbounded; this slug stays login-gated."""
+    c = _client()
+    slug = "cap/v" + "9" * 11
+    _publish(c, slug, body=b"<h1>digit slug</h1>")
+    assert _set_public(c, slug, True).status_code == 200
+    r = _client().get(f"/d/{slug}", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/login"
+
+
 def test_anonymous_public_v_tail_slug_renders_latest():
     """Anonymous on a public `a/vx`: the hash-less route renders the latest
     version; only the /v<digits> tail form addresses a version."""
