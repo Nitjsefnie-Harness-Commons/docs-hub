@@ -108,9 +108,9 @@ at startup and is what upgrades a deployed instance.
 
 One `ci gate` workflow owns the gate set's `push` and `pull_request`
 triggers, with no path filter — documentation-only pushes run it too. It
-folds nine gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
-`actionlint`, `secrets`, and `speed`. Their local commands are listed below;
-CodeQL runs on GitHub:
+folds ten gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
+`size-baseline`, `actionlint`, `secrets`, and `speed`. Their local commands
+are listed below; CodeQL runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
@@ -120,6 +120,7 @@ CodeQL runs on GitHub:
 | `eslint` | eslint over `public/` and the JavaScript tests in `tests/` | `npm ci && npx eslint public tests` |
 | `audit` | pip-audit over each of the seven requirements manifests separately (a joint `--require-hashes` run fails), plus `npm audit`; also on a daily cron | `pip-audit -r requirements.txt` and the same again for each of the other six: `requirements-dev.txt`, `requirements-test.txt`, `requirements-diff-cover.txt`, `requirements-audit.txt`, `requirements-zizmor.txt`, `requirements-build.txt` |
 | `codeql` | security analysis of the Python, JavaScript and Actions (the workflows language), weekly cron | — (GitHub-hosted) |
+| `size-baseline` | the tracked-file line-count ratchet over `.github/size-baseline.json`; a green master push stages a records change for the push workflow | — (GitHub-hosted action) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
 | `speed` | the last release (newest `v*` tag) and this commit on one runner, each with its own virtualenv and database, in five interleaved release-head-head-release blocks after a discarded warm-up; it fails when a service or CLI workload's median per-block slowdown exceeds 30% | `python3 scripts/ci/speed.py --base <release tree> --base-python <its venv python> --head . --head-python <this venv python>`, with `PGHOST` etc. pointing at a Postgres you can `createdb` on |
