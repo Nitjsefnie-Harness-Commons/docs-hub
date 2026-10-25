@@ -206,8 +206,10 @@ Run this check before starting the unit — the reaper purges once at
 startup, deleting documents whose expiry has passed, so the check is the
 last look at the restored state as restored. It stops on any row whose file
 is missing, or whose size or SHA-256 disagrees with the stored `byte_size` /
-`sha256`. Slugs are `[a-z0-9_-/]`, so the `|` separator cannot occur inside
-a stored path:
+`sha256`. Slugs are `[a-z0-9_-/]`, so the `|` separator cannot occur in the
+store-relative part of a stored path; a `|` in the store root itself, which
+no charset constrains, would only misdirect the split into a missing-file or
+mismatch exit — still loud, never a silent pass:
 
 ```bash
 rows=$(psql "$DOCS_HUB_DATABASE_URL_DOCS" -At -F '|' \
