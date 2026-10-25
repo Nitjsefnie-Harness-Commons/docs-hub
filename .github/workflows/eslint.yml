@@ -1,13 +1,13 @@
 name: eslint
 
-# The SPA in public/ is 680 lines of plain browser JavaScript served
-# byte-for-byte with no build step, which is the invariant CONTRIBUTING.md
-# states and this gate does not change: package.json pins only CI
-# tooling, and nothing it installs is ever shipped.
+# The SPA in public/ is plain browser JavaScript served byte-for-byte with
+# no build step, the invariant CONTRIBUTING.md states and this gate does
+# not change; package.json pins only CI tooling, and nothing it installs
+# ships. The gate also lints the JavaScript tests in tests/.
 #
-# No build step is also exactly why the gate matters. There is no bundler and
+# No build step is also why the gate matters. There is no bundler and
 # no module system to catch a typo'd identifier, so an undeclared variable or
-# a dead assignment reaches the browser and shows up as a blank screen.
+# a dead assignment reaches the browser as a blank screen.
 
 on:
   workflow_call:

@@ -7,9 +7,10 @@
 //
 // Rules are the recommended set (real defects: undeclared identifiers, unused
 // bindings, unreachable code, duplicate keys) plus four that catch the
-// mistakes this particular file is exposed to: it is one 680-line script with
-// no modules, so a stray `var` or an accidental `==` is genuinely hard to see.
-// Style opinions -- quotes, semicolons, indentation -- are deliberately absent.
+// mistakes public/app.js is exposed to: it is one script with no modules, so
+// a stray `var` or an accidental `==` is hard to see. The tests block adds
+// no rules. Style opinions -- quotes, semicolons, indentation -- are
+// deliberately absent.
 
 import js from "@eslint/js";
 import globals from "globals";
