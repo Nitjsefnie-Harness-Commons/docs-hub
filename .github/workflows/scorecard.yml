@@ -1,5 +1,7 @@
 name: scorecard
 
+# Trend signal: off contribution events, not a second gate.
+
 on:
   schedule:
     # Saturday 02:23 UTC, apart from CodeQL's Wednesday slot.
