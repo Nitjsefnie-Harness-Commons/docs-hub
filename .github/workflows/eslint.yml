@@ -2,11 +2,11 @@ name: eslint
 
 # The SPA in public/ is plain browser JavaScript served byte-for-byte with
 # no build step, the invariant CONTRIBUTING.md states and this gate does
-# not change; package.json pins only CI tooling, and nothing it installs
-# ships. The gate also lints the JavaScript tests in tests/.
+# not change; package.json pins only CI tooling; nothing it installs ships.
+# The gate also lints the JavaScript tests in tests/.
 #
-# No build step is also why the gate matters. There is no bundler and
-# no module system to catch a typo'd identifier, so an undeclared variable or
+# No build step is also why the gate matters. There is no bundler or
+# module system to catch a typo'd identifier, so an undeclared variable or
 # a dead assignment reaches the browser as a blank screen.
 
 on:
