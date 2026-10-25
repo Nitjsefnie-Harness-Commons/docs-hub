@@ -1,8 +1,17 @@
-"""Structure pins over ratchet-push.yml, related across the two workflows."""
+"""Structure pins over ratchet-push.yml across the two workflows.
+
+The run-id fallback is pinned behaviourally: the listing step's script
+runs under bash -e against a stub `gh` recording the artifacts
+endpoint it was called with (as in tests/test_tag_waiter.py).
+"""
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 _REPO = Path(__file__).resolve().parent.parent
@@ -15,7 +24,7 @@ def _workflow() -> dict[str, Any]:
 
 
 def _triggers(workflow: dict[str, Any]) -> dict[str, Any]:
-    # PyYAML's YAML 1.1 loader reads an unquoted `on` key as True.
+    # PyYAML's YAML 1.1 loader reads unquoted `on` as True.
     return workflow.get("on", workflow.get(True, {}))
 
 
@@ -30,7 +39,7 @@ def _step(name: str) -> dict[str, Any]:
 
 
 def _conjuncts(expression: str) -> set[str]:
-    # One conjunction: a disjunction would widen the admission set.
+    # A disjunction would widen the admission set.
     body = expression.strip()
     if body.startswith("${{") and body.endswith("}}"):
         body = body[3:-2].strip()
@@ -47,8 +56,7 @@ def test_the_trigger_keys_on_the_gate_workflow_itself() -> None:
 
 
 def test_the_push_job_admits_only_green_master_pushes() -> None:
-    # The measure step exits 0 even when tests fail, so the green-only
-    # guarantee lives in this admission set, exactly.
+    # The measure step exits 0 even when tests fail: green-only lives here.
     assert _conjuncts(_push_job()["if"]) == {
         "github.event.workflow_run.event == 'push'",
         "github.event.workflow_run.head_branch == 'master'",
@@ -65,18 +73,95 @@ def test_the_push_job_runs_in_the_master_push_environment() -> None:
 
 def test_the_push_never_cancels_a_run_mid_push() -> None:
     concurrency = _workflow()["concurrency"]
-    # Keyed on the triggering run, so a pull request's completion can never
-    # supersede a pending master raise.
+    # Keyed on the triggering run: a pull request cannot supersede a
+    # pending master raise.
     for field in ("event", "head_branch"):
         assert f"github.event.workflow_run.{field}" in concurrency["group"]
     assert concurrency["cancel-in-progress"] is False
+
+
+def test_the_listing_step_sets_only_the_prefixed_run_id_variable() -> None:
+    # Issue #92: workflow-set variables carry the DOCS_HUB_ prefix. The
+    # old name is never set; the script below still reads it as a
+    # fallback so anything still exporting it keeps working.
+    env = _step("List the triggering run's artifacts")["env"]
+    assert "DOCS_HUB_RUN_ID" in env
+    assert "RUN_ID" not in env
+
+
+def _bash() -> str:
+    if os.name != "nt":
+        return "bash"
+    # The first bash on PATH under Windows is the WSL launcher, which
+    # cannot run Windows-path arguments.
+    git = shutil.which("git")
+    assert git, "Git for Windows supplies the bash that runs workflow scripts"
+    return next(str(candidate) for ancestor in Path(git).parents
+                for candidate in (ancestor / "usr" / "bin" / "bash.exe",
+                                  ancestor / "bin" / "bash.exe")
+                if candidate.is_file())
+
+
+def _run_list_step(tmp_path: Path,
+                   workflow_env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    step = _step("List the triggering run's artifacts")
+    script = tmp_path / "step.sh"
+    # LF: bash rejects the CRLF write_text emits on Windows.
+    script.write_text(step["run"], encoding="utf-8", newline="\n")
+    gh = tmp_path / "gh"
+    gh.write_text("""#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    repos/*/artifacts) printf '%s\\n' "$arg" >> "$GH_LOG" ;;
+  esac
+done
+""", encoding="utf-8", newline="\n")
+    gh.chmod(0o755)
+    env = {key: value for key, value in os.environ.items()
+           if key not in {"REPO", "RUN_ID", "DOCS_HUB_RUN_ID"}}
+    return subprocess.run(
+        [_bash(), "-e", str(script)], check=False, capture_output=True,
+        text=True, timeout=5,
+        env={**env, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", **workflow_env,
+             "REPO": "example/repository",
+             "GITHUB_OUTPUT": str(tmp_path / "output.txt"),
+             "GH_LOG": str(tmp_path / "gh-calls.log")},
+    )
+
+
+@pytest.mark.parametrize("workflow_env, expected_run_id", [
+    ({"DOCS_HUB_RUN_ID": "1" * 10}, "1" * 10),
+    ({"RUN_ID": "2" * 10}, "2" * 10),
+    ({"DOCS_HUB_RUN_ID": "1" * 10, "RUN_ID": "2" * 10}, "1" * 10),
+])
+def test_the_run_id_reaches_the_artifacts_url(
+        tmp_path: Path, workflow_env: dict[str, str],
+        expected_run_id: str) -> None:
+    result = _run_list_step(tmp_path, workflow_env)
+    assert result.returncode == 0, result.stdout + result.stderr
+    log = (tmp_path / "gh-calls.log").read_text(encoding="utf-8").splitlines()
+    assert log == [
+        f"repos/example/repository/actions/runs/{expected_run_id}/artifacts"]
+
+
+def test_the_deploy_key_is_prefixed_and_falls_back_to_the_old_secret() -> None:
+    # GitHub's || is falsy-on-empty: both secrets set -> the prefixed name
+    # wins; the old one alone still authenticates, never as its own variable.
+    env = _step("Push the raise commit to master")["env"]
+    # The secret cannot be run locally; check the names and their order.
+    expression = env["DOCS_HUB_MASTER_PUSH_DEPLOY_KEY"]
+    assert "secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY" in expression
+    assert "secrets.MASTER_PUSH_DEPLOY_KEY" in expression
+    assert (expression.index("secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
+            < expression.index("secrets.MASTER_PUSH_DEPLOY_KEY"))
+    assert "MASTER_PUSH_DEPLOY_KEY" not in env
 
 
 def test_the_deploy_key_leaves_the_environment_before_fetched_code_runs() -> None:
     lines = [line.strip() for line in
              _step("Push the raise commit to master")["run"].splitlines()]
     loaded = next(i for i, line in enumerate(lines) if line.startswith("ssh-add"))
-    unset = lines.index("unset MASTER_PUSH_DEPLOY_KEY")
+    unset = lines.index("unset DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
     python = next(i for i, line in enumerate(lines) if "python3" in line)
     assert loaded < unset < python
     assert not any("MASTER_PUSH_DEPLOY_KEY" in line for line in lines[unset + 1:])
@@ -102,7 +187,7 @@ def test_the_push_step_consumes_exactly_the_staged_files() -> None:
     push = _step("Push the raise commit to master")["run"]
     staged = set(re.findall(r'out / "([^"]+)"', stager))
     consumed = set(re.findall(r"raise-data/([A-Za-z0-9._-]+)", push))
-    # Both directions: every staged file is read, and nothing else is.
+    # Both directions: every staged file is read, none other.
     assert staged and staged == consumed
 
 
@@ -114,8 +199,8 @@ def test_the_push_step_runs_the_fetched_trees_own_ratchet() -> None:
     command = next(line for line in joined.splitlines() if "ratchet.py" in line)
     tokens = command.split()
     script = next(token for token in tokens if token.endswith("scripts/ci/ratchet.py"))
-    # The script and the document it rewrites both live in the fetched tree,
-    # executed isolated, restating the staleness inputs.
+    # Script and thresholds document both live in the fetched tree, run
+    # isolated.
     assert clone in script
     assert clone in tokens[tokens.index("--thresholds") + 1]
     assert tokens[tokens.index("python3") + 1] == "-I"
