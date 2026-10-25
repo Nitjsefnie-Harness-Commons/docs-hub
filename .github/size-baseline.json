@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "public/app.js": 728,
+    "public/styles.css": 735,
+    "tests/test_cli_unit.py": 980,
+    "tests/test_docs_repo.py": 659
+  }
+}
