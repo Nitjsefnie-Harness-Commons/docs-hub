@@ -45,9 +45,11 @@ concurrency:
 jobs:
   actionlint:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     env:
+      # queue.2 rather than the fleet's queue.1: queue.1 predates the `$/`
+      # parser support these workflows need. Downgrading would break the gate.
       DOCS_HUB_ACTIONLINT_VERSION: 1.7.12-queue.2
       # sha256 of actionlint_1.7.12-queue.2_linux_amd64.tar.gz, from the release's own
       # checksums file. Bump both together.
