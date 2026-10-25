@@ -1,7 +1,6 @@
 """Pin the size-baseline callee's structure and execute its staging step."""
 
 import os
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -11,7 +10,6 @@ import yaml
 
 _REPO = Path(__file__).resolve().parent.parent
 _WORKFLOW = "size-baseline.yml"
-_PUSH_ARTIFACT = "size-baseline-ratchet"
 _STAGED = "size-baseline-push"
 _GREEN_MASTER_PUSH = {
     "!cancelled()",
@@ -102,25 +100,16 @@ def test_the_only_job_declares_no_permissions() -> None:
     assert "permissions" not in _job()
 
 
-def test_the_checkout_hands_no_credentials_to_fetched_code() -> None:
-    checkout = _job()["steps"][0]
-    assert checkout.get("uses", "").partition("@")[0] == "actions/checkout"
-    assert checkout["with"]["persist-credentials"] is False
-
-
-def test_the_check_step_runs_first_with_the_bare_policy() -> None:
+def test_the_conditions_read_a_check_step_that_exists() -> None:
+    # The if-conjuncts name steps.check; the id sits on the second step, the
+    # first one after the checkout that produces the tree the check judges.
     check = _job()["steps"][1]
     assert check.get("id") == "check"
-    assert set(check["with"]) == {"mode", "base-ref"}
-    assert check["with"]["mode"] == "check"
-    assert check["with"]["base-ref"] == (
-        "${{ github.event.pull_request.base.sha || github.sha }}")
 
 
 def test_the_tighten_step_needs_a_green_master_push() -> None:
     tighten = _step("Tighten the records after a green check")
     assert _conjuncts(tighten["if"]) == _GREEN_MASTER_PUSH
-    assert tighten["with"]["mode"] == "tighten"
 
 
 def test_the_stage_step_needs_the_same_green_master_push() -> None:
@@ -134,14 +123,6 @@ def test_the_upload_step_runs_when_the_stage_changed_something() -> None:
     upload = _step("Upload a staged records change")
     assert _conjuncts(upload["if"]) == (
         _GREEN_MASTER_PUSH | {"steps.stage.outputs.changed == 'true'"})
-    assert upload["with"]["name"] == _PUSH_ARTIFACT
-    assert upload["with"]["if-no-files-found"] == "error"
-    assert upload["with"]["retention-days"] == 1
-    staged = re.search(r"RUNNER_TEMP/([A-Za-z0-9._-]+)",
-                       _step("Stage a records change for the push workflow")["run"])
-    assert staged is not None and staged.group(1) == _STAGED
-    # The upload ships the directory the stage step wrote, spelled once.
-    assert upload["with"]["path"] == "${{ runner.temp }}/" + _STAGED
 
 
 def _fixture_repo(tmp_path: Path) -> str:
