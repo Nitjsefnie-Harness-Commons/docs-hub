@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.13 is the floor CONTRIBUTING.md states and what the deployment
+        # 3.15 is the floor CONTRIBUTING.md states and what the deployment
         # runs. Each explicit entry pairs that Python with a Postgres major;
         # the majors are quoted so the service image ternary compares strings.
         # The image is not stated here: the images job reads it from the
@@ -69,9 +69,9 @@ jobs:
         # Dependabot's docker ecosystem updates weekly.
         include:
           - postgres: "16"
-            python: "3.13"
+            python: "3.15"
           - postgres: "17"
-            python: "3.13"
+            python: "3.15"
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -173,7 +173,7 @@ jobs:
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13"
+          python-version: "3.15"
           cache: pip
           cache-dependency-path: |
             requirements.txt

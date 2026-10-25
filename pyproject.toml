@@ -7,7 +7,7 @@ name = "docs-hub-cli"
 dynamic = ["version"]
 description = "Client CLI for docs.nitjsefni.eu — publish HTML artifacts and read them back"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 license = "MIT"
 authors = [{ name = "Nitjsefnie" }]
 keywords = ["docs", "publishing", "cli", "agents"]

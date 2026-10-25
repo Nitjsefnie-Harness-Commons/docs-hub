@@ -51,7 +51,7 @@ The invariants that reject the most patches:
 
 ## Getting it running
 
-Requires **Python 3.13+** and a local **PostgreSQL** you can create
+Requires **Python 3.15+** and a local **PostgreSQL** you can create
 databases in.
 
 ```bash
