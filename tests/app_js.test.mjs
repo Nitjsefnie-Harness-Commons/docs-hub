@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { JSDOM } from 'jsdom';
+import { JSDOM, requestInterceptor } from 'jsdom';
 
 const INDEX = new URL('../public/index.html', import.meta.url);
 
@@ -38,7 +38,11 @@ async function loadPage(hash) {
   const dom = await JSDOM.fromFile(fileURLToPath(INDEX), {
     url: INDEX.href + hash,
     runScripts: 'dangerously',
-    resources: 'usable',
+    // jsdom reads file: URLs before any interceptor runs, so this answers only
+    // network loads, such as the font @import in styles.css, with empty CSS.
+    resources: {
+      interceptors: [requestInterceptor(() => new Response('', { headers: { 'content-type': 'text/css' } }))],
+    },
     beforeParse(window) {
       window.fetch = stubFetch;
     },
