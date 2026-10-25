@@ -134,6 +134,109 @@ everywhere.
 After pulling a version that changes `requirements.txt`, run
 `.venv/bin/pip install -r requirements.txt` before restarting the unit.
 
+### Backup and restore
+
+One deployment's documents live in two places a backup must copy together:
+the docs database named by `DOCS_HUB_DATABASE_URL_DOCS` (the `docs` and
+`doc_versions` tables of `backend/schema.sql`), and the blob directory named
+by `DOCS_HUB_STORE_ROOT` (one file per version — `backend/storage.py`). The
+shared auth database (`DOCS_HUB_DATABASE_URL_AUTH`, the `users` table) is
+out of scope: docs-hub reads it for login but does not own it, so it is
+backed up under whatever procedure its owner provides.
+
+This repository provides the procedure below; the operator supplies the
+backup schedule, retention, off-host storage, and who runs them.
+
+#### Backup
+
+Stop the unit (`deploy/docs-hub.service`) first: publishes write a version's
+file before its row commits, and deletes and the expiry reaper unlink files
+before their commit, so with the unit running no ordering of dump and copy
+can guarantee the two agree.
+
+```bash
+systemctl stop docs-hub.service
+pg_dump -Fc "$DOCS_HUB_DATABASE_URL_DOCS" > docs-hub-<date>.dump
+cp -a "$DOCS_HUB_STORE_ROOT" /backup/docs-hub-store-<date>
+```
+
+With the unit stopped, nothing can write either side, so the dump and the
+blob copy agree with each other.
+
+#### Restore
+
+Restore the dump into a fresh database — the name the unit's
+`DOCS_HUB_DATABASE_URL_DOCS` already points at, or point that variable at
+the new name — and copy the blobs into `DOCS_HUB_STORE_ROOT`:
+
+```bash
+createdb <db>
+pg_restore -d <db> docs-hub-<date>.dump
+mkdir -p "$DOCS_HUB_STORE_ROOT"
+cp -a /backup/docs-hub-store-<date>/. "$DOCS_HUB_STORE_ROOT"/
+```
+
+Each stored `file_path` is the realpath of
+`<DOCS_HUB_STORE_ROOT>/<slug>/v<N>.html|.md` taken at publish time
+(`backend/storage.py`), so when the new `DOCS_HUB_STORE_ROOT` differs from
+the original, rewrite the prefix — reads refuse any stored path outside the
+current store, so an unrewritten restore fails loudly rather than silently
+missing. Spell both roots as realpaths with a
+trailing slash, and rewrite the anchored prefix — a bare `replace()` also
+rewrites a second occurrence of the old spelling inside a slug segment:
+
+```sql
+UPDATE doc_versions
+SET file_path = '<new root>/' || substr(file_path, length('<old root>/') + 1)
+WHERE starts_with(file_path, '<old root>/');
+```
+
+The rewrite covers only rows carrying the old prefix; this query must
+return zero rows afterwards, and every row it returns needs a hand fix
+before the unit starts:
+
+```sql
+SELECT file_path FROM doc_versions
+WHERE NOT starts_with(file_path, '<new root>/');
+```
+
+#### Verify the restore
+
+Run this check before starting the unit — the reaper purges once at
+startup, deleting documents whose expiry has passed, so the check is the
+last look at the restored state as restored. It stops on any row whose file
+is missing, or whose size or SHA-256 disagrees with the stored `byte_size` /
+`sha256`. Slugs are `[a-z0-9_-/]`, so the `|` separator cannot occur inside
+a stored path:
+
+```bash
+rows=$(psql "$DOCS_HUB_DATABASE_URL_DOCS" -At -F '|' \
+    -c "SELECT file_path, byte_size, sha256 FROM doc_versions") || exit
+n=0
+while IFS='|' read -r path size want; do
+    if [ -z "$path" ]; then continue; fi
+    if [ ! -f "$path" ]; then
+        printf 'missing file: %s\n' "$path" >&2
+        exit 1
+    fi
+    got=$(stat -c %s -- "$path")
+    hash=$(sha256sum -- "$path")
+    hash=${hash%% *}
+    if [ "$got" -ne "$size" ] || [ "$hash" != "$want" ]; then
+        printf 'mismatch: %s\n' "$path" >&2
+        exit 1
+    fi
+    n=$((n + 1))
+done <<<"$rows"
+echo "checked $n version file(s), all match"
+```
+
+Then start the unit:
+
+```bash
+systemctl start docs-hub.service
+```
+
 ## Conventions
 
 - TDD: write the failing test first, then the minimal implementation.
