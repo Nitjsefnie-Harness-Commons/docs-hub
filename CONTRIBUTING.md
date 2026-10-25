@@ -108,9 +108,9 @@ at startup and is what upgrades a deployed instance.
 
 One `ci gate` workflow owns the gate set's `push` and `pull_request`
 triggers, with no path filter — documentation-only pushes run it too. It
-folds eight gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
-`actionlint`, and `secrets`. Their local commands are listed below; CodeQL
-runs on GitHub:
+folds nine gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
+`actionlint`, `secrets`, and `speed`. Their local commands are listed below;
+CodeQL runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
@@ -122,6 +122,7 @@ runs on GitHub:
 | `codeql` | security analysis of the Python, JavaScript and Actions (the workflows language), weekly cron | — (GitHub-hosted) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
+| `speed` | the last release (newest `v*` tag) and this commit on one runner, each with its own virtualenv and database, in five interleaved release-head-head-release blocks after a discarded warm-up; it fails when a service or CLI workload's median per-block slowdown exceeds 30% | `python3 scripts/ci/speed.py --base <release tree> --base-python <its venv python> --head . --head-python <this venv python>`, with `PGHOST` etc. pointing at a Postgres you can `createdb` on |
 
 The `aggregate` job folds every leg and fails closed, with two local legs
 of its own: `conflict-markers` on every push and PR, and `base-freshness`

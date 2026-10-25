@@ -1,0 +1,100 @@
+name: speed
+
+# The last release and this commit run on one runner, in interleaved rounds,
+# each with its own virtualenv and database: scripts/ci/speed.py says why.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: speed-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image17: ${{ steps.pins.outputs.image17 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: pins
+        name: Read the Postgres image pin
+        run: |
+          image17="$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
+          case "$image17" in postgres:17.*@sha256:*) ;;
+            *) echo ".github/postgres/17/Dockerfile does not pin a postgres 17 image: $image17" >&2; exit 1 ;;
+          esac
+          echo "image17=$image17" >> "$GITHUB_OUTPUT"
+
+  speed:
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: ${{ needs.images.outputs.image17 }} # zizmor: ignore[unpinned-images] - resolved at runtime from the digest-pinned Dockerfile this workflow's images job reads
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+        ports:
+          - 5432:5432
+
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out the last release beside this commit
+        id: release
+        run: |
+          tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD)"
+          mkdir "$RUNNER_TEMP/base"
+          git archive "$tag" | tar -x -C "$RUNNER_TEMP/base"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.15"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install the Postgres client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Build one virtualenv per side from its own requirements
+        run: |
+          python -m venv "$RUNNER_TEMP/venv-base"
+          "$RUNNER_TEMP/venv-base/bin/python" -m pip install -r "$RUNNER_TEMP/base/requirements.txt"
+          python -m venv "$RUNNER_TEMP/venv-head"
+          "$RUNNER_TEMP/venv-head/bin/python" -m pip install -r requirements.txt
+
+      - name: Compare the release and this commit
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          python scripts/ci/speed.py --label "$RELEASE_TAG" \
+            --base "$RUNNER_TEMP/base" --base-python "$RUNNER_TEMP/venv-base/bin/python" \
+            --head . --head-python "$RUNNER_TEMP/venv-head/bin/python" \
+            --summary "$GITHUB_STEP_SUMMARY"
