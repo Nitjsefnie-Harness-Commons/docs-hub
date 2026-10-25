@@ -2,13 +2,14 @@ name: ratchet push
 
 # The push half of the coverage ratchet: an environment secret reads empty
 # inside a workflow_call callee, so the deploy-key push lives top-level. A
-# raise publishes only on a green gate run for a master push.
+# raise publishes only on a green gate run for a master push, computed
+# from fetched-master code under python3 -I.
 
 on:
   workflow_run:  # zizmor: ignore[dangerous-triggers]
     # The job's own if re-checks event, branch and conclusion; it downloads
-    # only this repository's artifacts and fetched-master code, and checks
-    # out nothing.
+    # only this repository's artifacts and fetched-master code, runs only that
+    # under python3 -I, pushes by deploy key, checks out nothing.
     workflows: [ci gate]
     types: [completed]
 
@@ -78,6 +79,7 @@ jobs:
           ssh-add <(printf '%s\n' "$DOCS_HUB_MASTER_PUSH_DEPLOY_KEY") >/dev/null
           unset DOCS_HUB_MASTER_PUSH_DEPLOY_KEY
           mkdir -p ~/.ssh
+          # Keys pinned from https://api.github.com/meta (ssh_keys); refresh on rotation.
           printf '%s\n' \
             'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' \
             'github.com ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCj7ndNxQowgcQnjshcLrqPEiiphnt+VTTvDP6mHBL9j1aNUkY4Ue1gvwnGLVlOhGeYrnZaMgRK6+PKCUXaDbC7qtbW8gIkhL7aGCsOr/C56SJMy/BCZfxd1nWzAOxSDPgVsmerOBYfNqltV9/hWCqBywINIR+5dIg6JTJ72pcEpEjcYgXkE2YEFXV1JHnsKgbLWNlhScqb2UmyRkQyytRLtL+38TGxkxCflmO+5Z8CSSNY7GidjMIZ7Q4zMjA2n1nGrlTDkzwDCsw+wqFPGQA179cnfGWOWRVruj16z6XyvxvjJwbz0wQZ75XK5tKSb7FNyeIEs4TT4jk+S4dhPeAUC5y+bDYirYgM4GC7uEnztnZyaVWQ7B381AK4Qdrwt51ZqExKbQpTUNn+EjqoTwvqNj4kqx5QUCI0ThS/YkOxJCXmPUWZbhjpCg56i+2aB6CmK2JGhn57K5mj0MNdBXA4/WnwH6XoPWJzK5Nyu2zB3nAZp+S5hpQs+p1vN1/wsjk=' \
@@ -96,7 +98,6 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          # The fetched tree's own ratchet: master code only, no pip.
           python3 -I "$RUNNER_TEMP/raise-repo/scripts/ci/ratchet.py" \
             --measured "$(cat "$RUNNER_TEMP/raise-data/measured.txt")" \
             --thresholds "$RUNNER_TEMP/raise-repo/.github/ci-thresholds.json" \
