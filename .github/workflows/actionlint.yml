@@ -18,9 +18,9 @@ name: actionlint
 # Both tools are pinned. actionlint is verified by checksum rather than
 # trusted from the release page, because a linter that runs before every
 # other gate is a supply-chain position worth defending. The pin is the
-# Nitjsefnie-OSC/actionlint fork, not stock rhysd/actionlint: its queue.2
-# carries the `concurrency` `queue:` key and the `$/` self-repository
-# `uses:` form that stock 1.7.12 and queue.1 reject, so a `queue: max` (#43's
+# Nitjsefnie-OSC/actionlint fork, not stock rhysd/actionlint: queue.1 adds
+# the `concurrency` `queue:` key, queue.2 adds the `$/` self-repository
+# `uses:` form, and stock 1.7.12 rejects both, so a `queue: max` (#43's
 # claim workflow) would false-red this gate while passing everywhere else. The
 # `$/` form is used here: zizmor 1.31's self-repository audit asks for it, and
 # ci-gate.yml's callee calls carry it. The `queue:` key is the remaining
