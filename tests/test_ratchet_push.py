@@ -200,7 +200,7 @@ def test_the_push_step_runs_the_fetched_trees_own_ratchet() -> None:
     tokens = command.split()
     script = next(token for token in tokens if token.endswith("scripts/ci/ratchet.py"))
     # Script and thresholds document both live in the fetched tree, run
-    # isolated.
+    # isolated; --base/--tip are the staleness inputs.
     assert clone in script
     assert clone in tokens[tokens.index("--thresholds") + 1]
     assert tokens[tokens.index("python3") + 1] == "-I"
