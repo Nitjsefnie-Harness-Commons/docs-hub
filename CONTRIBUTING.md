@@ -99,9 +99,10 @@ at startup and is what upgrades a deployed instance.
 - **Linters, not formatters.** There is no formatter config and no style
   bot — match the surrounding file. What CI does enforce is `pycodestyle`
   (config in `setup.cfg`), `pylint` (`.pylintrc`), `pyright` over
-  `backend/` (`pyrightconfig.json`) and `eslint` over `public/`
-  (`eslint.config.mjs`). Every disable in those files names the pattern it
-  is there for; add one the same way rather than raising a threshold.
+  `backend/` (`pyrightconfig.json`) and `eslint` over `public/` and the
+  JavaScript tests in `tests/` (`eslint.config.mjs`). Every disable in
+  those files names the pattern it is there for; add one the same way
+  rather than raising a threshold.
 
 ## CI
 
@@ -116,7 +117,7 @@ runs on GitHub:
 | `tests` | the suite against Postgres 16 and 17, plus a coverage job gated on the floor recorded in `.github/ci-thresholds.json` (below), plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom and reports `app.js` line coverage with no threshold | `.venv/bin/pytest -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
 | `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
 | `types` | pyright over `backend/` | `pyright` |
-| `eslint` | eslint over `public/` | `npm ci && npx eslint public` |
+| `eslint` | eslint over `public/` and the JavaScript tests in `tests/` | `npm ci && npx eslint public tests` |
 | `audit` | pip-audit over each of the seven requirements manifests separately (a joint `--require-hashes` run fails), plus `npm audit`; also on a daily cron | `pip-audit -r requirements.txt` and the same again for each of the other six: `requirements-dev.txt`, `requirements-test.txt`, `requirements-diff-cover.txt`, `requirements-audit.txt`, `requirements-zizmor.txt`, `requirements-build.txt` |
 | `codeql` | security analysis of the Python, JavaScript and Actions (the workflows language), weekly cron | — (GitHub-hosted) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |

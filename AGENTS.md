@@ -82,8 +82,9 @@ triggers without a path filter, so documentation-only pushes run it too.
 It folds eight gates: `tests` (Postgres 16 and 17, plus the recorded
 coverage floor, plus the `public/app.js` test in jsdom),
 `lint` (pycodestyle, pylint), `types` (pyright over `backend/`), `eslint`
-(over `public/`), `audit` (pip-audit, npm audit), `codeql`, `actionlint`
-(actionlint + zizmor), and `secrets` (gitleaks). Its `aggregate` job folds
+(over `public/` and the JavaScript tests in `tests/`), `audit`
+(pip-audit, npm audit), `codeql`, `actionlint` (actionlint + zizmor),
+and `secrets` (gitleaks). Its `aggregate` job folds
 every leg and fails closed, with `conflict-markers` on every push and PR
 and PR-only `base-freshness`, which fails when `master` holds a gate-input
 commit the head lacks, naming the commit and file. CONTRIBUTING.md's table

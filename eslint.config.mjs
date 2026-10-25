@@ -1,4 +1,4 @@
-// ESLint flat config for the SPA in public/.
+// ESLint flat config: public/ and tests/.
 //
 // This does NOT introduce a build step -- the invariant in CONTRIBUTING.md
 // still holds. public/*.js is served to the browser byte-for-byte; eslint is
@@ -36,6 +36,13 @@ export default [
       eqeqeq: ["error", "smart"],
       "no-var": "error",
       "prefer-const": "error",
+    },
+  },
+  {
+    files: ["tests/**/*.mjs"],
+    languageOptions: {
+      sourceType: "module",
+      globals: { ...globals.node },
     },
   },
 ];
