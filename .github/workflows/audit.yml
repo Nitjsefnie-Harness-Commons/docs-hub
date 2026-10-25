@@ -133,7 +133,7 @@ jobs:
           done
 
   npm-audit:
-    # The npm surface is the eslint toolchain only — nothing in package.json
+    # The npm surface is CI tooling only (eslint, jsdom); nothing in it
     # is served to a browser. It still runs in CI with a repository token, so
     # it gets the same treatment as the Python toolchain.
     runs-on: ubuntu-latest
@@ -150,6 +150,6 @@ jobs:
           cache: npm
 
       - name: npm audit
-        # --audit-level=low: the tree is 71 packages of linter, so there is no
+        # --audit-level=low: the tree is CI tooling only, so there is no
         # volume argument for tolerating known-vulnerable versions here.
         run: npm audit --audit-level=low

@@ -113,7 +113,7 @@ runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
-| `tests` | the suite against Postgres 16 and 17, plus a coverage job gated on the floor recorded in `.github/ci-thresholds.json` (below) | `.venv/bin/pytest -v` |
+| `tests` | the suite against Postgres 16 and 17, plus a coverage job gated on the floor recorded in `.github/ci-thresholds.json` (below), plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom and reports `app.js` line coverage with no threshold | `.venv/bin/pytest -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
 | `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
 | `types` | pyright over `backend/` | `pyright` |
 | `eslint` | eslint over `public/` | `npm ci && npx eslint public` |
@@ -141,8 +141,9 @@ fix. On a pull request the coverage of changed lines (diff-cover against
 own.
 
 `pip install -r requirements-dev.txt -r requirements-test.txt` gets the
-Python toolchain. `package.json` exists only to pin eslint — **it is not a
-build step**, and `public/` is still served byte-for-byte.
+Python toolchain. `package.json` exists only to pin eslint and jsdom (the
+`app.js` test's DOM) — **it is not a build step**, and `public/` is still
+served byte-for-byte.
 
 `tests/test_cli.py` no longer skips anywhere: the client lives in this
 repository as `docs_hub_cli/` and the file drives it as
