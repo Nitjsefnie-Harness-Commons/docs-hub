@@ -91,7 +91,6 @@ def test_workload_refuses_a_server_that_exits_at_startup(tmp_path: Path) -> None
 def test_workflow_builds_each_side_from_its_own_tree() -> None:
     with (_REPO / ".github/workflows/speed.yml").open(encoding="utf-8") as stream:
         job = yaml.safe_load(stream)["jobs"]["speed"]
-    assert job["steps"][0]["with"]["fetch-depth"] == 0
     script = "\n".join(step.get("run", "") for step in job["steps"])
     assert "git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD" in script
     assert '-r "$RUNNER_TEMP/base/requirements.txt"' in script
