@@ -149,7 +149,11 @@ backup schedule, retention, off-host storage, and who runs them.
 
 The commands read `DOCS_HUB_DATABASE_URL_DOCS` and `DOCS_HUB_STORE_ROOT`
 from your shell, each written as `"${…:?}"` so an unset or empty value
-stops the command instead of defaulting. The unit itself loads them from
+stops the command instead of defaulting. This step runs the file as shell
+code, so it assumes plain `KEY=value` lines — no spaces around `=`, no
+shell metacharacters such as `&` or `$` in values — whereas the app's own
+loader (`backend/app.py`'s `load_dotenv`) reads the file differently, so a
+value the app accepts can fail this step. The unit itself loads them from
 the checkout's `.env` (`backend/app.py`), so load the same file — or the
 unit's environment, if it carries the values — before running them:
 
