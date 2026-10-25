@@ -217,6 +217,19 @@ def test_public_v_digit_slug_past_the_cap_stays_gated():
     assert r.headers["location"] == "/login"
 
 
+def test_keyed_eleven_digit_tail_renders_its_own_slug_latest():
+    """An 11-digit tail is slug text even when a doc owns that exact slug:
+    a wider cap would match the version route and 404 instead."""
+    c = _client()
+    slug = "cap/x/v" + "9" * 11
+    body = b"<h1>digit tail slug</h1>"
+    assert _publish(c, slug, body=body).status_code == 200
+    _publish(c, "cap/other", body=b"<h1>other</h1>")
+    r = c.get(f"/d/{slug}", headers=KEY)
+    assert r.status_code == 200, r.text
+    assert r.content == body
+
+
 def test_anonymous_public_v_tail_slug_renders_latest():
     """Anonymous on a public `a/vx`: the hash-less route renders the latest
     version; only the /v<digits> tail form addresses a version."""
