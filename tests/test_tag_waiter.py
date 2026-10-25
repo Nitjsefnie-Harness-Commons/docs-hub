@@ -128,7 +128,7 @@ def test_previous_failed_readiness_is_exempt(tmp_path: Path, include_tag: bool):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("name", ["security-review", "tests / suites (3.13, 16)"])
+@pytest.mark.parametrize("name", ["security-review", "tests / suites (3.15, 16)"])
 def test_additional_success_check_is_allowed(tmp_path: Path, name: str):
     checks = [_check(required) for required in _REQUIRED] + [_check(name)]
     result = _run_waiter(tmp_path, checks)
@@ -136,7 +136,7 @@ def test_additional_success_check_is_allowed(tmp_path: Path, name: str):
 
 
 def test_nested_success_cannot_replace_aggregate(tmp_path: Path):
-    result = _run_waiter(tmp_path, [_check("tests / suites (3.13, 16)")])
+    result = _run_waiter(tmp_path, [_check("tests / suites (3.15, 16)")])
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Timed out" in result.stderr
 
@@ -145,7 +145,7 @@ def test_nested_success_cannot_replace_aggregate(tmp_path: Path):
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled"])
 def test_nested_failure_refuses_before_aggregate_completes(
         tmp_path: Path, aggregate_status: str | None, conclusion: str):
-    checks = [_check("tests / suites (3.13, 16)", conclusion)]
+    checks = [_check("tests / suites (3.15, 16)", conclusion)]
     if aggregate_status is not None:
         checks.append(_check("aggregate", None, aggregate_status))
     result = _run_waiter(tmp_path, checks)
