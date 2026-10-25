@@ -181,7 +181,9 @@ Each stored `file_path` is the realpath of
 (`backend/storage.py`), so when the new `DOCS_HUB_STORE_ROOT` differs from
 the original, rewrite the prefix — reads refuse any stored path outside the
 current store, so an unrewritten restore fails loudly rather than silently
-missing. Spell both roots as realpaths with a
+missing; the one quiet case is a new root that contains the old one, where
+unrewritten rows keep reading from the old subtree until it is removed.
+Spell both roots as realpaths with a
 trailing slash, and rewrite the anchored prefix — a bare `replace()` also
 rewrites a second occurrence of the old spelling inside a slug segment:
 
