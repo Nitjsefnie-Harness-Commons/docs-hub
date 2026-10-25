@@ -5,7 +5,7 @@
   "description": "CI lint and test tooling for public/. Not a build step: nothing here is bundled, minified or shipped -- public/ is served byte-for-byte.",
   "license": "MIT",
   "scripts": {
-    "lint": "eslint public"
+    "lint": "eslint public tests"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
