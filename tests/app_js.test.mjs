@@ -55,8 +55,8 @@ async function loadPage(hash) {
   return dom;
 }
 
-for (const hash of ['', '#/']) {
-  test(`the empty hash ${JSON.stringify(hash)} renders the document index`, async (t) => {
+for (const [name, hash] of [['the empty hash', ''], ['the hash', '#/']]) {
+  test(`${name} ${JSON.stringify(hash)} renders the document index`, async (t) => {
     const dom = await loadPage(hash);
     t.after(() => dom.window.close());
     const { document } = dom.window;
