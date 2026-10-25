@@ -22,7 +22,7 @@ Build the project by executing the plan task-by-task (superpowers
 | `backend/` | FastAPI app — db, schema, storage, auth, session, docs_repo, login, api, views, app |
 | `docs_hub_cli/` | the agent-facing client CLI, shipped as the `docs-hub-cli` wheel |
 | `store/` | HTML blobs on disk, one file per version (git-ignored runtime data) |
-| `tests/` | pytest suite |
+| `tests/` | pytest suite, plus `app_js.test.mjs` for `public/app.js` |
 | `deploy/` | systemd unit + nginx vhost |
 | `docs/superpowers/` | spec + plan |
 
@@ -80,7 +80,7 @@ and a temp blob store — see `tests/conftest.py`. No live network.
 One `ci gate` workflow owns the gate set's `push` and `pull_request`
 triggers without a path filter, so documentation-only pushes run it too.
 It folds eight gates: `tests` (Postgres 16 and 17, plus the recorded
-coverage floor),
+coverage floor, plus the `public/app.js` test in jsdom),
 `lint` (pycodestyle, pylint), `types` (pyright over `backend/`), `eslint`
 (over `public/`), `audit` (pip-audit, npm audit), `codeql`, `actionlint`
 (actionlint + zizmor), and `secrets` (gitleaks). Its `aggregate` job folds

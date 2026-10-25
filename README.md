@@ -83,7 +83,7 @@ pip install ./docs_hub_cli-*.whl
 | `docs_hub_cli/` | client CLI — the `docs-hub-cli` wheel |
 | `public/` | SPA (`index.html`, `app.js`, `styles.css`) served at `/` |
 | `store/` | HTML blobs on disk, one file per version (git-ignored runtime data) |
-| `tests/` | pytest suite |
+| `tests/` | pytest suite, plus `app_js.test.mjs` for `public/app.js` |
 | `deploy/` | systemd unit + nginx vhost template |
 | `docs/superpowers/` | design spec and implementation plan |
 

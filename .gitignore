@@ -87,6 +87,7 @@ scripts/ci/*
 !tests/
 tests/*
 !tests/*.py
+!tests/*.mjs
 
 !deploy/
 deploy/*

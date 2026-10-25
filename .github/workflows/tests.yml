@@ -286,3 +286,48 @@ jobs:
         run: |
           floor="$(python3 scripts/ci/thresholds.py --coverage-floor python)"
           python -m coverage report --fail-under="$floor" --precision=1
+
+  app-js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install the test toolchain
+        run: |
+          test -f package.json && test -f package-lock.json
+          npm ci
+
+      - name: Run the app.js test
+        run: |
+          node --test --experimental-test-coverage \
+            --test-coverage-include=public/app.js \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=lcov --test-reporter-destination=lcov.info \
+            tests/app_js.test.mjs
+
+      - name: Coverage summary (informational)
+        if: ${{ !cancelled() && hashFiles('lcov.info') != '' }}
+        run: |
+          {
+            echo '### Coverage of public/app.js (informational)'
+            echo
+            awk -F: '/^LF:/ { found += $2 } /^LH:/ { hit += $2 }
+              END { printf "public/app.js: %d of %d lines (%.1f%%)\n", hit, found, found ? 100 * hit / found : 0 }' lcov.info
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload lcov.info
+        if: ${{ !cancelled() && hashFiles('lcov.info') != '' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: app-js-lcov
+          path: lcov.info
+          if-no-files-found: error

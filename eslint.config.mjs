@@ -2,8 +2,8 @@
 //
 // This does NOT introduce a build step -- the invariant in CONTRIBUTING.md
 // still holds. public/*.js is served to the browser byte-for-byte; eslint is
-// a CI gate that reads those files and emits nothing. package.json exists
-// only to pin the linter and let Dependabot bump it.
+// a CI gate that reads those files and emits nothing. package.json pins
+// only CI tooling and lets Dependabot bump it.
 //
 // Rules are the recommended set (real defects: undeclared identifiers, unused
 // bindings, unreachable code, duplicate keys) plus four that catch the
