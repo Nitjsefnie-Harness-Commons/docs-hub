@@ -41,7 +41,7 @@ change and its client still agree.
 ## CLI
 
 `docs-hub` is a stdlib-only client — no third-party dependencies, so it
-installs anywhere Python 3.11+ runs.
+installs anywhere Python 3.14+ runs.
 
 | Command | Does |
 |---|---|

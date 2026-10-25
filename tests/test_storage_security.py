@@ -18,15 +18,15 @@ def test_storage_refuses_symlink_escape(tmp_path, monkeypatch, operation, symlin
     outside = tmp_path / "store-outside" / "x"
     root.mkdir()
     outside.mkdir(parents=True)
-    sentinel = outside / "v1.html"
-    sentinel.write_bytes(b"outside version")
+    outside_file = outside / "v1.html"
+    outside_file.write_bytes(b"outside version")
     monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
     if symlink == "directory":
         (root / "link").symlink_to(outside.parent, target_is_directory=True)
     else:
         (root / "link" / "x").mkdir(parents=True)
-        (root / "link" / "x" / "v1.html").symlink_to(sentinel)
-    assert sentinel.read_bytes() == b"outside version"
+        (root / "link" / "x" / "v1.html").symlink_to(outside_file)
+    assert outside_file.read_bytes() == b"outside version"
     assert outside.is_dir()
 
     error_type = OSError if operation == "delete_doc" else ValueError
@@ -38,7 +38,7 @@ def test_storage_refuses_symlink_escape(tmp_path, monkeypatch, operation, symlin
         else:
             storage.delete_doc("link/x")
 
-    assert sentinel.read_bytes() == b"outside version"
+    assert outside_file.read_bytes() == b"outside version"
     assert outside.is_dir()
 
 
@@ -168,9 +168,9 @@ def test_failed_publish_cleanup_refuses_retargeted_path(tmp_path, monkeypatch):
     root.mkdir()
     outside = tmp_path / "store-outside"
     outside.mkdir()
-    sentinel = outside / "v1.html"
-    sentinel.write_bytes(b"outside version")
-    assert sentinel.read_bytes() == b"outside version"
+    outside_file = outside / "v1.html"
+    outside_file.write_bytes(b"outside version")
+    assert outside_file.read_bytes() == b"outside version"
     monkeypatch.setenv("DOCS_HUB_STORE_ROOT", str(root))
 
     def fail_write(*_args, **_kwargs):
@@ -181,7 +181,7 @@ def test_failed_publish_cleanup_refuses_retargeted_path(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         docs_repo.publish("link", "Unsafe", [], None, "analyst", b"new")
 
-    assert sentinel.read_bytes() == b"outside version"
+    assert outside_file.read_bytes() == b"outside version"
 
 
 @pytest.mark.parametrize("leftover", ["symlink", "directory"])
