@@ -56,6 +56,9 @@ jobs:
   secrets:
     uses: $/.github/workflows/secrets.yml
 
+  speed:
+    uses: $/.github/workflows/speed.yml
+
   conflict-markers:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -105,7 +108,7 @@ jobs:
 
   aggregate:
     needs: [tests, lint, types, eslint, audit, actionlint, codeql, secrets,
-            conflict-markers, base-freshness]
+            speed, conflict-markers, base-freshness]
     if: ${{ always() }}
     permissions:
       contents: read
@@ -122,6 +125,7 @@ jobs:
           DOCS_HUB_LEG_ACTIONLINT: ${{ needs.actionlint.result }}
           DOCS_HUB_LEG_CODEQL: ${{ needs.codeql.result }}
           DOCS_HUB_LEG_SECRETS: ${{ needs.secrets.result }}
+          DOCS_HUB_LEG_SPEED: ${{ needs.speed.result }}
           DOCS_HUB_LEG_CONFLICT_MARKERS: ${{ needs.conflict-markers.result }}
           DOCS_HUB_LEG_BASE_FRESHNESS: ${{ needs.base-freshness.result }}
           DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
@@ -148,6 +152,7 @@ jobs:
           check actionlint "${DOCS_HUB_LEG_ACTIONLINT:-${LEG_ACTIONLINT}}"
           check codeql "${DOCS_HUB_LEG_CODEQL:-${LEG_CODEQL}}"
           check secrets "${DOCS_HUB_LEG_SECRETS:-${LEG_SECRETS}}"
+          check speed "${DOCS_HUB_LEG_SPEED:-${LEG_SPEED}}"
           check conflict-markers "${DOCS_HUB_LEG_CONFLICT_MARKERS:-${LEG_CONFLICT_MARKERS}}"
           check base-freshness "${DOCS_HUB_LEG_BASE_FRESHNESS:-${LEG_BASE_FRESHNESS}}"
           exit "$failed"
