@@ -39,10 +39,10 @@ def test_ordinary_merge_composes_parent_work(
 def test_seed_exempts_the_whole_window(tmp_path: Path, event: str, message: str) -> None:
     repo = f._repo(tmp_path)
     base = f._commit(repo, "no budget", **{f.CODE: "print(1)\n"})
-    f._commit(repo, message, **{f.CODE: "print(2)\n",
-                              f.BUDGET: json.dumps(f._budget({"w.pub": 300}))})
-    f._commit(repo, "another mixed step", **{f.CODE: "print(3)\n",
-                                            f.BUDGET: json.dumps(f._budget({"w.pub": 400}))})
+    f._commit(repo, message, **{
+        f.CODE: "print(2)\n", f.BUDGET: json.dumps(f._budget({"w.pub": 300}))})
+    f._commit(repo, "another mixed step", **{
+        f.CODE: "print(3)\n", f.BUDGET: json.dumps(f._budget({"w.pub": 400}))})
     result = _event(repo, base, event)
     assert result.returncode == 0, result.stdout + result.stderr
 
@@ -59,8 +59,9 @@ def test_merge_contributed_code_and_budget_are_impure(
     f._git(repo, "merge", "--no-ff", "--no-commit", tip)
     message = (f._declared_raise_message('workloads["w.pub"]', 100, 300)
                if declaration else "hand-authored merge changes")
-    f._commit(repo, message, **{f.CODE: "print(99)\n",
-                              f.BUDGET: json.dumps(f._budget({"w.pub": 300, "w.list": 200}))})
+    f._commit(repo, message, **{
+        f.CODE: "print(99)\n",
+        f.BUDGET: json.dumps(f._budget({"w.pub": 300, "w.list": 200}))})
     combined = f._git(repo, "diff-tree", "--cc", "--raw", "-r", "HEAD")
     assert f.BUDGET in combined and f.CODE in combined
     result = _event(repo, base, event)

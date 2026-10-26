@@ -7,8 +7,10 @@ change. A raise carries exactly one line
     Budget-Raise: .github/speed-budget.json <key> <from> -> <to>
 
 on a commit touching nothing but the budget — the route is its own act.
-Toolchain changes and workload adds or removes take purity instead of a
-line. The window is merge-base(base, head)..head on a pull_request,
+Toolchain transitions and workload adds/removes require budget-only steps;
+mixed workload/tolerance steps may only decrease. Merge steps use combined
+diffs, excluding inherited parent work. An absent-at-base budget seeds the
+whole window. The window is merge-base(base, head)..head on a pull_request,
 before..head (ancestor required) on a push; other events and an all-zero
 before skip with a message. A squash merge can drop the raise commit's
 lines from the window history; a rebase merge keeps them.
@@ -227,21 +229,36 @@ def _commits_with_declaration_lines(cwd: Path, base: str,
 
 
 def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
-    """Paths against each commit's first parent, including merges."""
-    result = _git(cwd, ["log", "--topo-order", "--diff-merges=first-parent",
-                        "--format=%x00%H%n", "--name-only",
-                        f"{base}..{head}"])
+    """Ordinary steps and merge contributions, never inherited parent work."""
+    result = _git(cwd, ["rev-list", "--topo-order", f"{base}..{head}"])
     if result.returncode != 0:
-        raise ValueError(
-            f"cannot walk {base}..{head} for its paths: "
-            f"{result.stderr.strip()}")
-    paths_by_commit: dict[str, list[str]] = {}
-    for record in result.stdout.split("\0"):
-        if not record:
-            continue
-        lines = [line for line in record.split("\n") if line]
-        paths_by_commit[lines[0]] = lines[1:]
+        raise ValueError(f"cannot walk {base}..{head}: {result.stderr.strip()}")
+    paths_by_commit = {}
+    for sha in result.stdout.splitlines():
+        diff = _git(cwd, ["diff-tree", "--cc", "--raw", "-r", "-z",
+                          "--no-commit-id", "--no-renames", sha])
+        if diff.returncode != 0:
+            raise ValueError(f"cannot diff {sha}: {diff.stderr.strip()}")
+        records = diff.stdout.split("\0")[:-1]
+        if len(records) % 2 or any(not item.startswith(":") for item in records[::2]):
+            raise ValueError(f"unrecognized raw diff for {sha}")
+        paths_by_commit[sha] = records[1::2]
     return paths_by_commit
+
+
+def _step_values(cwd: Path, sha: str) -> tuple[dict, dict]:
+    parents = _git(cwd, ["rev-parse", f"{sha}^@"])
+    if parents.returncode != 0:
+        raise ValueError(f"cannot read parents of {sha}: {parents.stderr.strip()}")
+    before = [leaves(read_document(cwd, parent, DOCUMENT) or {})
+              for parent in parents.stdout.splitlines()]
+    after = leaves(read_document(cwd, sha, DOCUMENT) or {})
+    first = before[0] if before else {}
+    changed = {key for key in set(first) | set(after)
+               if all(parent.get(key, _ABSENT) != after.get(key, _ABSENT)
+                      for parent in before)}
+    return ({key: first[key] for key in changed if key in first},
+            {key: after[key] for key in changed if key in after})
 
 
 def _consume_declaration(declarations: list, key: str, was: object,
@@ -264,10 +281,9 @@ def _declaration_mismatch(document: str, key: str, was: object,
 
 
 def _collect_declarations(cwd: Path, base: str, head: str,
-                          paths_by_commit: dict[str, list[str]]) -> tuple[list, list]:
-    """(pool, findings): a pure commit's lines pooled; any other line is
-    a finding."""
-    pool, findings = [], []
+                          paths_by_commit: dict[str, list[str]]) -> tuple[dict, list]:
+    """Declaration pools keyed by their contributing commit."""
+    pools, findings = {}, []
     for sha, lines in _commits_with_declaration_lines(cwd, base, head):
         outside = sorted(set(paths_by_commit.get(sha, [])) - {DOCUMENT})
         if outside:
@@ -284,40 +300,48 @@ def _collect_declarations(cwd: Path, base: str, head: str,
                     f"{document}: {key}: declaration {was} -> {to} names a "
                     "document whose values are not declarable — only "
                     f"{DOCUMENT} raises are")
-        pool.extend(declaration for declaration in parsed
-                    if declaration[0] == DOCUMENT)
-    return pool, findings
+        pools[sha] = [declaration for declaration in parsed if declaration[0] == DOCUMENT]
+    return pools, findings
 
 
-def _sanctioned(cwd: Path, commits: dict[str, list[str]]) -> tuple[dict, list]:
-    """Legal transitions and impure workload steps, in history order."""
+def _sanctioned(cwd: Path, commits: dict[str, list[str]],
+                declarations: dict | None = None) -> tuple[dict, list]:
+    """Judge contributed steps and compose unique legal endpoint pairs."""
     accepted: dict[str, list[tuple]] = {}
     findings = []
     for sha in reversed(commits):
         pure = not set(commits[sha]) - {DOCUMENT}
-        was = leaves(read_document(cwd, f"{sha}^", DOCUMENT) or {})
-        now = leaves(read_document(cwd, sha, DOCUMENT) or {})
+        pool = (declarations or {}).get(sha, [])
+        was, now = _step_values(cwd, sha) if DOCUMENT in commits[sha] else ({}, {})
         for key in set(was) | set(now):
             old, new = was.get(key, _ABSENT), now.get(key, _ABSENT)
             if old == new:
                 continue
-            if not pure:
-                if not _under(key, "workloads"):
-                    continue
-                if not (_is_number(old) and _is_number(new) and new < old):
+            numeric = _under(key, "workloads") or key == "tolerance_pct"
+            allowed = pure or (numeric and _is_number(old) and _is_number(new) and new < old)
+            if not allowed:
+                if numeric:
                     findings.append(_finding(
                         DOCUMENT, key, was.get(key), now.get(key),
                         f"commit {sha[:12]} changed without a budget-only commit"))
-                    continue
+                    if _is_number(old) and _is_number(new) and new > old:
+                        findings.append(_finding(
+                            DOCUMENT, key, old, new, "raised; it may only fall"))
+                continue
+            if numeric and _is_number(old) and _is_number(new) and new > old:
+                if not _consume_declaration(pool, key, old, new):
+                    findings.append(_finding(DOCUMENT, key, old, new, "raised; it may only fall"))
             transitions = accepted.setdefault(key, [])
             for pair in [(first, new) for first, last in transitions
                          if last == old] + [(old, new)]:
                 if pair not in transitions:
                     transitions.append(pair)
+        for _document, key, old, new in pool:
+            findings.append(_declaration_mismatch(DOCUMENT, key, old, new))
     return accepted, findings
 
 
-def _relaxations(base: object, head: object, declarations: list,
+def _relaxations(base: object, head: object,
                  sanctioned: dict[str, list[tuple]]) -> list[str]:
     # pylint: disable=too-many-branches
 
@@ -368,27 +392,19 @@ def _relaxations(base: object, head: object, declarations: list,
                 DOCUMENT, key, was, now,
                 "reference value is not a finite number"))
             continue
-        if now > was:
-            if _consume_declaration(declarations, key, was, now):
-                continue
-            findings.append(_finding(
-                DOCUMENT, key, was, now, "raised; it may only fall"))
-    for _document, key, was, to in declarations:
-        findings.append(_declaration_mismatch(DOCUMENT, key, was, to))
     return findings
 
 
 def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
     """Every relaxation of the budget document across the window."""
+    base = read_document(cwd, window_base, DOCUMENT)
+    if base is None:
+        return []
     paths_by_commit = _commit_paths(cwd, window_base, head_sha)
-    pool, findings = _collect_declarations(
-        cwd, window_base, head_sha, paths_by_commit)
-    sanctioned, impure = _sanctioned(cwd, paths_by_commit)
-    findings.extend(impure)
-    findings.extend(_relaxations(
-        read_document(cwd, window_base, DOCUMENT),
-        read_document(cwd, head_sha, DOCUMENT),
-        pool, sanctioned))
+    pools, findings = _collect_declarations(cwd, window_base, head_sha, paths_by_commit)
+    sanctioned, steps = _sanctioned(cwd, paths_by_commit, pools)
+    findings.extend(steps)
+    findings.extend(_relaxations(base, read_document(cwd, head_sha, DOCUMENT), sanctioned))
     return findings
 
 
