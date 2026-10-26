@@ -286,9 +286,11 @@ def test_tighten_writes_the_budget_only_when_something_fell(
                        "--budget", str(budget)]) == 0
     assert budget.read_bytes() == before
     # A toolchain difference blocks the write even when counts fell: the
-    # budget's recorded side survives the mismatch byte for byte.
+    # budget's recorded side survives the mismatch byte for byte. The count
+    # falls against the budget half one already tightened (900), so a mutant
+    # that tightens past the mismatch changes these bytes.
     measurement.write_text(json.dumps(_measurement(
-        {"service.publish": 900, "service.list": 2500}, MEASURED_CHAIN)),
+        {"service.publish": 800, "service.list": 2500}, MEASURED_CHAIN)),
         encoding="utf-8")
     assert speed.main(["tighten", "--measurements", str(measurement),
                        "--budget", str(budget)]) == 0
