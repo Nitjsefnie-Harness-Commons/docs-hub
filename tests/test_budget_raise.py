@@ -304,7 +304,7 @@ def test_a_lowered_count_needs_no_declaration(tmp_path: Path) -> None:
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def test_a_raise_riding_an_impure_commit_consumes_a_pure_commit_s_line(
+def test_a_pure_declaration_cannot_authorize_a_mixed_workload_raise(
         tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     _commit(repo, "raise while touching code", **{CODE: "print(2)\n"},
@@ -312,7 +312,8 @@ def test_a_raise_riding_an_impure_commit_consumes_a_pure_commit_s_line(
     head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 300),
                    **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 150}))})
     done = _pull(repo, base, head)
-    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "without a budget-only commit" in done.stdout
 
 
 @pytest.mark.parametrize("literal", ["true", "Infinity", "NaN"])
