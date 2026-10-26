@@ -391,7 +391,8 @@ def test_a_dispatch_run_with_a_head_but_no_base_skips(tmp_path: Path) -> None:
     assert "skipping" in done.stdout
 
 
-@pytest.mark.parametrize("declaration", [False, True], ids=["mixed-toolchain", "impure-declaration"])
+@pytest.mark.parametrize("declaration", [False, True],
+                         ids=["mixed-toolchain", "impure-declaration"])
 def test_a_synthetic_merge_cannot_sanction_mixed_work(
         tmp_path: Path, declaration: bool) -> None:
     repo, base = _seeded(tmp_path)
@@ -411,5 +412,24 @@ def test_a_synthetic_merge_cannot_sanction_mixed_work(
         assert "carries declaration lines but also touches src/app.py" in done.stdout
         assert "raised; it may only fall" in done.stdout
     else:
+        assert "toolchain.lock_sha256" in done.stdout
+        assert "without a budget-only commit" in done.stdout
+
+
+@pytest.mark.parametrize("pure_steps", [(True, False), (False, True), (True, True)],
+                         ids=["pure-then-mixed", "mixed-then-pure", "pure-chain"])
+def test_toolchain_authorization_follows_the_exact_transitions(
+        tmp_path: Path, pure_steps: tuple[bool, bool]) -> None:
+    repo, base = _seeded(tmp_path)
+    for index, pure in enumerate(pure_steps, start=1):
+        chain = {**CHAIN_A, "lock_sha256": ("cd" if index == 1 else "ef") * 32}
+        files = {BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 200},
+                                            chain=chain))}
+        if not pure:
+            files[CODE] = f"print({index + 1})\n"
+        _commit(repo, "relock", **files)
+    done = _pull(repo, base, "HEAD")
+    assert done.returncode == (0 if all(pure_steps) else 1), done.stdout + done.stderr
+    if not all(pure_steps):
         assert "toolchain.lock_sha256" in done.stdout
         assert "without a budget-only commit" in done.stdout
