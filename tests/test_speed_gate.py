@@ -68,6 +68,15 @@ def test_budget_refuses_malformed_json(policy: ModuleType, tmp_path: Path) -> No
         policy.load(path)
 
 
+@pytest.mark.parametrize("document", [[], "x"])
+def test_a_measurement_that_is_not_an_object_is_refused(
+        policy: ModuleType, tmp_path: Path, document: object) -> None:
+    path = tmp_path / "m.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(policy.BudgetError, match="not a JSON object"):
+        policy.load_measurement(path)
+
+
 def test_budget_refuses_an_unknown_field(policy: ModuleType) -> None:
     with pytest.raises(policy.BudgetError, match="unknown budget field"):
         policy.validate(_budget(extra=1))
