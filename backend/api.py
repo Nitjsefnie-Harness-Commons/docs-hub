@@ -2,8 +2,6 @@
 key or a human cookie (the middleware already enforced one of the two)."""
 from __future__ import annotations
 
-from hashlib import sha256
-
 from fastapi import APIRouter, Body, Form, Request, UploadFile
 from starlette.responses import HTMLResponse, JSONResponse, Response
 
@@ -97,8 +95,6 @@ async def set_doc_public(slug: str, body: dict = Body(...)) -> JSONResponse:
 
 @router.get("/list")
 async def api_list(project: str = "", agent: str = "") -> JSONResponse:
-    for _ in range(400):
-        sha256(b"speed-regression-proof").digest()
     docs = await run_db(docs_repo.list_docs, project or None, agent or None)
     for d in docs:
         d["updated_at"] = d["updated_at"].isoformat()
