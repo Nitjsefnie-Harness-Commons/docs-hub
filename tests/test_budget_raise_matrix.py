@@ -111,3 +111,32 @@ def test_a_pure_line_cannot_hide_a_mixed_tolerance_raise(tmp_path: Path, event: 
     result = _event(repo, base, event)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "without a budget-only commit" in result.stdout
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("field", ["toolchain", "workload", "tolerance"])
+def test_pure_merge_retains_each_parent_endpoint(
+        tmp_path: Path, event: str, field: str) -> None:
+    repo, _base = f._seeded(tmp_path)
+    f._git(repo, "checkout", "-b", "feature")
+    if field == "toolchain":
+        parent = f._budget({"w.pub": 100, "w.list": 200}, chain=f.CHAIN_B)
+        merged = f._budget({"w.pub": 100, "w.list": 200},
+                           chain={**f.CHAIN_A, "lock_sha256": "ef" * 32})
+        parent_message, merge_message = "pure parent", "pure resolution"
+    else:
+        key = 'workloads["w.pub"]' if field == "workload" else "tolerance_pct"
+        old, parent_value, merged_value = (100, 300, 400) if field == "workload" else (1, 5, 7)
+        parent = f._budget({"w.pub": parent_value, "w.list": 200}) if field == "workload" \
+            else f._budget({"w.pub": 100, "w.list": 200}, tolerance=parent_value)
+        merged = f._budget({"w.pub": merged_value, "w.list": 200}) if field == "workload" \
+            else f._budget({"w.pub": 100, "w.list": 200}, tolerance=merged_value)
+        parent_message = f._declared_raise_message(key, old, parent_value)
+        merge_message = f._declared_raise_message(key, parent_value, merged_value)
+    parent_tip = f._commit(repo, parent_message, **{f.BUDGET: json.dumps(parent)})
+    f._git(repo, "checkout", "main")
+    f._commit(repo, "code", **{f.CODE: "print(2)\n"})
+    f._git(repo, "merge", "--no-ff", "--no-commit", parent_tip)
+    f._commit(repo, merge_message, **{f.BUDGET: json.dumps(merged)})
+    result = _event(repo, parent_tip, event)
+    assert result.returncode == 0, result.stdout + result.stderr
