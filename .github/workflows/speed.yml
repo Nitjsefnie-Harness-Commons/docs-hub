@@ -96,6 +96,7 @@ jobs:
 
       - name: Check the counts against the committed budget
         run: |
+          test -f scripts/ci/speed_budget.py
           "$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py check \
             --measurements "$RUNNER_TEMP/measurement.json" \
             --budget .github/speed-budget.json \
