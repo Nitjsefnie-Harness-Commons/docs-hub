@@ -289,20 +289,30 @@ def _collect_declarations(cwd: Path, base: str, head: str,
     return pool, findings
 
 
-def _sanctioned(cwd: Path, pure_commits: list[str]) -> dict[str, list[tuple]]:
-    """Pure transitions, composed in history order for each leaf."""
+def _sanctioned(cwd: Path, commits: dict[str, list[str]]) -> tuple[dict, list]:
+    """Legal transitions and impure workload steps, in history order."""
     accepted: dict[str, list[tuple]] = {}
-    for sha in reversed(pure_commits):
+    findings = []
+    for sha in reversed(commits):
+        pure = not set(commits[sha]) - {DOCUMENT}
         was = leaves(read_document(cwd, f"{sha}^", DOCUMENT) or {})
         now = leaves(read_document(cwd, sha, DOCUMENT) or {})
         for key in set(was) | set(now):
             old, new = was.get(key, _ABSENT), now.get(key, _ABSENT)
             if old == new:
                 continue
+            if not pure:
+                if not _under(key, "workloads"):
+                    continue
+                if not (_is_number(old) and _is_number(new) and new < old):
+                    findings.append(_finding(
+                        DOCUMENT, key, was.get(key), now.get(key),
+                        f"commit {sha[:12]} changed without a budget-only commit"))
+                    continue
             transitions = accepted.setdefault(key, [])
             transitions.extend([(first, new) for first, last in transitions
                                 if last == old] + [(old, new)])
-    return accepted
+    return accepted, findings
 
 
 def _relaxations(base: object, head: object, declarations: list,
@@ -369,14 +379,14 @@ def _relaxations(base: object, head: object, declarations: list,
 def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
     """Every relaxation of the budget document across the window."""
     paths_by_commit = _commit_paths(cwd, window_base, head_sha)
-    pure = [sha for sha, paths in paths_by_commit.items()
-            if not set(paths) - {DOCUMENT}]
     pool, findings = _collect_declarations(
         cwd, window_base, head_sha, paths_by_commit)
+    sanctioned, impure = _sanctioned(cwd, paths_by_commit)
+    findings.extend(impure)
     findings.extend(_relaxations(
         read_document(cwd, window_base, DOCUMENT),
         read_document(cwd, head_sha, DOCUMENT),
-        pool, _sanctioned(cwd, pure)))
+        pool, sanctioned))
     return findings
 
 
