@@ -7,7 +7,8 @@ change. A raise carries exactly one line
     Budget-Raise: .github/speed-budget.json <key> <from> -> <to>
 
 on a commit touching nothing but the budget — the route is its own act.
-Toolchain transitions and workload adds/removes require budget-only steps;
+Toolchain transitions need exact declarations in budget-only steps;
+workload adds/removes also require budget-only steps;
 mixed workload/tolerance steps may only decrease. Merge steps use combined
 diffs, excluding inherited parent work. An absent-at-base budget seeds the
 whole window. The window is merge-base(base, head)..head on a pull_request,
@@ -30,8 +31,10 @@ from pathlib import Path
 DOCUMENT = ".github/speed-budget.json"
 REGULAR_FILE = "100644 blob"
 _DECLARATION_PREFIX = "Budget-Raise: "
+_VALUE_TOKEN = r'"(?:[^"\\]|\\.)*"|\S+'
 _DECLARATION_LINE = re.compile(
-    r"^(?P<document>\S+) +(?P<key>.+) +(?P<was>\S+) -> (?P<to>\S+)$")
+    r"^(?P<document>\S+) +(?P<key>.+?) +"
+    rf"(?P<was>{_VALUE_TOKEN}) -> (?P<to>{_VALUE_TOKEN})$")
 _SPEC = importlib.util.spec_from_file_location(
     "budget_chain", Path(__file__).with_name("budget_chain.py"))
 assert _SPEC is not None and _SPEC.loader is not None
@@ -161,13 +164,9 @@ def _parse_declarations(lines: list[str]) -> tuple[list, list]:
             errors.append(_declaration_parse_error(line))
             continue
         try:
-            was = Decimal(match.group("was"))
-            to = Decimal(match.group("to"))
-        except InvalidOperation:
-            errors.append(_declaration_parse_error(line))
-            continue
-        # A non-finite token is a parse error, never a consumable.
-        if not (was.is_finite() and to.is_finite()):
+            was, to = (_CHAIN.declaration_value(match.group("key"), match.group(field))
+                       for field in ("was", "to"))
+        except (InvalidOperation, ValueError):
             errors.append(_declaration_parse_error(line))
             continue
         declarations.append(
@@ -279,6 +278,10 @@ def _sanctioned(cwd: Path, commits: dict[str, list[str]],
                     if raised:
                         findings.append(_finding(
                             DOCUMENT, key, old, new, "raised; it may only fall"))
+                continue
+            if _under(key, "toolchain") and not any(
+                    _consume_declaration(pool, key, value, new) for value in values):
+                findings.append(_finding(DOCUMENT, key, old, new, "undeclared toolchain change"))
                 continue
             if raised and not any(_consume_declaration(pool, key, value, new) for value in raised):
                 findings.append(_finding(DOCUMENT, key, old, new, "raised; it may only fall"))
