@@ -325,7 +325,7 @@ def test_rebaseline_without_a_budget_seeds_the_default_tolerance(
     document = policy.rebaseline(
         None, _measurement({"service.publish": 1500, "service.list": 2600}),
         ("service.publish", "service.list"))
-    assert document["tolerance_pct"] == policy.DEFAULT_TOLERANCE_PCT
+    assert document["tolerance_pct"] == 1.0
 
 
 def test_measure_writes_counts_toolchain_wall_and_base_sha(
