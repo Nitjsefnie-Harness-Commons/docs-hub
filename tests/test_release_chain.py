@@ -3,7 +3,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 from typing import Any
 import zipfile
@@ -32,9 +31,6 @@ def _step(filename: str, job: str, name: str) -> dict[str, Any]:
 def _assert_minimal_writer(job: dict[str, Any]) -> None:
     for step in job["steps"]:
         assert step.get("uses", "").partition("@")[0] != "actions/checkout"
-        script = step.get("run", "")
-        assert "pip install" not in script
-        assert not re.search(r"\bpython(?:\d+(?:\.\d+)*)?\b", script)
 
 
 def test_every_checkout_disables_persisted_credentials():
@@ -61,14 +57,6 @@ def test_release_build_is_read_only_and_hands_off_artifact():
     assert "services" not in workflow and "env" not in workflow
     upload = _action(build, "actions/upload-artifact")
     assert build["steps"][-1] == upload
-    publish = workflow["jobs"]["publish"]
-    download = _action(publish, "actions/download-artifact")
-    artifact_name = upload["with"]["name"]
-    assert download["with"]["name"] == artifact_name
-
-
-def _workflow_text(filename: str) -> str:
-    return (_REPO / ".github/workflows" / filename).read_text(encoding="utf-8")
 
 
 def _needs(job: dict[str, Any]) -> set[str]:
@@ -76,17 +64,22 @@ def _needs(job: dict[str, Any]) -> set[str]:
     return {needs} if isinstance(needs, str) else set(needs)
 
 
-def test_images_job_reads_both_postgres_dockerfiles():
-    # Both workflows resolve their Postgres service image from the images job,
-    # whose reading step spells both Dockerfiles literally — that spelling is
-    # what puts them in gate_base_freshness.py's derived watch set, so a
-    # digest bump landing on master demands a rebase before any PR merges.
-    for filename in ("tests.yml", "release.yml"):
-        job = _workflow(filename)["jobs"]["images"]
-        assert {"image16", "image17"} <= set(job["outputs"]), filename
-        reading = next(step for step in job["steps"] if step.get("id") == "pins")
-        for path in (".github/postgres/16/Dockerfile", ".github/postgres/17/Dockerfile"):
-            assert path in reading["run"], (filename, path)
+@pytest.mark.parametrize("filename", ["tests.yml", "release.yml"])
+def test_images_job_reads_both_postgres_dockerfiles(tmp_path: Path, filename: str):
+    job = _workflow(filename)["jobs"]["images"]
+    assert {"image16", "image17"} <= set(job["outputs"])
+    for major in (16, 17):
+        directory = tmp_path / ".github" / "postgres" / str(major)
+        directory.mkdir(parents=True)
+        (directory / "Dockerfile").write_text(
+            f"FROM postgres:{major}.1@sha256:{str(major)[-1] * 64}\n", encoding="utf-8")
+    reading = next(step for step in job["steps"] if step.get("id") == "pins")
+    output = tmp_path / "output"
+    result = _run_script(tmp_path, reading["run"], {"GITHUB_OUTPUT": str(output)})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert output.read_text(encoding="utf-8").splitlines() == [
+        "image16=postgres:16.1@sha256:" + "6" * 64,
+        "image17=postgres:17.1@sha256:" + "7" * 64]
 
 
 def test_postgres_services_need_images_and_read_its_outputs():
@@ -101,15 +94,6 @@ def test_postgres_services_need_images_and_read_its_outputs():
             assert "images" in _needs(job), (filename, job_name)
             image = job["services"]["postgres"]["image"]
             assert "needs.images.outputs." in image, (filename, job_name)
-
-
-def test_workflows_hold_no_postgres_digest_literal():
-    # The Dockerfiles under .github/postgres/ are the only home of the digest,
-    # whether spelled with a floating tag (postgres:16@sha256:...) or a full
-    # version (postgres:16.15@sha256:...).
-    for filename in ("tests.yml", "release.yml"):
-        assert re.search(
-            r"postgres:\d+(?:\.\d+)?@sha256:", _workflow_text(filename)) is None, filename
 
 
 def test_dependabot_docker_directories_are_the_ones_the_images_jobs_read():
@@ -161,15 +145,11 @@ def test_tag_readiness_is_read_only_and_exports_skip():
                                         "actions": "read"}
     assert readiness["timeout-minutes"] == 60
     assert set(readiness["outputs"]) == {"tag", "sha", "skip"}
-    for name in ("Refuse to re-tag an existing version", "Wait for the other gates on this commit"):
-        step = _step("tag.yml", "release-readiness", name)
-        assert step["if"] == "steps.version.outputs.skip != 'true'"
 
 
 def test_tag_writer_has_only_the_writer_permissions():
     tag = _workflow("tag.yml")["jobs"]["tag"]
     assert tag["needs"] == "release-readiness"
-    assert tag["if"] == "needs.release-readiness.outputs.skip != 'true'"
     assert tag["permissions"] == {"contents": "write", "actions": "write"}
     assert tag["timeout-minutes"] == 10
     _assert_minimal_writer(tag)

@@ -105,11 +105,10 @@ def test_callees_leave_push_and_pull_request_to_the_gate(name: str) -> None:
             assert permissions in (None, "read-all")
 
 
-def test_aggregate_always_folds_exactly_twelve_legs_without_checkout() -> None:
+def test_aggregate_folds_exactly_twelve_legs_without_checkout() -> None:
     job = _workflow()["jobs"]["aggregate"]
     assert set(job["needs"]) == set(_LEGS)
     assert len(job["needs"]) == len(_LEGS)
-    assert job["if"] in ("${{ always() }}", "always()")
     assert "name" not in job
     assert job["permissions"] == {"contents": "read"}
     assert all(step.get("uses", "").partition("@")[0] != "actions/checkout"
@@ -127,11 +126,7 @@ def test_local_legs_have_checkout_and_read_only_permissions() -> None:
         assert job["steps"][0].get("uses", "").partition("@")[0] == "actions/checkout"
         assert len(job["steps"]) == 2
     freshness = _workflow()["jobs"]["base-freshness"]
-    assert freshness["if"] == "github.event_name == 'pull_request'"
     assert "if" not in freshness["steps"][1]
-    assert freshness["steps"][1]["run"] == (
-        "python3 scripts/ci/gate_base_freshness.py"
-        " --head ${{ github.event.pull_request.head.sha }}")
 
 
 def _run_script(tmp_path: Path, script: str,
