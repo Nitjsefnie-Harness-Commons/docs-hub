@@ -39,6 +39,10 @@ TOOLCHAIN = {"python": "3.15.1 (main, Oct 21 2026, 14:53:25) [GCC 13.3.0]",
              "runner_image": "ubuntu24 20261023.334.3",
              "lock_sha256": "ab" * 32}
 
+# Differs from TOOLCHAIN in one field, so a mutant that carries either
+# side's toolchain over the other cannot pass as a copy.
+MEASURED_CHAIN = {**TOOLCHAIN, "lock_sha256": "cd" * 32}
+
 
 def _measurement(counts: dict[str, int], chain: dict | None = None) -> dict:
     return {"toolchain": dict(chain if chain is not None else TOOLCHAIN),
@@ -254,13 +258,23 @@ def test_tighten_writes_the_budget_only_when_something_fell(
     assert speed.main(["tighten", "--measurements", str(measurement),
                        "--budget", str(budget)]) == 0
     assert budget.read_bytes() == before
+    # A toolchain difference blocks the write even when counts fell: the
+    # budget's recorded side survives the mismatch byte for byte.
+    measurement.write_text(json.dumps(_measurement(
+        {"service.publish": 900, "service.list": 2500}, MEASURED_CHAIN)),
+        encoding="utf-8")
+    assert speed.main(["tighten", "--measurements", str(measurement),
+                       "--budget", str(budget)]) == 0
+    assert budget.read_bytes() == before
 
 
 def test_rebaseline_rewrites_toolchain_and_workloads(policy: ModuleType) -> None:
     document = policy.rebaseline(
-        _budget(), _measurement({"service.publish": 1500, "service.list": 2600}),
+        _budget(),
+        _measurement({"service.publish": 1500, "service.list": 2600},
+                     MEASURED_CHAIN),
         ("service.publish", "service.list"))
-    assert document["toolchain"] == TOOLCHAIN
+    assert document["toolchain"] == MEASURED_CHAIN
     assert document["workloads"] == {"service.publish": 1500,
                                      "service.list": 2600}
     assert document["tolerance_pct"] == 30
