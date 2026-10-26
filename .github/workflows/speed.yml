@@ -81,7 +81,9 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes -r requirements-speed.txt
 
       - name: Refuse an undeclared budget raise
-        run: python3 scripts/ci/budget_raise.py
+        run: |
+          test -f scripts/ci/budget_chain.py
+          python3 scripts/ci/budget_raise.py
         env:
           DOCS_HUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           DOCS_HUB_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
