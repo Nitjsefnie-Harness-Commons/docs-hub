@@ -387,9 +387,8 @@ def run(cwd: Path, base: str | None, head: str | None, before: str | None,
     usage."""
     if event not in _WALK_EVENTS:
         if not base and not head:
-            raise ValueError("no event name and no revisions: the run is "
-                             "not wired (DOCS_HUB_EVENT_NAME and the "
-                             "revision variables are all empty)")
+            raise ValueError("no event name and no base or head "
+                             "revision: the run is not wired")
         return 0, [f"budget-raise: the {event or 'unlabelled'} run has no "
                    "window to judge — skipping"]
     if not head:
