@@ -50,7 +50,12 @@ jobs:
           if printf '%s\n' "$names" | grep -qx 'coverage-raise'; then
             staged=true
           fi
+          staged_speed=false
+          if printf '%s\n' "$names" | grep -qx 'speed-measurement'; then
+            staged_speed=true
+          fi
           echo "staged=$staged" >> "$GITHUB_OUTPUT"
+          echo "staged_speed=$staged_speed" >> "$GITHUB_OUTPUT"
 
       - name: Download the coverage raise artifact
         if: steps.list.outputs.staged == 'true'
@@ -61,13 +66,24 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download the speed measurement artifact
+        if: steps.list.outputs.staged_speed == 'true'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: speed-measurement
+          path: ${{ runner.temp }}/speed-data
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Push the raise commit to master
-        if: steps.list.outputs.staged == 'true'
+        if: steps.list.outputs.staged == 'true' || steps.list.outputs.staged_speed == 'true'
         env:
           # The prefixed secret wins when both are set; the old name stays
           # readable as a fallback for environments not yet renamed.
           DOCS_HUB_MASTER_PUSH_DEPLOY_KEY: ${{ secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY || secrets.MASTER_PUSH_DEPLOY_KEY }}
           REPO: ${{ github.repository }}
+          DOCS_HUB_STAGED: ${{ steps.list.outputs.staged }}
+          DOCS_HUB_STAGED_SPEED: ${{ steps.list.outputs.staged_speed }}
         run: |
           # Fail closed: an empty key cannot authenticate the push.
           if [ -z "${DOCS_HUB_MASTER_PUSH_DEPLOY_KEY:-}" ]; then
@@ -90,7 +106,13 @@ jobs:
           git -C "$RUNNER_TEMP/raise-repo" fetch --quiet origin master
           git -C "$RUNNER_TEMP/raise-repo" checkout -B push FETCH_HEAD
           fetched="$(git -C "$RUNNER_TEMP/raise-repo" rev-parse HEAD)"
-          base="$(cat "$RUNNER_TEMP/raise-data/base.txt")"
+          base=""
+          if [ "$DOCS_HUB_STAGED" = "true" ]; then
+            base="$(cat "$RUNNER_TEMP/raise-data/base.txt")"
+          fi
+          if [ "$DOCS_HUB_STAGED_SPEED" = "true" ] && [ -z "$base" ]; then
+            base="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["base_sha"] or "")' "$RUNNER_TEMP/speed-data/measurement.json")"
+          fi
           if [ "$fetched" != "$base" ]; then
             echo "::notice::Master moved while this run measured; the next push raises instead"
             {
@@ -98,21 +120,34 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          python3 -I "$RUNNER_TEMP/raise-repo/scripts/ci/ratchet.py" \
-            --measured "$(cat "$RUNNER_TEMP/raise-data/measured.txt")" \
-            --thresholds "$RUNNER_TEMP/raise-repo/.github/ci-thresholds.json" \
-            --base "$base" --tip "$fetched"
-          git -C "$RUNNER_TEMP/raise-repo" add .github/ci-thresholds.json
+          if [ "$DOCS_HUB_STAGED" = "true" ]; then
+            python3 -I "$RUNNER_TEMP/raise-repo/scripts/ci/ratchet.py" \
+              --measured "$(cat "$RUNNER_TEMP/raise-data/measured.txt")" \
+              --thresholds "$RUNNER_TEMP/raise-repo/.github/ci-thresholds.json" \
+              --base "$base" --tip "$fetched"
+            git -C "$RUNNER_TEMP/raise-repo" add .github/ci-thresholds.json
+          fi
+          if [ "$DOCS_HUB_STAGED_SPEED" = "true" ]; then
+            python3 -I "$RUNNER_TEMP/raise-repo/scripts/ci/speed.py" tighten \
+              --measurements "$RUNNER_TEMP/speed-data/measurement.json" \
+              --budget "$RUNNER_TEMP/raise-repo/.github/speed-budget.json"
+            git -C "$RUNNER_TEMP/raise-repo" add .github/speed-budget.json
+          fi
           git -C "$RUNNER_TEMP/raise-repo" config user.name 'github-actions[bot]'
           git -C "$RUNNER_TEMP/raise-repo" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if [ -z "$(git -C "$RUNNER_TEMP/raise-repo" status --porcelain .github/ci-thresholds.json)" ]; then
+          if [ -n "$(git -C "$RUNNER_TEMP/raise-repo" status --porcelain .github/ci-thresholds.json)" ]; then
+            git -C "$RUNNER_TEMP/raise-repo" commit -m 'Raise the recorded coverage calibration (automated)' -- .github/ci-thresholds.json
+          fi
+          if [ -n "$(git -C "$RUNNER_TEMP/raise-repo" status --porcelain .github/speed-budget.json)" ]; then
+            git -C "$RUNNER_TEMP/raise-repo" commit -m 'Tighten the speed budget (automated)' -- .github/speed-budget.json
+          fi
+          if [ "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse HEAD)" = "$fetched" ]; then
             echo "No raise is justified by this run: nothing to commit."
             exit 0
           fi
-          git -C "$RUNNER_TEMP/raise-repo" commit -m 'Raise the recorded coverage calibration (automated)'
           if ! git -C "$RUNNER_TEMP/raise-repo" push origin HEAD:master; then
             git -C "$RUNNER_TEMP/raise-repo" fetch --quiet origin master
-            if [ "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse HEAD^)" = "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse FETCH_HEAD)" ]; then
+            if [ "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse FETCH_HEAD)" = "$base" ]; then
               echo "the raise push was rejected while master stood still" >&2
               exit 1
             fi
