@@ -85,8 +85,9 @@ coverage floor, plus the `public/app.js` test in jsdom),
 (over `public/` and the JavaScript tests in `tests/`), `audit`
 (pip-audit, npm audit), `codeql`, `size-baseline` (the tracked-file
 line-count ratchet), `actionlint` (actionlint + zizmor),
-`secrets` (gitleaks), and `speed` (the last release against this commit
-on one runner, `scripts/ci/speed.py`). Its `aggregate` job folds
+`secrets` (gitleaks), and `speed` (this head's Cachegrind instruction
+counts against `.github/speed-budget.json` with a recorded toolchain,
+`scripts/ci/speed.py`). Its `aggregate` job folds
 every leg and fails closed, with `conflict-markers` on every push and PR
 and PR-only `base-freshness`, which fails when `master` holds a gate-input
 commit the head lacks, naming the commit and file. CONTRIBUTING.md's table
@@ -100,7 +101,13 @@ push to `master`, `ratchet push` commits a raise when that run measured
 above the recorded measurement and `master` has not moved since; nothing
 lowers it automatically. On a pull request the
 coverage of changed lines is reported in the job summary with no
-threshold of its own.
+threshold of its own. The speed arm uses `tighten` after a green `master`
+push to lower cheaper workloads in `.github/speed-budget.json`, only with
+a matching toolchain, no failed workloads and `master` still at the
+measured commit; it keeps the toolchain and tolerance. Raising a workload
+count or tolerance needs a matching Budget-Raise declaration per raised
+key on a commit touching only the budget file (CONTRIBUTING.md gives the
+format); raises are never automatic.
 
 Two more workflows are the release chain rather than gates: `tag` watches
 `docs_hub_cli/__init__.py` on `master`, requires `aggregate` to succeed and

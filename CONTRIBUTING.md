@@ -123,7 +123,7 @@ are listed below; CodeQL runs on GitHub:
 | `size-baseline` | the tracked-file line-count ratchet over `.github/size-baseline.json` | — (GitHub-hosted action) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
-| `speed` | the last release (newest `v*` tag) and this commit on one runner, each with its own virtualenv and database, in five interleaved release-head-head-release blocks after a discarded warm-up; it fails when a service or CLI workload's median per-block slowdown exceeds 30% | `python3 scripts/ci/speed.py --base <release tree> --base-python <its venv python> --head . --head-python <this venv python>`, with `PGHOST` etc. pointing at a Postgres you can `createdb` on |
+| `speed` | this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain; fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; a toolchain mismatch compares nothing, reports recorded vs measured, exits 0 and needs a rebaseline commit | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind installed and a Postgres you can `createdb` on; `docs_speed` is a disposable database, reset by `measure` |
 
 The `aggregate` job folds every leg and fails closed, with two local legs
 of its own: `conflict-markers` on every push and PR, and `base-freshness`
@@ -142,6 +142,25 @@ automatically, and lowering it by hand to turn a red build green is not a
 fix. On a pull request the coverage of changed lines (diff-cover against
 `origin/master`) is reported in the job summary with no threshold of its
 own.
+
+The speed budget ratchets down in the same workflow: after a green
+`master` push, `tighten` uses the `speed-measurement` artifact to lower
+each cheaper workload to its measured count, only with a matching
+toolchain and no failed workloads. It keeps the toolchain and tolerance;
+when the budget changes and `master` has not moved, the speed arm commits
+"Tighten the speed budget (automated)". A raise is never automatic: each
+raised workload count or `tolerance_pct` needs exactly one matching line
+in a commit message:
+
+```
+Budget-Raise: .github/speed-budget.json <key> <from> -> <to>
+```
+
+That commit touches nothing but the budget file; `<key>` is the leaf path
+(e.g. `workloads["service.list"]` or `tolerance_pct`). The check refuses
+malformed, duplicate, leftover or otherwise unconsumed declarations. A
+rebase merge keeps the declaration lines; a squash may drop them, which
+then refuses on `master`'s push.
 
 `pip install -r requirements-dev.txt -r requirements-test.txt` gets the
 Python toolchain. `package.json` exists only to pin eslint and jsdom (the
