@@ -346,3 +346,28 @@ def test_flags_overrule_the_environment(tmp_path: Path) -> None:
                 env={"DOCS_HUB_EVENT_NAME": "workflow_dispatch"})
     assert done.returncode == 1
     assert "raised; it may only fall" in done.stdout
+
+
+def test_a_push_run_with_an_empty_base_judges_the_window(tmp_path: Path) -> None:
+    repo, base = _seeded(tmp_path)
+    head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 300),
+                   **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 200}))})
+    done = _run(repo, "--base", "", "--head", head, "--event", "push",
+                "--before", base)
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert f"not relaxed against base {base}" in done.stdout
+
+
+def test_a_push_run_without_a_before_refuses(tmp_path: Path) -> None:
+    repo, _ = _seeded(tmp_path)
+    done = _run(repo, "--head", "HEAD", "--event", "push")
+    assert done.returncode == 2
+    assert "needs the commit it came from" in done.stderr
+
+
+def test_an_unlabelled_run_with_no_inputs_refuses(tmp_path: Path) -> None:
+    repo, _ = _seeded(tmp_path)
+    done = _run(repo, env={"DOCS_HUB_BASE_SHA": "", "DOCS_HUB_HEAD_SHA": "",
+                           "DOCS_HUB_BEFORE_SHA": "", "DOCS_HUB_EVENT_NAME": ""})
+    assert done.returncode == 2
+    assert "not wired" in done.stderr
