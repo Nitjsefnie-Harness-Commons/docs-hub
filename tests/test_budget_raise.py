@@ -371,3 +371,10 @@ def test_an_unlabelled_run_with_no_inputs_refuses(tmp_path: Path) -> None:
                            "DOCS_HUB_BEFORE_SHA": "", "DOCS_HUB_EVENT_NAME": ""})
     assert done.returncode == 2
     assert "not wired" in done.stderr
+
+
+def test_a_dispatch_run_with_a_head_but_no_base_skips(tmp_path: Path) -> None:
+    repo, _ = _seeded(tmp_path)
+    done = _run(repo, "--event", "workflow_dispatch", "--head", "HEAD")
+    assert done.returncode == 0
+    assert "skipping" in done.stdout
