@@ -3,10 +3,10 @@ name: lint
 # Two gates, one job each so a failure says which tool found it.
 #
 # Style opinions stay narrow: setup.cfg sets max-line-length to the 100 this
-# codebase already wraps at and ignores nothing beyond pycodestyle's own
-# defaults, and .pylintrc disables only patterns the code uses deliberately —
-# each with the reason written next to it. These exist for real defects, not
-# formatting preferences.
+# codebase wraps at and ignores nothing beyond pycodestyle's own
+# defaults, and .pylintrc disables only deliberate patterns and superseded
+# rules — each with the reason written next to it. These exist for real
+# defects, not formatting preferences.
 
 on:
   workflow_call:
