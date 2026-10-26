@@ -30,6 +30,7 @@ REGULAR_FILE = "100644 blob"
 _DECLARATION_PREFIX = "Budget-Raise: "
 _DECLARATION_LINE = re.compile(
     r"^(?P<document>\S+) +(?P<key>.+) +(?P<was>\S+) -> (?P<to>\S+)$")
+_ABSENT = object()
 _ZERO = "0" * 40
 _WALK_EVENTS = ("pull_request", "push")
 
@@ -227,7 +228,7 @@ def _commits_with_declaration_lines(cwd: Path, base: str,
 
 def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
     """Paths against each commit's first parent, including merges."""
-    result = _git(cwd, ["log", "--diff-merges=first-parent",
+    result = _git(cwd, ["log", "--topo-order", "--diff-merges=first-parent",
                         "--format=%x00%H%n", "--name-only",
                         f"{base}..{head}"])
     if result.returncode != 0:
@@ -288,26 +289,24 @@ def _collect_declarations(cwd: Path, base: str, head: str,
     return pool, findings
 
 
-def _sanctioned(cwd: Path, pure_commits: list[str]) -> tuple[set, set, set]:
-    """What pure commits' own diffs sanction, by leaf path."""
-    chain, added, removed = set(), set(), set()
-    for sha in pure_commits:
+def _sanctioned(cwd: Path, pure_commits: list[str]) -> dict[str, list[tuple]]:
+    """Pure transitions, composed in history order for each leaf."""
+    accepted: dict[str, list[tuple]] = {}
+    for sha in reversed(pure_commits):
         was = leaves(read_document(cwd, f"{sha}^", DOCUMENT) or {})
         now = leaves(read_document(cwd, sha, DOCUMENT) or {})
         for key in set(was) | set(now):
-            if was.get(key) == now.get(key):
+            old, new = was.get(key, _ABSENT), now.get(key, _ABSENT)
+            if old == new:
                 continue
-            if _under(key, "toolchain"):
-                chain.add(key)
-            elif key not in now:
-                removed.add(key)
-            elif key not in was:
-                added.add(key)
-    return chain, added, removed
+            transitions = accepted.setdefault(key, [])
+            transitions.extend([(first, new) for first, last in transitions
+                                if last == old] + [(old, new)])
+    return accepted
 
 
 def _relaxations(base: object, head: object, declarations: list,
-                 sanctioned: tuple[set, set, set]) -> list[str]:
+                 sanctioned: dict[str, list[tuple]]) -> list[str]:
     # pylint: disable=too-many-branches
 
     """Findings for a head document that relaxes the base's; a budget
@@ -317,28 +316,25 @@ def _relaxations(base: object, head: object, declarations: list,
     if head is None:
         return [_finding(DOCUMENT, "(document)", "present", None,
                          "the document was deleted")]
-    chain, added, removed = sanctioned
     findings = []
     before, after = leaves(base), leaves(head)
     for key, was in before.items():
         if key in after:
             continue
-        if _under(key, "toolchain") and key in chain:
-            continue
-        if _under(key, "workloads") and key in removed:
+        if (_under(key, "toolchain") or _under(key, "workloads")) \
+                and (was, _ABSENT) in sanctioned.get(key, []):
             continue
         findings.append(_finding(DOCUMENT, key, was, None, "key removed"))
     for key, now in after.items():
         if key not in before:
-            if _under(key, "toolchain") and key in chain:
-                continue
-            if _under(key, "workloads") and key in added:
+            if (_under(key, "toolchain") or _under(key, "workloads")) \
+                    and (_ABSENT, now) in sanctioned.get(key, []):
                 continue
             findings.append(_finding(DOCUMENT, key, None, now, "key added"))
             continue
         was = before[key]
         if _under(key, "toolchain"):
-            if was != now and key not in chain:
+            if was != now and (was, now) not in sanctioned.get(key, []):
                 findings.append(_finding(
                     DOCUMENT, key, was, now,
                     "changed without a budget-only commit"))
