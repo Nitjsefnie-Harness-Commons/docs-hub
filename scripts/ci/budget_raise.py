@@ -386,14 +386,20 @@ def run(cwd: Path, base: str | None, head: str | None, before: str | None,
     """(exit code, report lines): 0 clean or skipped, 1 per finding, 2
     usage."""
     if event not in _WALK_EVENTS:
+        if not base and not head:
+            raise ValueError("no event name and no revisions: the run is "
+                             "not wired (DOCS_HUB_EVENT_NAME and the "
+                             "revision variables are all empty)")
         return 0, [f"budget-raise: the {event or 'unlabelled'} run has no "
                    "window to judge — skipping"]
-    if not base or not head:
-        raise ValueError("a base and a head revision are both required")
+    if not head:
+        raise ValueError(f"a {event} run needs the head revision "
+                         "(DOCS_HUB_HEAD_SHA)")
     require_full_history(cwd)
-    base_sha = resolve_commit(cwd, base)
     head_sha = resolve_commit(cwd, head)
     if event == "push":
+        # A push judges before..head; the pull request's base is not an
+        # input on this route.
         if not before:
             raise ValueError("a push run needs the commit it came from "
                              "(DOCS_HUB_BEFORE_SHA)")
@@ -408,7 +414,10 @@ def run(cwd: Path, base: str | None, head: str | None, before: str | None,
         window_base = before_sha
         label = ("base", before_sha)
     else:
-        window_base = merge_base(cwd, base_sha, head_sha)
+        if not base:
+            raise ValueError("a pull_request run needs the base revision "
+                             "(DOCS_HUB_BASE_SHA)")
+        window_base = merge_base(cwd, resolve_commit(cwd, base), head_sha)
         label = ("merge base", window_base)
     findings = _judge(cwd, window_base, head_sha)
     if findings:
