@@ -340,8 +340,11 @@ def test_measure_writes_counts_toolchain_wall_and_base_sha(
     monkeypatch.setattr(speed.speed_budget, "toolchain",
                         lambda binary="valgrind": dict(TOOLCHAIN))
     out = tmp_path / "measurements.json"
+    # A runner has no valgrind; the internals are faked, so the counter
+    # binary only has to exist -- sys.executable does, and is never exec'd.
     assert speed.main(["measure", "--database", "docs_speed_test",
-                       "--out", str(out), "--base-sha", "abc123"]) == 0
+                       "--out", str(out), "--base-sha", "abc123",
+                       "--valgrind", sys.executable]) == 0
     artifact = json.loads(out.read_text(encoding="utf-8"))
     assert artifact["counts"] == counts
     assert artifact["toolchain"] == TOOLCHAIN
@@ -355,7 +358,8 @@ def test_workload_prints_the_counts_as_json(speed: ModuleType,
     counts = dict.fromkeys(speed.WORKLOADS, 111)
     monkeypatch.setattr(speed, "workload",
                         lambda database, names=None, binary="valgrind": counts)
-    assert speed.main(["workload", "--database", "docs_speed_test"]) == 0
+    assert speed.main(["workload", "--database", "docs_speed_test",
+                       "--valgrind", sys.executable]) == 0
     assert json.loads(capsys.readouterr().out) == counts
 
 
@@ -388,7 +392,9 @@ def test_a_counted_run_refuses_a_missing_valgrind_binary(
     error = capsys.readouterr().err
     assert "no valgrind binary at /nonexistent/valgrind" in error
     assert "Traceback" not in error
-    assert speed.main(["measure", "--database", "x", "--out",
-                       str(tmp_path / "m.json"),
+    assert not list(tmp_path.iterdir())
+    out = tmp_path / "m.json"
+    assert speed.main(["measure", "--database", "x", "--out", str(out),
                        "--valgrind", "/nonexistent/valgrind"]) == 1
     assert "no valgrind binary at" in capsys.readouterr().err
+    assert not out.exists()
