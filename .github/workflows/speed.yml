@@ -80,6 +80,14 @@ jobs:
           python -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/python" -m pip install --require-hashes -r requirements-speed.txt
 
+      - name: Refuse an undeclared budget raise
+        run: python3 scripts/ci/budget_raise.py
+        env:
+          DOCS_HUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DOCS_HUB_HEAD_SHA: ${{ github.sha }}
+          DOCS_HUB_BEFORE_SHA: ${{ github.event.before }}
+          DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
+
       - name: Measure this commit's workloads
         id: measure
         run: |
