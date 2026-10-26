@@ -1,0 +1,497 @@
+#!/usr/bin/env python3
+"""Refuse an undeclared raise of the speed budget (.github/speed-budget.json).
+
+A workload count or the tolerance may only fall, and schema_version may not
+change at all. A deliberate numeric raise carries exactly one line
+
+    Budget-Raise: .github/speed-budget.json <key> <from> -> <to>
+
+(key as _key_path renders it) on a window commit touching nothing but the
+budget document — the route is its own act. Toolchain changes and added or
+removed workloads need no line: a budget-only commit's purity is their
+declaration. The window is merge-base(base, head)..head on a pull_request
+and before..head on a push, with before required to be an ancestor; any
+other event, and a branch-creating all-zero before, skip with a message.
+
+Merge shape: a rebase merge keeps the raise commit's lines in the window
+history, while a squash merge may replace them with the pull request's
+title and make the raise refuse on main — a rebase merge is the
+deterministic route.
+
+Exit 0 when nothing relaxed or there is no window, 1 with one line per
+finding, 2 on a usage error (unknown revision, shallow clone, uncomputable
+merge base, non-ancestor push window).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import os
+import re
+import subprocess
+import sys
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+
+DOCUMENT = ".github/speed-budget.json"
+REGULAR_FILE = "100644 blob"
+_DECLARATION_PREFIX = "Budget-Raise: "
+_DECLARATION_LINE = re.compile(
+    r"^(?P<document>\S+) +(?P<key>.+) +(?P<was>\S+) -> (?P<to>\S+)$")
+_ZERO = "0" * 40
+_WALK_EVENTS = ("pull_request", "push")
+
+
+def _git(cwd: Path, args: list[str]) -> subprocess.CompletedProcess:
+    # The returncode is inspected by every caller: check=False on purpose.
+    return subprocess.run(  # pylint: disable=subprocess-run-check
+        ["git", *args], cwd=str(cwd), capture_output=True, text=True)
+
+
+def require_full_history(cwd: Path) -> None:
+    """A shallow history disqualifies the whole check: git merge-base can
+    fail on one, or worse pick a wrong base without erroring, and either
+    answer is one a relaxation could hide behind.
+    """
+    result = _git(cwd, ["rev-parse", "--is-shallow-repository"])
+    if result.returncode != 0:
+        raise ValueError(
+            "cannot tell whether the repository is shallow: "
+            f"{result.stderr.strip()}")
+    if result.stdout.strip() == "true":
+        raise ValueError(
+            "the repository is shallow; a shallow history can make git "
+            "merge-base return a wrong base without erroring, so the check "
+            "refuses to run — fetch full history first (git fetch "
+            "--unshallow)")
+
+
+def resolve_commit(cwd: Path, rev: str) -> str:
+    result = _git(
+        cwd, ["rev-parse", "--verify", "--quiet", "--end-of-options",
+              f"{rev}^{{commit}}"])
+    if result.returncode != 0:
+        raise ValueError(f"unknown revision: {rev}")
+    return result.stdout.strip()
+
+
+def merge_base(cwd: Path, base: str, head: str) -> str:
+    result = _git(cwd, ["merge-base", base, head])
+    sha = result.stdout.strip()
+    if result.returncode != 0 or not sha:
+        raise ValueError(
+            f"no merge base between {base} and {head} (unrelated histories "
+            "or a shallow clone)")
+    return sha
+
+
+def _is_ancestor(cwd: Path, maybe: str, descendant: str) -> bool:
+    """Whether maybe is an ancestor of descendant.
+
+    The push window needs a well-defined membership: only an ancestor
+    makes before..head exactly this push's commits. --is-ancestor answers
+    through its exit code (0 ancestor, 1 not); any other code is a failure.
+    """
+    result = _git(cwd, ["merge-base", "--is-ancestor", maybe, descendant])
+    if result.returncode not in (0, 1):
+        raise ValueError(
+            f"cannot tell whether {maybe} is an ancestor of "
+            f"{descendant}: {result.stderr.strip()}")
+    return result.returncode == 0
+
+
+def entry_kind(cwd: Path, commit: str, path: str) -> str | None:
+    """The ``<mode> <type>`` of the tree entry at path, or None when absent.
+
+    git ls-tree reads its argument as a pattern, so pathspec magic is off
+    and only a record whose name equals path counts.
+    """
+    listing = _git(
+        cwd, ["--literal-pathspecs", "ls-tree", "-z", commit, "--", path])
+    if listing.returncode != 0:
+        raise ValueError(
+            f"cannot list {path} at {commit}: {listing.stderr.strip()}")
+    for record in listing.stdout.split("\0"):
+        tab = record.find("\t")
+        if tab == -1 or record[tab + 1:] != path:
+            continue
+        mode, kind, _object = record[:tab].split(" ", 2)
+        return f"{mode} {kind}"
+    return None
+
+
+def read_document(cwd: Path, commit: str, path: str) -> dict | None:
+    """The parsed document at commit, or None when absent there."""
+    kind = entry_kind(cwd, commit, path)
+    if kind is None:
+        return None
+    if kind != REGULAR_FILE:
+        raise ValueError(f"{path} at {commit} is {kind}, not a regular file")
+    blob = _git(cwd, ["show", f"{commit}:{path}"])
+    if blob.returncode != 0:
+        raise ValueError(
+            f"cannot read {path} at {commit}: {blob.stderr.strip()}")
+    try:
+        return json.loads(blob.stdout, parse_float=Decimal, parse_int=Decimal)
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"{path} at {commit} is not valid JSON: {error}") from None
+
+
+def _key_path(parts: list[str]) -> str:
+    if not parts:
+        return "(document)"
+    rendered = []
+    for index, part in enumerate(parts):
+        if part.replace("_", "a").isalnum() and not part[0].isdigit():
+            rendered.append(part if index == 0 else f".{part}")
+        else:
+            rendered.append(f"[{json.dumps(part)}]")
+    return "".join(rendered)
+
+
+def leaves(value: object, parts: list[str] | None = None,
+           out: dict | None = None) -> dict:
+    """Leaf values keyed by their rendered path: a non-object or an empty
+    object anywhere is a leaf, so a scalar-replaced subtree shows up as its
+    leaves removed and one key added, and an empty object is a leaf key."""
+    parts, out = parts or [], out if out is not None else {}
+    if not isinstance(value, dict) or not value:
+        out[_key_path(parts)] = value
+        return out
+    for key, child in value.items():
+        leaves(child, [*parts, key], out)
+    return out
+
+
+def _is_number(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, Decimal):
+        return value.is_finite()
+    if isinstance(value, int):
+        return True
+    # A float here is a JSON NaN/Infinity literal: the reader's
+    # parse_constant hands those back as floats, past the parse_float hook
+    # that would have made them Decimals. They must fail closed — NaN and
+    # -Infinity never compare greater, so a poisoned budget would pass the
+    # fall-only walk silently, and +Infinity would masquerade as a genuine
+    # raise instead of naming the non-finite leaf.
+    return isinstance(value, float) and math.isfinite(value)
+
+
+def _show(value: object) -> str:
+    if value is None:
+        return "absent"
+    if isinstance(value, bool):
+        return json.dumps(value)
+    if isinstance(value, Decimal):
+        return str(value)
+    return json.dumps(value)
+
+
+def _under(key: str, parent: str) -> bool:
+    """Whether the rendered key names a leaf under parent.
+
+    A child renders as parent.child when the segment is alphanumeric,
+    and parent["..."] when it is not, so both spellings count.
+    """
+    return (key.startswith(f"{parent}.")
+            or key.startswith(f"{parent}["))
+
+
+def _finding(document: str, key: str, base: object, head: object,
+             why: str) -> str:
+    return (f"{document}: {key}: reference {_show(base)}, "
+            f"head {_show(head)} — {why}")
+
+
+def _declaration_parse_error(line: str) -> str:
+    return (f"Budget-Raise declaration {line!r} does not parse — the "
+            "format is 'Budget-Raise: <document> <key> <from> -> <to>'")
+
+
+def _parse_declarations(lines: list[str]) -> tuple[list, list]:
+    """Parse raw lines to (document, key, was, to); a malformed line is a
+    finding, never a crash, and never a consumable."""
+    declarations, errors = [], []
+    for line in lines:
+        match = _DECLARATION_LINE.match(line[len(_DECLARATION_PREFIX):])
+        if match is None:
+            errors.append(_declaration_parse_error(line))
+            continue
+        try:
+            was = Decimal(match.group("was"))
+            to = Decimal(match.group("to"))
+        except InvalidOperation:
+            errors.append(_declaration_parse_error(line))
+            continue
+        # A non-finite token — quiet NaN, sNaN, an Infinity — is a parse
+        # error: an sNaN here would raise InvalidOperation on the very
+        # comparison the consumption makes, and a NaN would never match
+        # anything. Neither is a value this format carries.
+        if not (was.is_finite() and to.is_finite()):
+            errors.append(_declaration_parse_error(line))
+            continue
+        declarations.append(
+            (match.group("document"), match.group("key"), was, to))
+    return declarations, errors
+
+
+def _commits_with_declaration_lines(cwd: Path, base: str,
+                                    head: str) -> list[tuple[str, list[str]]]:
+    """(sha, raw declaration lines) for each window commit carrying any.
+
+    The caller selects the window: a push's before..head, or a pull
+    request's merge-base..head. Whole messages are scanned for exact
+    'Budget-Raise: '-prefixed lines.
+    """
+    result = _git(cwd, ["log", "--format=%x00%H%n%B", f"{base}..{head}"])
+    if result.returncode != 0:
+        raise ValueError(
+            f"cannot walk {base}..{head} for declarations: "
+            f"{result.stderr.strip()}")
+    found = []
+    for record in result.stdout.split("\0"):
+        if not record:
+            continue
+        sha, _newline, body = record.partition("\n")
+        lines = [line.strip() for line in body.splitlines()
+                 if line.strip().startswith(_DECLARATION_PREFIX)]
+        if lines:
+            found.append((sha, lines))
+    return found
+
+
+def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
+    """The paths each window commit touches, as {sha: [paths]}.
+
+    A commit that changed nothing lists no paths, and is pure by that answer.
+    """
+    result = _git(cwd, ["log", "--format=%x00%H%n", "--name-only",
+                        f"{base}..{head}"])
+    if result.returncode != 0:
+        raise ValueError(
+            f"cannot walk {base}..{head} for its paths: "
+            f"{result.stderr.strip()}")
+    paths_by_commit: dict[str, list[str]] = {}
+    for record in result.stdout.split("\0"):
+        if not record:
+            continue
+        lines = [line for line in record.split("\n") if line]
+        paths_by_commit[lines[0]] = lines[1:]
+    return paths_by_commit
+
+
+def _consume_declaration(declarations: list, key: str, was: object,
+                         now: object) -> bool:
+    """Pop the one declaration naming this raise exactly; the pop is what
+    makes a duplicate line a leftover."""
+    for index, (_document, decl_key, decl_was, decl_to) in enumerate(
+            declarations):
+        if decl_key == key and decl_was == was and decl_to == now:
+            del declarations[index]
+            return True
+    return False
+
+
+def _declaration_mismatch(document: str, key: str, was: object,
+                          to: object) -> str:
+    """The finding for a leftover: a declaration the diff does not carry
+    exactly — a mismatched value, a duplicate, or a key that did not rise."""
+    return (f"{document}: {key}: declaration {was} -> {to} does not match "
+            "a raise in this diff — a declaration must name the exact from "
+            "and to the diff carries")
+
+
+def _collect_declarations(cwd: Path, base: str,
+                          head: str) -> tuple[list, list]:
+    """(pool, findings): pure commits' lines parsed and pooled. Lines on a
+    commit touching anything outside the budget document are findings that
+    are never consumable — the route is its own act — and so are a
+    malformed line and one naming an undeclarable document.
+    """
+    paths_by_commit = _commit_paths(cwd, base, head)
+    pool, findings = [], []
+    for sha, lines in _commits_with_declaration_lines(cwd, base, head):
+        outside = sorted(set(paths_by_commit.get(sha, [])) - {DOCUMENT})
+        if outside:
+            findings.append(
+                f"Budget-Raise: commit {sha[:12]} carries declaration lines "
+                f"but also touches {', '.join(outside)} — a declared raise "
+                f"lands as its own commit touching only {DOCUMENT}")
+            continue
+        parsed, errors = _parse_declarations(lines)
+        findings.extend(errors)
+        for document, key, was, to in parsed:
+            if document != DOCUMENT:
+                findings.append(
+                    f"{document}: {key}: declaration {was} -> {to} names a "
+                    "document whose values are not declarable — only "
+                    f"{DOCUMENT} raises are")
+        pool.extend(declaration for declaration in parsed
+                    if declaration[0] == DOCUMENT)
+    return pool, findings
+
+
+def _sanctioned(cwd: Path, pure_commits: list[str]) -> tuple[set, set, set]:
+    """What budget-only commits' own diffs sanction, by leaf path: a
+    toolchain leaf any pure commit changed, and the workload keys a pure
+    commit added or removed. Reads C and C^ per pure commit; an
+    unresolvable parent is a usage error.
+    """
+    chain, added, removed = set(), set(), set()
+    for sha in pure_commits:
+        was = leaves(read_document(cwd, f"{sha}^", DOCUMENT) or {})
+        now = leaves(read_document(cwd, sha, DOCUMENT) or {})
+        for key in set(was) | set(now):
+            if was.get(key) == now.get(key):
+                continue
+            if _under(key, "toolchain"):
+                chain.add(key)
+            elif key not in now:
+                removed.add(key)
+            elif key not in was:
+                added.add(key)
+    return chain, added, removed
+
+
+def _relaxations(base: object, head: object, declarations: list,
+                 sanctioned: tuple[set, set, set]) -> list[str]:
+    """Findings for a head document that relaxes the base's: numeric
+    leaves are maxima and a raise needs a declaration naming it exactly; a
+    toolchain change or a workload add/remove is accepted only when some
+    budget-only commit's own diff carried it; a budget absent at base is a
+    seed and passes.
+    """
+    if base is None:
+        return []
+    if head is None:
+        return [_finding(DOCUMENT, "(document)", "present", None,
+                         "the document was deleted")]
+    chain, added, removed = sanctioned
+    findings = []
+    before, after = leaves(base), leaves(head)
+    for key, was in before.items():
+        if key in after:
+            continue
+        if _under(key, "toolchain") and key in chain:
+            continue
+        if _under(key, "workloads") and key in removed:
+            continue
+        findings.append(_finding(DOCUMENT, key, was, None, "key removed"))
+    for key, now in after.items():
+        if key not in before:
+            if _under(key, "toolchain") and key in chain:
+                continue
+            if _under(key, "workloads") and key in added:
+                continue
+            findings.append(_finding(DOCUMENT, key, None, now, "key added"))
+            continue
+        was = before[key]
+        if was == now:
+            continue
+        if _under(key, "toolchain"):
+            if key not in chain:
+                findings.append(_finding(
+                    DOCUMENT, key, was, now,
+                    "changed without a budget-only commit"))
+            continue
+        if key == "schema_version":
+            findings.append(_finding(
+                DOCUMENT, key, was, now, "schema_version changed"))
+            continue
+        if not _is_number(now):
+            findings.append(_finding(
+                DOCUMENT, key, was, now, "not a finite number"))
+            continue
+        if not _is_number(was):
+            findings.append(_finding(
+                DOCUMENT, key, was, now,
+                "reference value is not a finite number"))
+            continue
+        if now > was:
+            if _consume_declaration(declarations, key, was, now):
+                continue
+            findings.append(_finding(
+                DOCUMENT, key, was, now, "raised; it may only fall"))
+    for _document, key, was, to in declarations:
+        findings.append(_declaration_mismatch(DOCUMENT, key, was, to))
+    return findings
+
+
+def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
+    """Every relaxation of the budget document across the window."""
+    paths_by_commit = _commit_paths(cwd, window_base, head_sha)
+    pure = [sha for sha, paths in paths_by_commit.items()
+            if not (set(paths) - {DOCUMENT})]
+    pool, findings = _collect_declarations(cwd, window_base, head_sha)
+    findings.extend(_relaxations(
+        read_document(cwd, window_base, DOCUMENT),
+        read_document(cwd, head_sha, DOCUMENT),
+        pool, _sanctioned(cwd, pure)))
+    return findings
+
+
+def run(cwd: Path, base: str | None, head: str | None, before: str | None,
+        event: str | None) -> tuple[int, list[str]]:
+    """(exit code, report lines) for one gate invocation."""
+    if event not in _WALK_EVENTS:
+        return 0, [f"budget-raise: the {event or 'unlabelled'} run has no "
+                   "window to judge — skipping"]
+    if not base or not head:
+        raise ValueError("a base and a head revision are both required")
+    require_full_history(cwd)
+    base_sha = resolve_commit(cwd, base)
+    head_sha = resolve_commit(cwd, head)
+    if event == "push":
+        if not before:
+            raise ValueError("a push run needs the commit it came from "
+                             "(DOCS_HUB_BEFORE_SHA)")
+        if before.strip() == _ZERO:
+            return 0, ["budget-raise: the push created its branch, so no "
+                       "window precedes it — skipping"]
+        before_sha = resolve_commit(cwd, before)
+        if not _is_ancestor(cwd, before_sha, head_sha):
+            raise ValueError(
+                f"{before} is not an ancestor of {head}; the push window is "
+                "not the push's own commits")
+        window_base = before_sha
+        label = ("base", before_sha)
+    else:
+        window_base = merge_base(cwd, base_sha, head_sha)
+        label = ("merge base", window_base)
+    findings = _judge(cwd, window_base, head_sha)
+    if findings:
+        return 1, [*findings,
+                   f"budget-raise: {len(findings)} relaxation(s) against "
+                   f"{label[0]} {label[1]}; the budget may only tighten"]
+    return 0, [f"budget-raise: {DOCUMENT} not relaxed against {label[0]} "
+               f"{label[1]} — ok"]
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base", default=os.environ.get("DOCS_HUB_BASE_SHA"),
+                        help="the pull request's base revision")
+    parser.add_argument("--head", default=os.environ.get("DOCS_HUB_HEAD_SHA"),
+                        help="the head revision")
+    parser.add_argument(
+        "--before", default=os.environ.get("DOCS_HUB_BEFORE_SHA"))
+    parser.add_argument(
+        "--event", default=os.environ.get("DOCS_HUB_EVENT_NAME"))
+    args = parser.parse_args(argv)
+    try:
+        code, lines = run(Path.cwd(), args.base, args.head, args.before,
+                          args.event)
+    except ValueError as error:
+        print(f"budget-raise: {error}", file=sys.stderr)
+        return 2
+    for line in lines:
+        print(line)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())
