@@ -103,9 +103,9 @@ def _load_json(path: Path, judge: Callable[[object], None]) -> dict:
     return document
 
 
-def toolchain() -> dict[str, str | None]:
+def toolchain(binary: str = "valgrind") -> dict[str, str | None]:
     """What counts depend on but no code change controls."""
-    version = subprocess.run(["valgrind", "--version"], check=True,
+    version = subprocess.run([binary, "--version"], check=True,
                              capture_output=True, text=True).stdout.strip()
     image = " ".join(part for part in (os.environ.get("ImageOS"),
                                        os.environ.get("ImageVersion")) if part)

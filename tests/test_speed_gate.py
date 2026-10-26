@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -234,6 +235,7 @@ def test_check_renders_the_wall_time_table(speed: ModuleType, tmp_path: Path,
     assert "| service.publish | 0.500 |" in out
     summary_text = summary.read_text(encoding="utf-8")
     assert "### Wall time (non-gating)" in summary_text
+    assert "| service.publish | 0.500 |" in summary_text
 
 
 def test_tighten_lowers_only_the_workloads_that_fell(policy: ModuleType) -> None:
@@ -332,10 +334,11 @@ def test_measure_writes_counts_toolchain_wall_and_base_sha(
     counts = dict.fromkeys(speed.WORKLOADS, 111)
     monkeypatch.setattr(speed, "reset", lambda tree, database: None)
     monkeypatch.setattr(speed, "counted",
-                        lambda database, name, scratch: 111)
+                        lambda database, name, scratch, binary="valgrind": 111)
     monkeypatch.setattr(speed, "wall_times",
                         lambda database: dict.fromkeys(speed.WORKLOADS, 0.5))
-    monkeypatch.setattr(speed.speed_budget, "toolchain", lambda: dict(TOOLCHAIN))
+    monkeypatch.setattr(speed.speed_budget, "toolchain",
+                        lambda binary="valgrind": dict(TOOLCHAIN))
     out = tmp_path / "measurements.json"
     assert speed.main(["measure", "--database", "docs_speed_test",
                        "--out", str(out), "--base-sha", "abc123"]) == 0
@@ -350,13 +353,42 @@ def test_workload_prints_the_counts_as_json(speed: ModuleType,
                                             monkeypatch: pytest.MonkeyPatch,
                                             capsys: pytest.CaptureFixture[str]) -> None:
     counts = dict.fromkeys(speed.WORKLOADS, 111)
-    monkeypatch.setattr(speed, "workload", lambda database, names=None: counts)
+    monkeypatch.setattr(speed, "workload",
+                        lambda database, names=None, binary="valgrind": counts)
     assert speed.main(["workload", "--database", "docs_speed_test"]) == 0
     assert json.loads(capsys.readouterr().out) == counts
 
 
 def test_workload_refuses_a_server_that_exits_at_startup(tmp_path: Path) -> None:
-    done = subprocess.run([sys.executable, str(_SCRIPT), "workload", "--database", "x"],
-                          cwd=tmp_path, capture_output=True, text=True, check=False)
+    stub, marker = tmp_path / "valgrind-stub", tmp_path / "stub-ran"
+    # POSIX: skip leading --opt[=value] tokens, exec the first non-option,
+    # so the subprocess IS the server (uvicorn from a cwd with no backend).
+    # The marker proves the stub ran, so the flag was threaded: on a box
+    # with a real valgrind the test would pass either way.
+    stub.write_text('#!/bin/sh\n'
+                    ': > "$STUB_MARKER"\n'
+                    'while [ "$#" -gt 0 ]; do\n'
+                    '    case "$1" in --*) shift ;; *) exec "$@" ;; esac\n'
+                    'done\n', encoding="utf-8")
+    stub.chmod(0o755)
+    done = subprocess.run([sys.executable, str(_SCRIPT), "workload", "--database", "x",
+                           "--valgrind", str(stub)],
+                          cwd=tmp_path, capture_output=True, text=True, check=False,
+                          env={**os.environ, "STUB_MARKER": str(marker)})
     assert done.returncode != 0
     assert "the server exited" in done.stderr
+    assert marker.is_file()
+
+
+def test_a_counted_run_refuses_a_missing_valgrind_binary(
+        speed: ModuleType, tmp_path: Path,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    assert speed.main(["workload", "--database", "x",
+                       "--valgrind", "/nonexistent/valgrind"]) == 1
+    error = capsys.readouterr().err
+    assert "no valgrind binary at /nonexistent/valgrind" in error
+    assert "Traceback" not in error
+    assert speed.main(["measure", "--database", "x", "--out",
+                       str(tmp_path / "m.json"),
+                       "--valgrind", "/nonexistent/valgrind"]) == 1
+    assert "no valgrind binary at" in capsys.readouterr().err
