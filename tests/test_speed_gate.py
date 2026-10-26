@@ -294,8 +294,7 @@ def test_measure_writes_counts_toolchain_wall_and_base_sha(
 
 def test_workload_prints_the_counts_as_json(speed: ModuleType,
                                             monkeypatch: pytest.MonkeyPatch,
-                                            capsys: pytest.CaptureFixture[str],
-                                            tmp_path: Path) -> None:
+                                            capsys: pytest.CaptureFixture[str]) -> None:
     counts = dict.fromkeys(speed.WORKLOADS, 111)
     monkeypatch.setattr(speed, "workload", lambda database, names=None: counts)
     assert speed.main(["workload", "--database", "docs_speed_test"]) == 0
