@@ -1,18 +1,18 @@
 {
-  "schema_version": 1,
   "counter": "cachegrind-ir",
+  "schema_version": 1,
   "tolerance_pct": 1.0,
   "toolchain": {
-    "python": null,
-    "valgrind": null,
-    "runner_image": null,
-    "lock_sha256": null
+    "lock_sha256": "8ab6677622e0a43e4819586d0b6bb0da1a7695362a85b2cb8c36a0d8fb158cee",
+    "python": "3.15.1 (main, Oct 21 2026, 14:53:25) [GCC 13.3.0]",
+    "runner_image": "ubuntu24 20261023.334.3",
+    "valgrind": "valgrind-3.22.0"
   },
   "workloads": {
-    "service.publish": 2341052923,
-    "service.list": 2431412364,
-    "service.versions": 2406516961,
-    "cli.transfer": 3769945636,
-    "cli.text": 4188568531
+    "cli.text": 17657328241,
+    "cli.transfer": 19813566249,
+    "service.list": 8295609270,
+    "service.publish": 8206834038,
+    "service.versions": 8272812893
   }
 }
