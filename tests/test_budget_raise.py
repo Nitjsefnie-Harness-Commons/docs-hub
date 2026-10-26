@@ -87,7 +87,7 @@ def _toolchain_message(before: dict, after: dict) -> str:
 
 
 def _run(repo: Path, *flags: str, env: dict | None = None) -> subprocess.CompletedProcess:
-    merged = dict(os.environ)
+    merged = {**os.environ, "DOCS_HUB_REF_NAME": "main", "DOCS_HUB_DEFAULT_BRANCH": "main"}
     if env:
         merged.update(env)
     return subprocess.run([sys.executable, str(_SCRIPT), *flags], cwd=repo,

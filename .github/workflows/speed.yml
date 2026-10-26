@@ -89,6 +89,8 @@ jobs:
           DOCS_HUB_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           DOCS_HUB_BEFORE_SHA: ${{ github.event.before }}
           DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
+          DOCS_HUB_REF_NAME: ${{ github.ref_name }}
+          DOCS_HUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
 
       - name: Measure this commit's workloads
         id: measure

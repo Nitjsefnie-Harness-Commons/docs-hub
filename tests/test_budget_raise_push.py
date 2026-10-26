@@ -50,3 +50,14 @@ def test_side_branch_context_never_skips_a_pull_request(tmp_path: Path) -> None:
     result = f._run(repo, "--event", "pull_request", "--base", base, "--head", "HEAD",
                     env={"DOCS_HUB_REF_NAME": "feature", "DOCS_HUB_DEFAULT_BRANCH": "main"})
     assert result.returncode == 1, result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("ref_name, default_branch", [("feature", ""), ("", "main")])
+def test_incomplete_branch_context_keeps_push_validation(
+        tmp_path: Path, ref_name: str, default_branch: str) -> None:
+    repo, _base = f._seeded(tmp_path)
+    result = f._run(repo, "--event", "push", "--before", "f" * 40, "--head", "HEAD",
+                    env={"DOCS_HUB_REF_NAME": ref_name,
+                         "DOCS_HUB_DEFAULT_BRANCH": default_branch})
+    assert result.returncode == 2, result.stdout + result.stderr
+    assert "unknown revision" in result.stderr
