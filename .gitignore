@@ -24,6 +24,7 @@
 !requirements-audit.txt
 !requirements-zizmor.txt
 !requirements-build.txt
+!requirements-speed.txt
 
 # --- CI tooling config ------------------------------------------------
 !setup.cfg
