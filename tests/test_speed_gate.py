@@ -218,6 +218,24 @@ def test_check_fails_a_count_past_the_budget_with_exit_one(
                        "--budget", str(budget)]) == 1
 
 
+def test_check_renders_the_wall_time_table(speed: ModuleType, tmp_path: Path,
+                                           capsys: pytest.CaptureFixture[str]) -> None:
+    budget, measurement = tmp_path / "budget.json", tmp_path / "m.json"
+    summary = tmp_path / "summary.md"
+    budget.write_text(json.dumps(_budget()), encoding="utf-8")
+    fixture = _measurement({"service.publish": 1000, "service.list": 2000})
+    fixture["wall_seconds"] = {"service.publish": 0.5, "service.list": 0.25}
+    measurement.write_text(json.dumps(fixture), encoding="utf-8")
+    assert speed.main(["check", "--measurements", str(measurement),
+                       "--budget", str(budget), "--summary", str(summary)]) == 0
+    out = capsys.readouterr().out
+    assert "### Wall time (non-gating)" in out
+    assert "off-CPU" in out
+    assert "| service.publish | 0.500 |" in out
+    summary_text = summary.read_text(encoding="utf-8")
+    assert "### Wall time (non-gating)" in summary_text
+
+
 def test_tighten_lowers_only_the_workloads_that_fell(policy: ModuleType) -> None:
     result = policy.tighten(_budget(), _measurement({"service.publish": 900,
                                                      "service.list": 2500}))
