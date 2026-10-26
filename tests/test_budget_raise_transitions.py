@@ -1,4 +1,5 @@
 """Real-history regressions for workload and toolchain composition."""
+# pylint: disable=protected-access  # Exercise the gate and shared git fixtures.
 import importlib.util
 from pathlib import Path
 import json
