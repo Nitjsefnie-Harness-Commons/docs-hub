@@ -110,10 +110,12 @@ jobs:
           if [ "$DOCS_HUB_STAGED" = "true" ]; then
             base="$(cat "$RUNNER_TEMP/raise-data/base.txt")"
           fi
-          if [ "$DOCS_HUB_STAGED_SPEED" = "true" ] && [ -z "$base" ]; then
-            base="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["base_sha"] or "")' "$RUNNER_TEMP/speed-data/measurement.json")"
+          speed_base="$base"
+          if [ "$DOCS_HUB_STAGED_SPEED" = "true" ]; then
+            speed_base="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["base_sha"] or "")' "$RUNNER_TEMP/speed-data/measurement.json")"
+            base="${base:-$speed_base}"
           fi
-          if [ "$fetched" != "$base" ]; then
+          if [ "$fetched" != "$base" ] || [ "$fetched" != "$speed_base" ]; then
             echo "::notice::Master moved while this run measured; the next push raises instead"
             {
               echo "### Dropped: master moved while this run measured; the next push raises instead"

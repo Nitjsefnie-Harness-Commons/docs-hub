@@ -20,7 +20,7 @@ LOCK = Path(__file__).resolve().parents[2] / "requirements-speed.txt"
 COUNTER = "cachegrind-ir"
 SCHEMA_VERSION = 1
 # The tolerance a first seed (no committed budget) takes.
-DEFAULT_TOLERANCE_PCT = 30
+DEFAULT_TOLERANCE_PCT = 1.0
 TOOLCHAIN_FIELDS = ("python", "valgrind", "runner_image", "lock_sha256")
 
 

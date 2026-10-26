@@ -406,14 +406,17 @@ def test_the_push_step_exits_cleanly_when_nothing_is_staged(tmp_path: Path) -> N
     assert _git(origin, "log", "--format=%s", "refs/heads/master") == "seed"
 
 
-def test_a_stale_measurement_drops_with_a_notice(tmp_path: Path) -> None:
-    origin, _seed = _seed_remote(tmp_path)
+@pytest.mark.parametrize("coverage", [False, True], ids=["speed-only", "fresh-coverage"])
+def test_a_stale_measurement_drops_with_a_notice(tmp_path: Path, coverage: bool) -> None:
+    origin, seed = _seed_remote(tmp_path)
+    if coverage:
+        _raise_data(tmp_path, seed, "97.4")
     _measurement(tmp_path, "b" * 40)
-    result = _run_push_step(tmp_path, "false", "true")
+    result = _run_push_step(tmp_path, "true" if coverage else "false", "true")
     assert result.returncode == 0, result.stdout + result.stderr
+    assert _git(origin, "log", "--format=%s", "refs/heads/master") == "seed"
     assert "master moved while this run measured" in (
         tmp_path / "summary").read_text(encoding="utf-8")
-    assert _git(origin, "log", "--format=%s", "refs/heads/master") == "seed"
 
 
 @pytest.mark.parametrize("staged, speed, measured, measurement", [
