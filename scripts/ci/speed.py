@@ -104,10 +104,10 @@ def valgrind_argv(out_prefix: str) -> list[str]:
             f"--cachegrind-out-file={out_prefix}.%p"]
 
 
-def cli(argv: tuple[str, ...], counted: bool, prefix: str,
+def cli(argv: tuple[str, ...], under_valgrind: bool, prefix: str,
         env: dict[str, str]) -> None:
     """Run one CLI call as its own subprocess, under valgrind when counted."""
-    command = ([*valgrind_argv(prefix), sys.executable] if counted
+    command = ([*valgrind_argv(prefix), sys.executable] if under_valgrind
                else [sys.executable])
     child = subprocess.Popen(  # pylint: disable=consider-using-with
         [*command, "-m", "docs_hub_cli.cli", *argv], cwd=ROOT, env=env,
@@ -116,11 +116,11 @@ def cli(argv: tuple[str, ...], counted: bool, prefix: str,
     if child.returncode != 0:
         raise RuntimeError(f"docs-hub {' '.join(argv)} exited "
                            f"{child.returncode}: {error[-200:].decode(errors='replace')}")
-    if counted and not Path(f"{prefix}.{child.pid}").is_file():
+    if under_valgrind and not Path(f"{prefix}.{child.pid}").is_file():
         raise RuntimeError(f"valgrind wrote no count file for docs-hub {' '.join(argv)}")
 
 
-def execute(name: str, port: int, scratch: Path, counted: bool,
+def execute(name: str, port: int, scratch: Path, under_valgrind: bool,
             env: dict[str, str]) -> None:
     """One workload's request sequence: the state it reads, then its calls."""
     services = [Service(port) for _ in range(CLIENTS)]
@@ -128,7 +128,9 @@ def execute(name: str, port: int, scratch: Path, counted: bool,
     slugs = [f"speed/doc-{n}" for n in range(SLUGS)]
     (scratch / "large.html").write_bytes(large)
     prefix = str(scratch / f"{name}.cli")
-    call = lambda *argv: cli(argv, counted, prefix, env)
+
+    def call(*argv: str) -> None:
+        cli(argv, under_valgrind, prefix, env)
 
     def clients(work: Callable[[Service, list[str]], object]) -> None:
         # Each client owns one connection and every version of its own slugs.
@@ -210,9 +212,8 @@ def workload_env(port: int, database: str, store: Path) -> dict[str, str]:
 
 
 def counted(database: str, name: str, scratch: Path) -> int:
-    """One workload's count; measure() lays the schema first (the app
-    migrates at startup), and the fresh database per workload makes a count
-    reproducible standalone and in a full measure."""
+    """One workload's count on its own fresh server and database (measure()
+    resets first), so the count reproduces standalone."""
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -225,7 +226,7 @@ def counted(database: str, name: str, scratch: Path) -> int:
          "--log-level", "warning"], env=workload_env(port, database, store))
     try:
         serve(port, server)
-        execute(name, port, scratch, counted=True,
+        execute(name, port, scratch, under_valgrind=True,
                 env=workload_env(port, database, store))
     finally:
         server.terminate()
@@ -262,7 +263,7 @@ def wall_times(database: str) -> dict[str, float]:
             serve(port, server)
             for name in WORKLOADS:
                 started = time.perf_counter()
-                execute(name, port, Path(scratch), counted=False,
+                execute(name, port, Path(scratch), under_valgrind=False,
                         env=workload_env(port, database, store))
                 wall[name] = time.perf_counter() - started
         finally:
@@ -290,9 +291,9 @@ def measure(database: str, out: Path, base_sha: str | None) -> int:
     return 0
 
 
-def write_document(path: Path, document: dict) -> None:
+def write_document(path: Path, budget: dict) -> None:
     """Replace the budget file's bytes, preserving its mode, in one rename."""
-    payload = json.dumps(document, indent=2, sort_keys=True) + "\n"
+    payload = json.dumps(budget, indent=2, sort_keys=True) + "\n"
     temp = path.with_name(f".{path.name}.tmp")
     temp.write_text(payload, encoding="utf-8")
     if path.exists():
@@ -310,9 +311,9 @@ def render_toolchain(result: dict) -> list[str]:
     return lines
 
 
-def render_check(document: dict, result: dict) -> str:
+def render_check(budget: dict, result: dict) -> str:
     """The gate table, then the toolchain block."""
-    tolerance = f'{document["tolerance_pct"]:g}%'
+    tolerance = f'{budget["tolerance_pct"]:g}%'
     chain = "mismatch" if result["toolchain_diff"] else "match"
     lines = [f"### Speed budget ({speed_budget.COUNTER})", "",
              "| workload | count | budget | delta | tolerance | toolchain | verdict |",
@@ -340,10 +341,10 @@ def render_wall(wall: dict[str, float]) -> str:
 
 
 def check_command(args: argparse.Namespace) -> int:
-    document = speed_budget.load(args.budget)
+    budget = speed_budget.load(args.budget)
     measurement = speed_budget.load_measurement(args.measurements)
-    result = speed_budget.check(document, measurement)
-    report = render_check(document, result)
+    result = speed_budget.check(budget, measurement)
+    report = render_check(budget, result)
     if measurement.get("wall_seconds"):
         report += "\n\n" + render_wall(measurement["wall_seconds"])
     print(report)
@@ -354,24 +355,24 @@ def check_command(args: argparse.Namespace) -> int:
 
 
 def tighten_command(args: argparse.Namespace) -> int:
-    document = speed_budget.load(args.budget)
+    budget = speed_budget.load(args.budget)
     measurement = speed_budget.load_measurement(args.measurements)
-    workloads = speed_budget.tighten(document, measurement)
+    workloads = speed_budget.tighten(budget, measurement)
     if workloads is None:
         print("nothing was tightened: the toolchain differs or a workload "
               "failed its budget")
         return 0
-    write_document(args.budget, {**document, "workloads": workloads})
+    write_document(args.budget, {**budget, "workloads": workloads})
     lowered = ", ".join(name for name in workloads
-                        if workloads[name] < document["workloads"][name])
+                        if workloads[name] < budget["workloads"][name])
     print(f"tightened {lowered}")
     return 0
 
 
 def rebaseline_command(args: argparse.Namespace) -> int:
-    document = speed_budget.load(args.budget) if args.budget.exists() else None
+    budget = speed_budget.load(args.budget) if args.budget.exists() else None
     measurement = speed_budget.load_measurement(args.measurements)
-    write_document(args.budget, speed_budget.rebaseline(document, measurement,
+    write_document(args.budget, speed_budget.rebaseline(budget, measurement,
                                                         WORKLOADS))
     print(f"rebaselined {args.budget} from {args.measurements}")
     return 0

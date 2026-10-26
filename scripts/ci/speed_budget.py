@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The speed gate's budget: schema, toolchain identity, check/tighten/rebaseline.
 
-`tighten` only follows a count down; `rebaseline` is the manual path and
-may raise one; the gate semantics are on `check`.
+`tighten` only follows a count down; `rebaseline` may raise one; the
+gate semantics are on `check`.
 """
 from __future__ import annotations
 
@@ -19,17 +19,17 @@ ARTIFACT = Path(__file__).resolve().parents[2] / ".github" / "speed-budget.json"
 LOCK = Path(__file__).resolve().parents[2] / "requirements-speed.txt"
 COUNTER = "cachegrind-ir"
 SCHEMA_VERSION = 1
-# A first seed has no committed tolerance to keep, so rebaseline takes this.
+# The tolerance a first seed (no committed budget) takes.
 DEFAULT_TOLERANCE_PCT = 30
 TOOLCHAIN_FIELDS = ("python", "valgrind", "runner_image", "lock_sha256")
 
 
 class BudgetError(ValueError):
-    """The budget or a measurement is not in the shape the gate reads."""
+    """A budget or measurement the gate cannot read."""
 
 
 def validate(document: object) -> None:
-    """Refuse every budget shape the gate cannot judge."""
+    """Refuse every shape the gate cannot judge."""
     if not isinstance(document, dict):
         raise BudgetError("the budget is not a JSON object")
     fields = {"schema_version", "counter", "tolerance_pct", "toolchain",
@@ -75,7 +75,7 @@ def load(path: Path) -> dict:
 
 
 def load_measurement(path: Path) -> dict:
-    """Read one measurement file; extra keys ride along for the report."""
+    """Read one measurement file."""
     return _load_json(path, _validate_measurement)
 
 
@@ -91,13 +91,13 @@ def _validate_measurement(measurement: object) -> None:
         raise BudgetError("toolchain must be an object")
 
 
-def _load_json(path: Path, check: Callable[[object], None]) -> dict:
+def _load_json(path: Path, judge: Callable[[object], None]) -> dict:
     try:
         with open(path, encoding="utf-8") as handle:
             document = json.load(handle)
     except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
         raise BudgetError(f"{path}: {error}") from error
-    check(document)
+    judge(document)
     return document
 
 
@@ -155,8 +155,7 @@ def check(document: dict, measurement: dict) -> dict:
 
 
 def tighten(document: dict, measurement: dict) -> dict[str, int] | None:
-    """Each workload the measurement found cheaper, lowered; None writes
-    nothing."""
+    """Each workload the measurement found cheaper, lowered."""
     if toolchain_diff(document.get("toolchain"),
                       measurement.get("toolchain")):
         return None
