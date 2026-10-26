@@ -59,6 +59,7 @@ def validate(document: object) -> None:
     missing = sorted(set(TOOLCHAIN_FIELDS) - set(chain))
     if missing:
         raise BudgetError(f"missing toolchain field(s): {', '.join(missing)}")
+    _validate_chain_values(chain)
     workloads = document["workloads"]
     if not isinstance(workloads, dict) or not workloads:
         raise BudgetError("workloads must be a non-empty object")
@@ -85,12 +86,19 @@ def _validate_measurement(measurement: object) -> None:
     counts = measurement.get("counts")
     if not isinstance(counts, dict) or not all(
             isinstance(name, str) and isinstance(count, int)
-            and not isinstance(count, bool) and count >= 0
+            and not isinstance(count, bool) and count > 0
             for name, count in counts.items()):
         raise BudgetError(
-            "counts must map workload names to non-negative integers")
+            "counts must map workload names to positive integers")
     if not isinstance(measurement.get("toolchain"), dict):
         raise BudgetError("toolchain must be an object")
+    _validate_chain_values(measurement["toolchain"])
+
+
+def _validate_chain_values(chain: dict) -> None:
+    if any(value is not None and not isinstance(value, str)
+           for value in chain.values()):
+        raise BudgetError("toolchain values must be strings or null")
 
 
 def _load_json(path: Path, judge: Callable[[object], None]) -> dict:
