@@ -310,8 +310,10 @@ def _sanctioned(cwd: Path, commits: dict[str, list[str]]) -> tuple[dict, list]:
                         f"commit {sha[:12]} changed without a budget-only commit"))
                     continue
             transitions = accepted.setdefault(key, [])
-            transitions.extend([(first, new) for first, last in transitions
-                                if last == old] + [(old, new)])
+            for pair in [(first, new) for first, last in transitions
+                         if last == old] + [(old, new)]:
+                if pair not in transitions:
+                    transitions.append(pair)
     return accepted, findings
 
 
