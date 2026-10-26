@@ -464,3 +464,24 @@ def test_base_added_fold_and_named_input_are_stale(
     assert fold in result.stdout and gate_path in result.stdout
     assert input_sha in result.stdout and "inputs/extra.txt" in result.stdout
     assert "inputs/extra.txt" in gate.gate_paths(head)
+
+
+def test_a_speed_policy_only_base_commit_stales_the_speed_leg(
+        tmp_path: Path, gate: ModuleType) -> None:
+    origin = tmp_path / "origin"
+    _git(tmp_path, "clone", "-q", "--no-hardlinks", str(_REPO), str(origin))
+    _git(origin, "config", "user.name", "CI test")
+    _git(origin, "config", "user.email", "ci@example.invalid")
+    _git(origin, "checkout", "-B", "master")
+    workflow = ".github/workflows/speed.yml"
+    head = _commit_file(origin, workflow, (_REPO / workflow).read_text(encoding="utf-8") + "\n")
+    policy = "scripts/ci/speed_budget.py"
+    sha = _commit_file(origin, policy, (origin / policy).read_text(encoding="utf-8") + "\n")
+    paths = gate.gate_paths(origin, head, "master")
+    assert gate.stale_commits(origin, head, "master", paths) == [
+        (sha, f"Update {policy}", [policy])]
+    steps = gate.folded_steps(gate.read_workflows(origin, head), {"speed"})
+    speed_paths = {path for step in steps
+                   for candidate in gate.candidates(step["run"] or "")
+                   for path in gate.resolve(candidate, gate.tracked_files(origin, head))}
+    assert policy in speed_paths
