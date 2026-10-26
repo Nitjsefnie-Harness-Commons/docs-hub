@@ -159,7 +159,7 @@ def _is_number(value: object) -> bool:
 
 
 def _show(value: object) -> str:
-    if value is None:
+    if value is None or value is _ABSENT:
         return "absent"
     if isinstance(value, bool):
         return json.dumps(value)
@@ -253,11 +253,11 @@ def _step_values(cwd: Path, sha: str) -> tuple[dict, dict]:
     before = [leaves(read_document(cwd, parent, DOCUMENT) or {})
               for parent in parents.stdout.splitlines()]
     after = leaves(read_document(cwd, sha, DOCUMENT) or {})
-    first = before[0] if before else {}
-    changed = {key for key in set(first) | set(after)
+    before = before or [{}]
+    changed = {key for key in set(after).union(*before)
                if all(parent.get(key, _ABSENT) != after.get(key, _ABSENT)
                       for parent in before)}
-    return ({key: first[key] for key in changed if key in first},
+    return ({key: [parent.get(key, _ABSENT) for parent in before] for key in changed},
             {key: after[key] for key in changed if key in after})
 
 
@@ -313,29 +313,30 @@ def _sanctioned(cwd: Path, commits: dict[str, list[str]],
         pure = not set(commits[sha]) - {DOCUMENT}
         pool = (declarations or {}).get(sha, [])
         was, now = _step_values(cwd, sha) if DOCUMENT in commits[sha] else ({}, {})
-        for key in set(was) | set(now):
-            old, new = was.get(key, _ABSENT), now.get(key, _ABSENT)
-            if old == new:
-                continue
+        for key, values in was.items():
+            old, new = values[0], now.get(key, _ABSENT)
             numeric = _under(key, "workloads") or key == "tolerance_pct"
-            allowed = pure or (numeric and _is_number(old) and _is_number(new) and new < old)
+            raised = [value for value in values if numeric and _is_number(value)
+                      and _is_number(new) and new > value]
+            allowed = pure or (numeric and _is_number(new) and all(
+                _is_number(value) and new < value for value in values))
             if not allowed:
                 if numeric:
                     findings.append(_finding(
-                        DOCUMENT, key, was.get(key), now.get(key),
+                        DOCUMENT, key, old, new,
                         f"commit {sha[:12]} changed without a budget-only commit"))
-                    if _is_number(old) and _is_number(new) and new > old:
+                    if raised:
                         findings.append(_finding(
                             DOCUMENT, key, old, new, "raised; it may only fall"))
                 continue
-            if numeric and _is_number(old) and _is_number(new) and new > old:
-                if not _consume_declaration(pool, key, old, new):
-                    findings.append(_finding(DOCUMENT, key, old, new, "raised; it may only fall"))
+            if raised and not any(_consume_declaration(pool, key, value, new) for value in raised):
+                findings.append(_finding(DOCUMENT, key, old, new, "raised; it may only fall"))
             transitions = accepted.setdefault(key, [])
-            for pair in [(first, new) for first, last in transitions
-                         if last == old] + [(old, new)]:
-                if pair not in transitions:
-                    transitions.append(pair)
+            for origin in values:
+                for pair in [(first, new) for first, last in transitions
+                             if last == origin] + [(origin, new)]:
+                    if pair not in transitions:
+                        transitions.append(pair)
         for _document, key, old, new in pool:
             findings.append(_declaration_mismatch(DOCUMENT, key, old, new))
     return accepted, findings
