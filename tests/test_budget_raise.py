@@ -165,14 +165,14 @@ def test_a_declared_tolerance_raise_passes(tmp_path: Path) -> None:
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def test_a_toolchain_change_on_a_budget_only_commit_passes(
+def test_an_undeclared_toolchain_change_on_a_budget_only_commit_fails(
         tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, "relock",
                    **{BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 200},
                                                  chain=CHAIN_B))})
     done = _pull(repo, base, head)
-    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.returncode == 1, done.stdout + done.stderr
 
 
 def test_a_toolchain_change_on_a_mixed_commit_fails(tmp_path: Path) -> None:
