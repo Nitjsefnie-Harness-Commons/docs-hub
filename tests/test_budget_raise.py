@@ -62,9 +62,8 @@ def _repo(tmp_path: Path) -> Path:
 def _seeded(tmp_path: Path, workloads: dict | None = None) -> tuple[Path, str]:
     """A repo whose base commit carries a budget over w1=100, w2=200."""
     repo = _repo(tmp_path)
-    base = _commit(repo, "seed", **{CODE: "print(1)\n"},
-                   **{BUDGET: json.dumps(_budget(workloads or {"w.pub": 100,
-                                                              "w.list": 200}))})
+    budget = json.dumps(_budget(workloads or {"w.pub": 100, "w.list": 200}))
+    base = _commit(repo, "seed", **{CODE: "print(1)\n"}, **{BUDGET: budget})
     return repo, base
 
 
@@ -81,7 +80,8 @@ def _run(repo: Path, *flags: str, env: dict | None = None) -> subprocess.Complet
     if env:
         merged.update(env)
     return subprocess.run([sys.executable, str(_SCRIPT), *flags], cwd=repo,
-                          capture_output=True, text=True, env=merged)
+                          capture_output=True, text=True, env=merged,
+                          check=False)
 
 
 def _pull(repo: Path, base: str, head: str) -> subprocess.CompletedProcess:
@@ -242,14 +242,14 @@ def test_a_push_window_judges_before_head(tmp_path: Path) -> None:
 
 
 def test_an_unknown_revision_is_a_usage_error(tmp_path: Path) -> None:
-    repo, base = _seeded(tmp_path)
+    repo, _ = _seeded(tmp_path)
     done = _pull(repo, "nosuchrev", "HEAD")
     assert done.returncode == 2
     assert "unknown revision" in done.stderr
 
 
 def test_a_shallow_clone_refuses(tmp_path: Path) -> None:
-    repo, base = _seeded(tmp_path)
+    repo, _ = _seeded(tmp_path)
     shallow = tmp_path / "shallow"
     _git(tmp_path, "clone", "--depth", "1", f"file://{repo}", str(shallow))
     tip = _git(repo, "rev-parse", "HEAD")
@@ -278,7 +278,7 @@ def test_a_schema_version_change_fails(tmp_path: Path) -> None:
 
 def test_a_declaration_naming_another_document_fails(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
-    message = ("tighten\n\nBudget-Raise: .github/other.json k 1 -> 2\n")
+    message = "tighten\n\nBudget-Raise: .github/other.json k 1 -> 2\n"
     head = _commit(repo, message,
                    **{BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 150}))})
     done = _pull(repo, base, head)

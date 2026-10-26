@@ -1,26 +1,20 @@
 #!/usr/bin/env python3
 """Refuse an undeclared raise of the speed budget (.github/speed-budget.json).
 
-A workload count or the tolerance may only fall, and schema_version may not
-change at all. A deliberate numeric raise carries exactly one line
+A workload count or the tolerance may only fall; schema_version may not
+change. A raise carries exactly one line
 
     Budget-Raise: .github/speed-budget.json <key> <from> -> <to>
 
-(key as _key_path renders it) on a window commit touching nothing but the
-budget document — the route is its own act. Toolchain changes and added or
-removed workloads need no line: a budget-only commit's purity is their
-declaration. The window is merge-base(base, head)..head on a pull_request
-and before..head on a push, with before required to be an ancestor; any
-other event, and a branch-creating all-zero before, skip with a message.
+on a commit touching nothing but the budget — the route is its own act.
+Toolchain changes and workload adds or removes take purity instead of a
+line. The window is merge-base(base, head)..head on a pull_request,
+before..head (ancestor required) on a push; other events and an all-zero
+before skip with a message. A squash merge can drop the raise commit's
+lines from the window history, making the raise refuse; a rebase merge is
+the deterministic route.
 
-Merge shape: a rebase merge keeps the raise commit's lines in the window
-history, while a squash merge may replace them with the pull request's
-title and make the raise refuse on main — a rebase merge is the
-deterministic route.
-
-Exit 0 when nothing relaxed or there is no window, 1 with one line per
-finding, 2 on a usage error (unknown revision, shallow clone, uncomputable
-merge base, non-ancestor push window).
+Exit 0 clean or skipped, 1 with one line per finding, 2 on a usage error.
 """
 from __future__ import annotations
 
@@ -50,10 +44,8 @@ def _git(cwd: Path, args: list[str]) -> subprocess.CompletedProcess:
 
 
 def require_full_history(cwd: Path) -> None:
-    """A shallow history disqualifies the whole check: git merge-base can
-    fail on one, or worse pick a wrong base without erroring, and either
-    answer is one a relaxation could hide behind.
-    """
+    """A shallow history disqualifies the whole check: merge-base could
+    pick a wrong base without erroring, hiding a relaxation."""
     result = _git(cwd, ["rev-parse", "--is-shallow-repository"])
     if result.returncode != 0:
         raise ValueError(
@@ -87,12 +79,8 @@ def merge_base(cwd: Path, base: str, head: str) -> str:
 
 
 def _is_ancestor(cwd: Path, maybe: str, descendant: str) -> bool:
-    """Whether maybe is an ancestor of descendant.
-
-    The push window needs a well-defined membership: only an ancestor
-    makes before..head exactly this push's commits. --is-ancestor answers
-    through its exit code (0 ancestor, 1 not); any other code is a failure.
-    """
+    """Whether maybe is an ancestor of descendant: only an ancestor makes
+    before..head exactly this push's commits."""
     result = _git(cwd, ["merge-base", "--is-ancestor", maybe, descendant])
     if result.returncode not in (0, 1):
         raise ValueError(
@@ -102,11 +90,8 @@ def _is_ancestor(cwd: Path, maybe: str, descendant: str) -> bool:
 
 
 def entry_kind(cwd: Path, commit: str, path: str) -> str | None:
-    """The ``<mode> <type>`` of the tree entry at path, or None when absent.
-
-    git ls-tree reads its argument as a pattern, so pathspec magic is off
-    and only a record whose name equals path counts.
-    """
+    """The tree entry's ``<mode> <type>`` at path, or None when absent
+    (pathspec magic off, so only an exact-name record counts)."""
     listing = _git(
         cwd, ["--literal-pathspecs", "ls-tree", "-z", commit, "--", path])
     if listing.returncode != 0:
@@ -153,9 +138,8 @@ def _key_path(parts: list[str]) -> str:
 
 def leaves(value: object, parts: list[str] | None = None,
            out: dict | None = None) -> dict:
-    """Leaf values keyed by their rendered path: a non-object or an empty
-    object anywhere is a leaf, so a scalar-replaced subtree shows up as its
-    leaves removed and one key added, and an empty object is a leaf key."""
+    """Leaf values keyed by their rendered path; a non-object or an empty
+    object anywhere is a leaf."""
     parts, out = parts or [], out if out is not None else {}
     if not isinstance(value, dict) or not value:
         out[_key_path(parts)] = value
@@ -172,12 +156,8 @@ def _is_number(value: object) -> bool:
         return value.is_finite()
     if isinstance(value, int):
         return True
-    # A float here is a JSON NaN/Infinity literal: the reader's
-    # parse_constant hands those back as floats, past the parse_float hook
-    # that would have made them Decimals. They must fail closed — NaN and
-    # -Infinity never compare greater, so a poisoned budget would pass the
-    # fall-only walk silently, and +Infinity would masquerade as a genuine
-    # raise instead of naming the non-finite leaf.
+    # A float here is a JSON NaN/Infinity literal; it must fail closed:
+    # NaN never compares greater, so a poisoned budget would pass silently.
     return isinstance(value, float) and math.isfinite(value)
 
 
@@ -192,11 +172,7 @@ def _show(value: object) -> str:
 
 
 def _under(key: str, parent: str) -> bool:
-    """Whether the rendered key names a leaf under parent.
-
-    A child renders as parent.child when the segment is alphanumeric,
-    and parent["..."] when it is not, so both spellings count.
-    """
+    """Whether the rendered key names a leaf under parent."""
     return (key.startswith(f"{parent}.")
             or key.startswith(f"{parent}["))
 
@@ -213,8 +189,7 @@ def _declaration_parse_error(line: str) -> str:
 
 
 def _parse_declarations(lines: list[str]) -> tuple[list, list]:
-    """Parse raw lines to (document, key, was, to); a malformed line is a
-    finding, never a crash, and never a consumable."""
+    """Parse raw lines to (document, key, was, to); malformed is a finding."""
     declarations, errors = [], []
     for line in lines:
         match = _DECLARATION_LINE.match(line[len(_DECLARATION_PREFIX):])
@@ -227,10 +202,7 @@ def _parse_declarations(lines: list[str]) -> tuple[list, list]:
         except InvalidOperation:
             errors.append(_declaration_parse_error(line))
             continue
-        # A non-finite token — quiet NaN, sNaN, an Infinity — is a parse
-        # error: an sNaN here would raise InvalidOperation on the very
-        # comparison the consumption makes, and a NaN would never match
-        # anything. Neither is a value this format carries.
+        # A non-finite token is a parse error, never a consumable.
         if not (was.is_finite() and to.is_finite()):
             errors.append(_declaration_parse_error(line))
             continue
@@ -241,12 +213,7 @@ def _parse_declarations(lines: list[str]) -> tuple[list, list]:
 
 def _commits_with_declaration_lines(cwd: Path, base: str,
                                     head: str) -> list[tuple[str, list[str]]]:
-    """(sha, raw declaration lines) for each window commit carrying any.
-
-    The caller selects the window: a push's before..head, or a pull
-    request's merge-base..head. Whole messages are scanned for exact
-    'Budget-Raise: '-prefixed lines.
-    """
+    """(sha, raw declaration lines) for each window commit carrying any."""
     result = _git(cwd, ["log", "--format=%x00%H%n%B", f"{base}..{head}"])
     if result.returncode != 0:
         raise ValueError(
@@ -265,10 +232,8 @@ def _commits_with_declaration_lines(cwd: Path, base: str,
 
 
 def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
-    """The paths each window commit touches, as {sha: [paths]}.
-
-    A commit that changed nothing lists no paths, and is pure by that answer.
-    """
+    """The paths each window commit touches; a commit that changed nothing
+    lists none and is pure by that answer."""
     result = _git(cwd, ["log", "--format=%x00%H%n", "--name-only",
                         f"{base}..{head}"])
     if result.returncode != 0:
@@ -286,8 +251,8 @@ def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
 
 def _consume_declaration(declarations: list, key: str, was: object,
                          now: object) -> bool:
-    """Pop the one declaration naming this raise exactly; the pop is what
-    makes a duplicate line a leftover."""
+    """Pop the one declaration naming this raise exactly (a duplicate
+    becomes a leftover)."""
     for index, (_document, decl_key, decl_was, decl_to) in enumerate(
             declarations):
         if decl_key == key and decl_was == was and decl_to == now:
@@ -298,8 +263,7 @@ def _consume_declaration(declarations: list, key: str, was: object,
 
 def _declaration_mismatch(document: str, key: str, was: object,
                           to: object) -> str:
-    """The finding for a leftover: a declaration the diff does not carry
-    exactly — a mismatched value, a duplicate, or a key that did not rise."""
+    """The finding for a declaration the diff does not carry exactly."""
     return (f"{document}: {key}: declaration {was} -> {to} does not match "
             "a raise in this diff — a declaration must name the exact from "
             "and to the diff carries")
@@ -307,11 +271,9 @@ def _declaration_mismatch(document: str, key: str, was: object,
 
 def _collect_declarations(cwd: Path, base: str,
                           head: str) -> tuple[list, list]:
-    """(pool, findings): pure commits' lines parsed and pooled. Lines on a
-    commit touching anything outside the budget document are findings that
-    are never consumable — the route is its own act — and so are a
-    malformed line and one naming an undeclarable document.
-    """
+    """(pool, findings) with a pure commit's lines only; lines on a commit
+    touching anything else are findings that are never consumable, as are
+    malformed lines and lines naming an undeclarable document."""
     paths_by_commit = _commit_paths(cwd, base, head)
     pool, findings = [], []
     for sha, lines in _commits_with_declaration_lines(cwd, base, head):
@@ -338,9 +300,7 @@ def _collect_declarations(cwd: Path, base: str,
 def _sanctioned(cwd: Path, pure_commits: list[str]) -> tuple[set, set, set]:
     """What budget-only commits' own diffs sanction, by leaf path: a
     toolchain leaf any pure commit changed, and the workload keys a pure
-    commit added or removed. Reads C and C^ per pure commit; an
-    unresolvable parent is a usage error.
-    """
+    commit added or removed."""
     chain, added, removed = set(), set(), set()
     for sha in pure_commits:
         was = leaves(read_document(cwd, f"{sha}^", DOCUMENT) or {})
@@ -359,12 +319,12 @@ def _sanctioned(cwd: Path, pure_commits: list[str]) -> tuple[set, set, set]:
 
 def _relaxations(base: object, head: object, declarations: list,
                  sanctioned: tuple[set, set, set]) -> list[str]:
+    # pylint: disable=too-many-branches
+
     """Findings for a head document that relaxes the base's: numeric
-    leaves are maxima and a raise needs a declaration naming it exactly; a
-    toolchain change or a workload add/remove is accepted only when some
-    budget-only commit's own diff carried it; a budget absent at base is a
-    seed and passes.
-    """
+    leaves are maxima and a raise needs an exact declaration; a toolchain
+    change or workload add/remove needs a budget-only carrier; a budget
+    absent at base is a seed and passes."""
     if base is None:
         return []
     if head is None:
@@ -425,7 +385,7 @@ def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
     """Every relaxation of the budget document across the window."""
     paths_by_commit = _commit_paths(cwd, window_base, head_sha)
     pure = [sha for sha, paths in paths_by_commit.items()
-            if not (set(paths) - {DOCUMENT})]
+            if not set(paths) - {DOCUMENT}]
     pool, findings = _collect_declarations(cwd, window_base, head_sha)
     findings.extend(_relaxations(
         read_document(cwd, window_base, DOCUMENT),
