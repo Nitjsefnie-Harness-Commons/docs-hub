@@ -56,15 +56,19 @@ def test_repeated_transitions_keep_only_distinct_states(
     spec.loader.exec_module(policy)
     repo, base = fixtures._seeded(tmp_path)
     commits = []
+    previous = fixtures.CHAIN_A
     for index in range(40):
         chain = {**fixtures.CHAIN_A, "lock_sha256": values[(index + 1) % len(values)] * 32}
-        commits.append(fixtures._commit(repo, "switch toolchain", **{
+        commits.append(fixtures._commit(repo, fixtures._toolchain_message(previous, chain), **{
             fixtures.BUDGET: json.dumps(fixtures._budget(
                 {"w.pub": 100, "w.list": 200}, chain=chain))}))
+        previous = chain
     expected = {(old * 32, new * 32) for old in values for new in values}
     for length in (4 if len(values) == 2 else 12, 20, 36, 40):
         window = {sha: [fixtures.BUDGET] for sha in reversed(commits[:length])}
-        accepted, findings = policy._sanctioned(repo, window)
+        pools, errors = policy._collect_declarations(repo, base, commits[length - 1], window)
+        assert not errors
+        accepted, findings = policy._sanctioned(repo, window, pools)
         assert not findings
         states = accepted["toolchain.lock_sha256"]
         assert len(states) == len(set(states)) == len(expected)

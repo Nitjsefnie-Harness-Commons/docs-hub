@@ -77,6 +77,20 @@ def numeric_key(key: str) -> bool:
     return under(key, "workloads") or key == "tolerance_pct"
 
 
+def declaration_value(key: str, token: str) -> object:
+    if under(key, "toolchain"):
+        if token == "absent":
+            return ABSENT
+        value = json.loads(token)
+        if value is not None and not isinstance(value, str):
+            raise ValueError("toolchain endpoints must be strings, null or absent")
+        return value
+    value = Decimal(token)
+    if not value.is_finite():
+        raise ValueError("numeric endpoints must be finite")
+    return value
+
+
 def normalized(values: dict) -> dict:
     return {key: value for key, value in values.items()
             if not (numeric_key(key) and value is None)}

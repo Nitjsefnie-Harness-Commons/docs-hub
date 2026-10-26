@@ -162,6 +162,15 @@ malformed, duplicate, leftover or otherwise unconsumed declarations. A
 rebase merge keeps the declaration lines; a squash may drop them, which
 then refuses on `master`'s push.
 
+A toolchain mismatch requires a reviewed rebaseline commit: run
+`python3 scripts/ci/speed.py rebaseline --measurements measurement.json --budget .github/speed-budget.json`,
+review the resulting counts, and commit only the budget. Every changed
+`toolchain` leaf, including `lock_sha256`, needs its exact declaration like
+counts do, for example `Budget-Raise: .github/speed-budget.json toolchain.runner_image "old image" -> "new image"`.
+Toolchain endpoints use JSON strings or `null`; `absent` declares an added or
+removed key. Include the numeric declarations above for any raised counts or
+tolerance in the same commit.
+
 `pip install -r requirements-dev.txt -r requirements-test.txt` gets the
 Python toolchain. `package.json` exists only to pin eslint and jsdom (the
 `app.js` test's DOM) — **it is not a build step**, and `public/` is still

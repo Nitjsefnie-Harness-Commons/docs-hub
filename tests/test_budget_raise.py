@@ -75,6 +75,17 @@ def _declared_raise_message(key: str, was: object, to: object) -> str:
     return f"raise\n\n{_decl(key, was, to)}\n"
 
 
+def _toolchain_message(before: dict, after: dict) -> str:
+    lines = []
+    for field in sorted(set(before) | set(after)):
+        if field in before and field in after and before[field] == after[field]:
+            continue
+        old = json.dumps(before[field]) if field in before else "absent"
+        new = json.dumps(after[field]) if field in after else "absent"
+        lines.append(_decl(f"toolchain.{field}", old, new))
+    return "rebaseline\n\n" + "\n".join(lines)
+
+
 def _run(repo: Path, *flags: str, env: dict | None = None) -> subprocess.CompletedProcess:
     merged = dict(os.environ)
     if env:
@@ -422,13 +433,15 @@ def test_a_synthetic_merge_cannot_sanction_mixed_work(
 def test_toolchain_authorization_follows_the_exact_transitions(
         tmp_path: Path, pure_steps: tuple[bool, bool]) -> None:
     repo, base = _seeded(tmp_path)
+    previous = CHAIN_A
     for index, pure in enumerate(pure_steps, start=1):
         chain = {**CHAIN_A, "lock_sha256": ("cd" if index == 1 else "ef") * 32}
         files = {BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 200},
                                             chain=chain))}
         if not pure:
             files[CODE] = f"print({index + 1})\n"
-        _commit(repo, "relock", **files)
+        _commit(repo, _toolchain_message(previous, chain) if pure else "mixed relock", **files)
+        previous = chain
     done = _pull(repo, base, "HEAD")
     assert done.returncode == (0 if all(pure_steps) else 1), done.stdout + done.stderr
     if not all(pure_steps):

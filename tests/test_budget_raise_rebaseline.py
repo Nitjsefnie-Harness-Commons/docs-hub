@@ -31,7 +31,7 @@ def test_toolchain_rebaseline_requires_its_own_exact_line(
         line += "\n" + line
     message = "rebaseline" if mode == "none" else "rebaseline\n\n" + line
     files = {f.BUDGET: json.dumps(f._budget({"w.pub": 100, "w.list": 200},
-                                           chain={**f.CHAIN_A, field: new}))}
+                                            chain={**f.CHAIN_A, field: new}))}
     if mode == "impure":
         files[f.CODE] = "print(2)\n"
     f._commit(repo, message, **files)
@@ -93,7 +93,7 @@ def test_trailing_declaration_junk_is_a_parse_error(tmp_path: Path, kind: str) -
     else:
         line = _line("runner_image", f.CHAIN_A["runner_image"], "new")
         document = f._budget({"w.pub": 100, "w.list": 200},
-                              chain={**f.CHAIN_A, "runner_image": "new"})
+                             chain={**f.CHAIN_A, "runner_image": "new"})
     f._commit(repo, "raise\n\n" + line + " trailing junk", **{f.BUDGET: json.dumps(document)})
     result = _event(repo, base, "pull_request")
     assert result.returncode == 1, result.stdout + result.stderr
@@ -102,9 +102,10 @@ def test_trailing_declaration_junk_is_a_parse_error(tmp_path: Path, kind: str) -
 
 def test_one_toolchain_line_does_not_declare_another_field(tmp_path: Path) -> None:
     repo, base = f._seeded(tmp_path)
+    document = f._budget({"w.pub": 100, "w.list": 200},
+                         chain={**f.CHAIN_A, "runner_image": "new", "lock_sha256": "cd" * 32})
     f._commit(repo, "rebaseline\n\n" + _line("runner_image", f.CHAIN_A["runner_image"], "new"),
-              **{f.BUDGET: json.dumps(f._budget({"w.pub": 100, "w.list": 200},
-                        chain={**f.CHAIN_A, "runner_image": "new", "lock_sha256": "cd" * 32}))})
+              **{f.BUDGET: json.dumps(document)})
     result = _event(repo, base, "pull_request")
     assert result.returncode == 1, result.stdout + result.stderr
     assert "toolchain.lock_sha256" in result.stdout

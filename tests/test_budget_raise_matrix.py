@@ -123,7 +123,8 @@ def test_pure_merge_retains_each_parent_endpoint(
         parent = f._budget({"w.pub": 100, "w.list": 200}, chain=f.CHAIN_B)
         merged = f._budget({"w.pub": 100, "w.list": 200},
                            chain={**f.CHAIN_A, "lock_sha256": "ef" * 32})
-        parent_message, merge_message = "pure parent", "pure resolution"
+        parent_message = f._toolchain_message(f.CHAIN_A, f.CHAIN_B)
+        merge_message = f._toolchain_message(f.CHAIN_B, merged["toolchain"])
     else:
         key = 'workloads["w.pub"]' if field == "workload" else "tolerance_pct"
         old, parent_value, merged_value = (100, 300, 400) if field == "workload" else (1, 5, 7)
