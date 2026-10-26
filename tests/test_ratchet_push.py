@@ -258,16 +258,27 @@ def test_the_push_step_runs_the_fetched_trees_own_ratchet() -> None:
     assert {"--base", "--tip", "--measured", "--thresholds"} <= set(tokens)
 
 
+_COVERAGE_RECORD = {"schema_version": 1, "coverage": {
+    "python": {"measured": 96.9, "floor": 95.4}}}
+_SPEED_BUDGET = {"schema_version": 1, "counter": "cachegrind-ir",
+                 "tolerance_pct": 0.5, "toolchain": {
+                     "python": "fixture", "valgrind": "fixture",
+                     "runner_image": None, "lock_sha256": "ab" * 32},
+                 "workloads": {"fixture": 2_000_000}}
+
+
 def _seed_remote(tmp_path: Path) -> tuple[Path, str]:
     origin = tmp_path / "origin" / "example" / "repository.git"
     seed = tmp_path / "seed"
     seed.mkdir()
     for rel in ("scripts/ci/ratchet.py", "scripts/ci/thresholds.py",
-                "scripts/ci/speed.py", "scripts/ci/speed_budget.py",
-                ".github/ci-thresholds.json", ".github/speed-budget.json"):
+                "scripts/ci/speed.py", "scripts/ci/speed_budget.py"):
         target = seed / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(_REPO / rel, target)
+    (seed / ".github").mkdir()
+    for name, data in (("ci-thresholds", _COVERAGE_RECORD), ("speed-budget", _SPEED_BUDGET)):
+        (seed / f".github/{name}.json").write_text(json.dumps(data), encoding="utf-8")
     identity = _GIT_IDENTITY
     for command in (["git", "init", "-q", str(seed)],
                     ["git", "-C", str(seed), "add", "."],
@@ -281,8 +292,7 @@ def _seed_remote(tmp_path: Path) -> tuple[Path, str]:
 
 
 def _measurement(tmp_path: Path, base: str) -> None:
-    budget = json.loads(
-        (_REPO / ".github/speed-budget.json").read_text(encoding="utf-8"))
+    budget = _SPEED_BUDGET
     counts = {name: value - 1_000_000
               for name, value in budget["workloads"].items()}
     data = {"schema_version": 1, "base_sha": base, "toolchain": budget["toolchain"],
@@ -446,3 +456,26 @@ def test_a_rejected_push_while_master_moved_drops_with_a_notice(tmp_path: Path) 
     assert "master moved before the raise landed" in (
         tmp_path / "summary").read_text(encoding="utf-8")
     assert _git(origin, "rev-parse", "refs/heads/master") == moved
+
+
+def test_landing_survives_a_legitimate_automated_raise(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "source"
+    for rel in ("scripts/ci/ratchet.py", "scripts/ci/thresholds.py",
+                "scripts/ci/speed.py", "scripts/ci/speed_budget.py",
+                ".github/ci-thresholds.json", ".github/speed-budget.json",
+                ".github/workflows/ratchet-push.yml"):
+        target = source / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(_REPO / rel, target)
+    subprocess.run(["python3", str(source / "scripts/ci/ratchet.py"),
+                    "--measured", "97.4"], check=True, capture_output=True)
+    monkeypatch.setitem(globals(), "_REPO", source)
+    origin, seed = _seed_remote(tmp_path)
+    _raise_data(tmp_path, seed, "97.4")
+    _measurement(tmp_path, seed)
+    result = _run_push_step(tmp_path, "true", "true")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert _git(origin, "log", "--format=%s", "refs/heads/master").splitlines() == [
+        "Tighten the speed budget (automated)",
+        "Raise the recorded coverage calibration (automated)", "seed"]
