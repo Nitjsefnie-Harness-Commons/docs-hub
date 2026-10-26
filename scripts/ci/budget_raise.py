@@ -12,7 +12,8 @@ workload adds/removes also require budget-only steps;
 mixed workload/tolerance steps may only decrease. Merge steps use combined
 diffs, excluding inherited parent work. An absent-at-base budget seeds the
 whole window. The window is merge-base(base, head)..head on a pull_request,
-before..head (ancestor required) on a push; other events and an all-zero
+before..head (ancestor required) on a default-branch push; side-branch
+pushes defer to pull_request. Other events and an all-zero
 before skip with a message. A squash merge can drop the raise commit's
 lines from the window history; a rebase merge keeps them.
 """
@@ -370,7 +371,8 @@ def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
 
 
 def run(cwd: Path, base: str | None, head: str | None, before: str | None,
-        event: str | None) -> tuple[int, list[str]]:
+        event: str | None, ref_name: str | None = None,
+        default_branch: str | None = None) -> tuple[int, list[str]]:
     """(exit code, report lines): 0 clean or skipped, 1 per finding, 2
     usage."""
     if event not in _WALK_EVENTS:
@@ -379,6 +381,9 @@ def run(cwd: Path, base: str | None, head: str | None, before: str | None,
                              "revision: the run is not wired")
         return 0, [f"budget-raise: the {event or 'unlabelled'} run has no "
                    "window to judge — skipping"]
+    if event == "push" and ref_name and default_branch and ref_name != default_branch:
+        return 0, [f"budget-raise: push to {ref_name} is not the default branch "
+                   f"{default_branch}; pull_request checks its window — skipping"]
     if not head:
         raise ValueError(f"a {event} run needs the head revision "
                          "(DOCS_HUB_HEAD_SHA)")
@@ -425,10 +430,12 @@ def main(argv: list[str] | None = None) -> int:
         "--before", default=os.environ.get("DOCS_HUB_BEFORE_SHA"))
     parser.add_argument(
         "--event", default=os.environ.get("DOCS_HUB_EVENT_NAME"))
+    parser.add_argument("--ref-name", default=os.environ.get("DOCS_HUB_REF_NAME"))
+    parser.add_argument("--default-branch", default=os.environ.get("DOCS_HUB_DEFAULT_BRANCH"))
     args = parser.parse_args(argv)
     try:
         code, lines = run(Path.cwd(), args.base, args.head, args.before,
-                          args.event)
+                          args.event, args.ref_name, args.default_branch)
     except ValueError as error:
         print(f"budget-raise: {error}", file=sys.stderr)
         return 2
