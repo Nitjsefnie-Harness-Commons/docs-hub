@@ -42,6 +42,7 @@
 !.github/comment-share.json
 !.github/ci-thresholds.json
 !.github/size-baseline.json
+!.github/speed-budget.json
 !.github/ISSUE_TEMPLATE/
 .github/ISSUE_TEMPLATE/*
 !.github/ISSUE_TEMPLATE/*.md
