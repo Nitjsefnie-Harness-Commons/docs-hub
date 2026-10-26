@@ -226,8 +226,9 @@ def _commits_with_declaration_lines(cwd: Path, base: str,
 
 
 def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
-    """The paths each window commit touches; none listed means pure."""
-    result = _git(cwd, ["log", "--format=%x00%H%n", "--name-only",
+    """Paths against each commit's first parent, including merges."""
+    result = _git(cwd, ["log", "--diff-merges=first-parent",
+                        "--format=%x00%H%n", "--name-only",
                         f"{base}..{head}"])
     if result.returncode != 0:
         raise ValueError(

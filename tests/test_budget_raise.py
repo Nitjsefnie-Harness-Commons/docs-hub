@@ -389,3 +389,27 @@ def test_a_dispatch_run_with_a_head_but_no_base_skips(tmp_path: Path) -> None:
                 env={"DOCS_HUB_BASE_SHA": ""})
     assert done.returncode == 0
     assert "skipping" in done.stdout
+
+
+@pytest.mark.parametrize("declaration", [False, True], ids=["mixed-toolchain", "impure-declaration"])
+def test_a_synthetic_merge_cannot_sanction_mixed_work(
+        tmp_path: Path, declaration: bool) -> None:
+    repo, base = _seeded(tmp_path)
+    _git(repo, "checkout", "-b", "feature")
+    tip = _commit(repo, "mixed branch work", **{CODE: "print(2)\n"},
+                  **{BUDGET: json.dumps(_budget(
+                      {"w.pub": 300 if declaration else 100, "w.list": 200},
+                      chain=CHAIN_A if declaration else CHAIN_B))})
+    _git(repo, "checkout", "main")
+    base = _commit(repo, "advance base", **{"other.py": "print(3)\n"})
+    message = (_declared_raise_message('workloads["w.pub"]', 100, 300)
+               if declaration else "synthetic merge")
+    _git(repo, "merge", "--no-ff", tip, "-m", message)
+    done = _pull(repo, base, "HEAD")
+    assert done.returncode == 1, done.stdout + done.stderr
+    if declaration:
+        assert "carries declaration lines but also touches src/app.py" in done.stdout
+        assert "raised; it may only fall" in done.stdout
+    else:
+        assert "toolchain.lock_sha256" in done.stdout
+        assert "without a budget-only commit" in done.stdout

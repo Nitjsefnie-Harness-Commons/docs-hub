@@ -84,7 +84,7 @@ jobs:
         run: python3 scripts/ci/budget_raise.py
         env:
           DOCS_HUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          DOCS_HUB_HEAD_SHA: ${{ github.sha }}
+          DOCS_HUB_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           DOCS_HUB_BEFORE_SHA: ${{ github.event.before }}
           DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
 
