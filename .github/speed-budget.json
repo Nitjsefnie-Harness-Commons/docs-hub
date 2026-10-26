@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "counter": "cachegrind-ir",
+  "tolerance_pct": 1.0,
+  "toolchain": {
+    "python": null,
+    "valgrind": null,
+    "runner_image": null,
+    "lock_sha256": null
+  },
+  "workloads": {
+    "service.publish": 2341052923,
+    "service.list": 2431412364,
+    "service.versions": 2406516961,
+    "cli.transfer": 3769945636,
+    "cli.text": 4188568531
+  }
+}
