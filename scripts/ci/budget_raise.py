@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
+import importlib.util
 import os
 import re
 import subprocess
@@ -32,7 +32,19 @@ REGULAR_FILE = "100644 blob"
 _DECLARATION_PREFIX = "Budget-Raise: "
 _DECLARATION_LINE = re.compile(
     r"^(?P<document>\S+) +(?P<key>.+) +(?P<was>\S+) -> (?P<to>\S+)$")
-_ABSENT = object()
+_SPEC = importlib.util.spec_from_file_location(
+    "budget_chain", Path(__file__).with_name("budget_chain.py"))
+assert _SPEC is not None and _SPEC.loader is not None
+_CHAIN = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_CHAIN)
+_ABSENT = _CHAIN.ABSENT
+_key_path = _CHAIN.key_path
+_is_number = _CHAIN.is_number
+_show = _CHAIN.show
+_under = _CHAIN.under
+_finding = _CHAIN.finding
+_consume_declaration = _CHAIN.consume_declaration
+_declaration_mismatch = _CHAIN.declaration_mismatch
 _ZERO = "0" * 40
 _WALK_EVENTS = ("pull_request", "push")
 
@@ -122,18 +134,6 @@ def read_document(cwd: Path, commit: str, path: str) -> dict | None:
             f"{path} at {commit} is not valid JSON: {error}") from None
 
 
-def _key_path(parts: list[str]) -> str:
-    if not parts:
-        return "(document)"
-    rendered = []
-    for index, part in enumerate(parts):
-        if part.replace("_", "a").isalnum() and not part[0].isdigit():
-            rendered.append(part if index == 0 else f".{part}")
-        else:
-            rendered.append(f"[{json.dumps(part)}]")
-    return "".join(rendered)
-
-
 def leaves(value: object, parts: list[str] | None = None,
            out: dict | None = None) -> dict:
     """Leaf values keyed by their rendered path; an empty or non-object
@@ -145,39 +145,6 @@ def leaves(value: object, parts: list[str] | None = None,
     for key, child in value.items():
         leaves(child, [*parts, key], out)
     return out
-
-
-def _is_number(value: object) -> bool:
-    if isinstance(value, bool):
-        return False
-    if isinstance(value, Decimal):
-        return value.is_finite()
-    if isinstance(value, int):
-        return True
-    # A JSON NaN/Infinity literal arrives as a float; it must fail closed.
-    return isinstance(value, float) and math.isfinite(value)
-
-
-def _show(value: object) -> str:
-    if value is None or value is _ABSENT:
-        return "absent"
-    if isinstance(value, bool):
-        return json.dumps(value)
-    if isinstance(value, Decimal):
-        return str(value)
-    return json.dumps(value)
-
-
-def _under(key: str, parent: str) -> bool:
-    """Whether the rendered key names a leaf under parent."""
-    return (key.startswith(f"{parent}.")
-            or key.startswith(f"{parent}["))
-
-
-def _finding(document: str, key: str, base: object, head: object,
-             why: str) -> str:
-    return (f"{document}: {key}: reference {_show(base)}, "
-            f"head {_show(head)} — {why}")
 
 
 def _declaration_parse_error(line: str) -> str:
@@ -246,38 +213,22 @@ def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
     return paths_by_commit
 
 
-def _step_values(cwd: Path, sha: str) -> tuple[dict, dict]:
+def _step_values(cwd: Path, sha: str, chains=None) -> tuple[dict, dict]:
     parents = _git(cwd, ["rev-parse", f"{sha}^@"])
     if parents.returncode != 0:
         raise ValueError(f"cannot read parents of {sha}: {parents.stderr.strip()}")
-    before = [leaves(read_document(cwd, parent, DOCUMENT) or {})
-              for parent in parents.stdout.splitlines()]
-    after = leaves(read_document(cwd, sha, DOCUMENT) or {})
-    before = before or [{}]
+    parent_documents = [read_document(cwd, parent, DOCUMENT)
+                        for parent in parents.stdout.splitlines()]
+    document = read_document(cwd, sha, DOCUMENT)
+    if chains is not None:
+        chains.record(sha, parent_documents, document)
+    before = [_CHAIN.normalized(leaves(parent or {})) for parent in parent_documents] or [{}]
+    after = _CHAIN.normalized(leaves(document or {}))
     changed = {key for key in set(after).union(*before)
-               if all(parent.get(key, _ABSENT) != after.get(key, _ABSENT)
+               if all(not _CHAIN.same(parent.get(key, _ABSENT), after.get(key, _ABSENT))
                       for parent in before)}
     return ({key: [parent.get(key, _ABSENT) for parent in before] for key in changed},
             {key: after[key] for key in changed if key in after})
-
-
-def _consume_declaration(declarations: list, key: str, was: object,
-                         now: object) -> bool:
-    """Pop the one declaration naming this raise exactly."""
-    for index, (_document, decl_key, decl_was, decl_to) in enumerate(
-            declarations):
-        if decl_key == key and decl_was == was and decl_to == now:
-            del declarations[index]
-            return True
-    return False
-
-
-def _declaration_mismatch(document: str, key: str, was: object,
-                          to: object) -> str:
-    """The finding for a declaration the diff does not carry exactly."""
-    return (f"{document}: {key}: declaration {was} -> {to} does not match "
-            "a raise in this diff — a declaration must name the exact from "
-            "and to the diff carries")
 
 
 def _collect_declarations(cwd: Path, base: str, head: str,
@@ -305,14 +256,14 @@ def _collect_declarations(cwd: Path, base: str, head: str,
 
 
 def _sanctioned(cwd: Path, commits: dict[str, list[str]],
-                declarations: dict | None = None) -> tuple[dict, list]:
+                declarations: dict | None = None, chains=None) -> tuple[dict, list]:
     """Judge contributed steps and compose unique legal endpoint pairs."""
     accepted: dict[str, list[tuple]] = {}
     findings = []
     for sha in reversed(commits):
         pure = not set(commits[sha]) - {DOCUMENT}
         pool = (declarations or {}).get(sha, [])
-        was, now = _step_values(cwd, sha) if DOCUMENT in commits[sha] else ({}, {})
+        was, now = _step_values(cwd, sha, chains) if DOCUMENT in commits[sha] else ({}, {})
         for key, values in was.items():
             old, new = values[0], now.get(key, _ABSENT)
             numeric = _under(key, "workloads") or key == "tolerance_pct"
@@ -337,8 +288,6 @@ def _sanctioned(cwd: Path, commits: dict[str, list[str]],
                              if last == origin] + [(origin, new)]:
                     if pair not in transitions:
                         transitions.append(pair)
-        for _document, key, old, new in pool:
-            findings.append(_declaration_mismatch(DOCUMENT, key, old, new))
     return accepted, findings
 
 
@@ -354,17 +303,17 @@ def _relaxations(base: object, head: object,
         return [_finding(DOCUMENT, "(document)", "present", None,
                          "the document was deleted")]
     findings = []
-    before, after = leaves(base), leaves(head)
+    before, after = _CHAIN.normalized(leaves(base)), _CHAIN.normalized(leaves(head))
     for key, was in before.items():
         if key in after:
             continue
-        if (_under(key, "toolchain") or _under(key, "workloads")) \
+        if (_under(key, "toolchain") or _CHAIN.numeric_key(key)) \
                 and (was, _ABSENT) in sanctioned.get(key, []):
             continue
         findings.append(_finding(DOCUMENT, key, was, None, "key removed"))
     for key, now in after.items():
         if key not in before:
-            if (_under(key, "toolchain") or _under(key, "workloads")) \
+            if (_under(key, "toolchain") or _CHAIN.numeric_key(key)) \
                     and (_ABSENT, now) in sanctioned.get(key, []):
                 continue
             findings.append(_finding(DOCUMENT, key, None, now, "key added"))
@@ -403,9 +352,17 @@ def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
         return []
     paths_by_commit = _commit_paths(cwd, window_base, head_sha)
     pools, findings = _collect_declarations(cwd, window_base, head_sha, paths_by_commit)
-    sanctioned, steps = _sanctioned(cwd, paths_by_commit, pools)
+    originals = {sha: list(pool) for sha, pool in pools.items()}
+    chains = _CHAIN.ValueChains(base)
+    sanctioned, steps = _sanctioned(cwd, paths_by_commit, pools, chains)
     findings.extend(steps)
-    findings.extend(_relaxations(base, read_document(cwd, head_sha, DOCUMENT), sanctioned))
+    head = read_document(cwd, head_sha, DOCUMENT)
+    eligible = {sha for sha, paths in paths_by_commit.items() if set(paths) == {DOCUMENT}}
+    findings.extend(chains.finish(head, pools, originals, eligible))
+    for pool in pools.values():
+        for document, key, old, new in pool:
+            findings.append(_declaration_mismatch(document, key, old, new))
+    findings.extend(_relaxations(base, head, sanctioned))
     return findings
 
 

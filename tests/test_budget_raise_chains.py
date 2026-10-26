@@ -64,7 +64,7 @@ def test_net_declaration_may_be_on_the_pure_removal(
 @pytest.mark.parametrize("event", ["pull_request", "push"])
 @pytest.mark.parametrize("field", ["workload", "tolerance"])
 @pytest.mark.parametrize("junk", [False, True, "100", float("inf"), float("-inf"),
-                                 float("nan"), [], {}, {"nested": 100}],
+                                  float("nan"), [], {}, {"nested": 100}],
                          ids=["false", "true", "string", "inf", "negative-inf", "nan",
                               "list", "empty-object", "nested-object"])
 @pytest.mark.parametrize("raise_net", [False, True], ids=["net-tighten", "declared-net-raise"])
