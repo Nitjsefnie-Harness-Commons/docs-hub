@@ -171,6 +171,18 @@ def test_a_null_toolchain_field_differs(policy: ModuleType) -> None:
     assert result["failed"] is False
 
 
+def test_check_reports_a_malformed_budget_with_exit_one(
+        speed: ModuleType, tmp_path: Path,
+        capsys: pytest.CaptureFixture[str]) -> None:
+    budget, measurement = tmp_path / "budget.json", tmp_path / "m.json"
+    budget.write_text("{not json", encoding="utf-8")
+    measurement.write_text(json.dumps(_measurement(
+        {"service.publish": 1000, "service.list": 2000})), encoding="utf-8")
+    assert speed.main(["check", "--measurements", str(measurement),
+                       "--budget", str(budget)]) == 1
+    assert "budget.json" in capsys.readouterr().err
+
+
 def test_check_exits_zero_on_a_toolchain_mismatch(speed: ModuleType,
                                                   tmp_path: Path,
                                                   capsys: pytest.CaptureFixture[str]) -> None:
