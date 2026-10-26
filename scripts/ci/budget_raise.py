@@ -11,10 +11,7 @@ Toolchain changes and workload adds or removes take purity instead of a
 line. The window is merge-base(base, head)..head on a pull_request,
 before..head (ancestor required) on a push; other events and an all-zero
 before skip with a message. A squash merge can drop the raise commit's
-lines from the window history, making the raise refuse; a rebase merge is
-the deterministic route.
-
-Exit 0 clean or skipped, 1 with one line per finding, 2 on a usage error.
+lines from the window history; a rebase merge keeps them.
 """
 from __future__ import annotations
 
@@ -38,14 +35,13 @@ _WALK_EVENTS = ("pull_request", "push")
 
 
 def _git(cwd: Path, args: list[str]) -> subprocess.CompletedProcess:
-    # The returncode is inspected by every caller: check=False on purpose.
+    # Every caller inspects the returncode.
     return subprocess.run(  # pylint: disable=subprocess-run-check
         ["git", *args], cwd=str(cwd), capture_output=True, text=True)
 
 
 def require_full_history(cwd: Path) -> None:
-    """A shallow history disqualifies the whole check: merge-base could
-    pick a wrong base without erroring, hiding a relaxation."""
+    """A shallow history disqualifies the whole check."""
     result = _git(cwd, ["rev-parse", "--is-shallow-repository"])
     if result.returncode != 0:
         raise ValueError(
@@ -79,8 +75,8 @@ def merge_base(cwd: Path, base: str, head: str) -> str:
 
 
 def _is_ancestor(cwd: Path, maybe: str, descendant: str) -> bool:
-    """Whether maybe is an ancestor of descendant: only an ancestor makes
-    before..head exactly this push's commits."""
+    """Whether maybe is an ancestor of descendant (the push window's
+    membership rule)."""
     result = _git(cwd, ["merge-base", "--is-ancestor", maybe, descendant])
     if result.returncode not in (0, 1):
         raise ValueError(
@@ -90,8 +86,7 @@ def _is_ancestor(cwd: Path, maybe: str, descendant: str) -> bool:
 
 
 def entry_kind(cwd: Path, commit: str, path: str) -> str | None:
-    """The tree entry's ``<mode> <type>`` at path, or None when absent
-    (pathspec magic off, so only an exact-name record counts)."""
+    """The tree entry's ``<mode> <type>`` at path, or None when absent."""
     listing = _git(
         cwd, ["--literal-pathspecs", "ls-tree", "-z", commit, "--", path])
     if listing.returncode != 0:
@@ -138,8 +133,8 @@ def _key_path(parts: list[str]) -> str:
 
 def leaves(value: object, parts: list[str] | None = None,
            out: dict | None = None) -> dict:
-    """Leaf values keyed by their rendered path; a non-object or an empty
-    object anywhere is a leaf."""
+    """Leaf values keyed by their rendered path; an empty or non-object
+    value anywhere is a leaf."""
     parts, out = parts or [], out if out is not None else {}
     if not isinstance(value, dict) or not value:
         out[_key_path(parts)] = value
@@ -156,8 +151,7 @@ def _is_number(value: object) -> bool:
         return value.is_finite()
     if isinstance(value, int):
         return True
-    # A float here is a JSON NaN/Infinity literal; it must fail closed:
-    # NaN never compares greater, so a poisoned budget would pass silently.
+    # A JSON NaN/Infinity literal arrives as a float; it must fail closed.
     return isinstance(value, float) and math.isfinite(value)
 
 
@@ -232,8 +226,7 @@ def _commits_with_declaration_lines(cwd: Path, base: str,
 
 
 def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
-    """The paths each window commit touches; a commit that changed nothing
-    lists none and is pure by that answer."""
+    """The paths each window commit touches; none listed means pure."""
     result = _git(cwd, ["log", "--format=%x00%H%n", "--name-only",
                         f"{base}..{head}"])
     if result.returncode != 0:
@@ -251,8 +244,7 @@ def _commit_paths(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
 
 def _consume_declaration(declarations: list, key: str, was: object,
                          now: object) -> bool:
-    """Pop the one declaration naming this raise exactly (a duplicate
-    becomes a leftover)."""
+    """Pop the one declaration naming this raise exactly."""
     for index, (_document, decl_key, decl_was, decl_to) in enumerate(
             declarations):
         if decl_key == key and decl_was == was and decl_to == now:
@@ -271,9 +263,8 @@ def _declaration_mismatch(document: str, key: str, was: object,
 
 def _collect_declarations(cwd: Path, base: str,
                           head: str) -> tuple[list, list]:
-    """(pool, findings) with a pure commit's lines only; lines on a commit
-    touching anything else are findings that are never consumable, as are
-    malformed lines and lines naming an undeclarable document."""
+    """(pool, findings): a pure commit's lines pooled; any other line is
+    a finding."""
     paths_by_commit = _commit_paths(cwd, base, head)
     pool, findings = [], []
     for sha, lines in _commits_with_declaration_lines(cwd, base, head):
@@ -298,9 +289,7 @@ def _collect_declarations(cwd: Path, base: str,
 
 
 def _sanctioned(cwd: Path, pure_commits: list[str]) -> tuple[set, set, set]:
-    """What budget-only commits' own diffs sanction, by leaf path: a
-    toolchain leaf any pure commit changed, and the workload keys a pure
-    commit added or removed."""
+    """What pure commits' own diffs sanction, by leaf path."""
     chain, added, removed = set(), set(), set()
     for sha in pure_commits:
         was = leaves(read_document(cwd, f"{sha}^", DOCUMENT) or {})
@@ -321,10 +310,8 @@ def _relaxations(base: object, head: object, declarations: list,
                  sanctioned: tuple[set, set, set]) -> list[str]:
     # pylint: disable=too-many-branches
 
-    """Findings for a head document that relaxes the base's: numeric
-    leaves are maxima and a raise needs an exact declaration; a toolchain
-    change or workload add/remove needs a budget-only carrier; a budget
-    absent at base is a seed and passes."""
+    """Findings for a head document that relaxes the base's; a budget
+    absent at base is a seed."""
     if base is None:
         return []
     if head is None:
@@ -396,7 +383,8 @@ def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
 
 def run(cwd: Path, base: str | None, head: str | None, before: str | None,
         event: str | None) -> tuple[int, list[str]]:
-    """(exit code, report lines) for one gate invocation."""
+    """(exit code, report lines): 0 clean or skipped, 1 per finding, 2
+    usage."""
     if event not in _WALK_EVENTS:
         return 0, [f"budget-raise: the {event or 'unlabelled'} run has no "
                    "window to judge — skipping"]
