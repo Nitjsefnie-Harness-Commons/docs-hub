@@ -7,8 +7,8 @@ Each workload runs on its own fresh server under `valgrind --tool=cachegrind
 cannot see off-CPU latency (event-loop blocking, sleeps, lock waits, work
 inside Postgres), for which wall time is the only signal.
 
-    speed.py workload --database NAME [--workload NAME]
-    speed.py measure --database NAME --out FILE [--base-sha SHA]
+    speed.py workload --database NAME [--workload NAME] [--valgrind PATH]
+    speed.py measure --database NAME --out FILE [--base-sha SHA] [--valgrind PATH]
     speed.py check --measurements FILE [--budget FILE] [--summary FILE]
     speed.py tighten --measurements FILE --budget FILE
     speed.py rebaseline --measurements FILE [--budget FILE]
@@ -20,6 +20,7 @@ import contextlib
 import http.client
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -99,15 +100,22 @@ class Service:
                   f"multipart/form-data; boundary={boundary}")
 
 
-def valgrind_argv(out_prefix: str) -> list[str]:
-    return ["valgrind", "--tool=cachegrind", "--cache-sim=no",
+def valgrind_argv(out_prefix: str, binary: str) -> list[str]:
+    return [binary, "--tool=cachegrind", "--cache-sim=no",
             f"--cachegrind-out-file={out_prefix}.%p"]
 
 
+def valgrind_refusal(binary: str) -> str | None:
+    """Why no counted run can start, or None when the binary is there."""
+    if shutil.which(binary) is not None:
+        return None
+    return f"no valgrind binary at {binary}: install it or pass --valgrind PATH"
+
+
 def cli(argv: tuple[str, ...], under_valgrind: bool, prefix: str,
-        env: dict[str, str]) -> None:
+        env: dict[str, str], binary: str) -> None:
     """Run one CLI call as its own subprocess, under valgrind when counted."""
-    command = ([*valgrind_argv(prefix), sys.executable] if under_valgrind
+    command = ([*valgrind_argv(prefix, binary), sys.executable] if under_valgrind
                else [sys.executable])
     child = subprocess.Popen(  # pylint: disable=consider-using-with
         [*command, "-m", "docs_hub_cli.cli", *argv], cwd=ROOT, env=env,
@@ -121,7 +129,7 @@ def cli(argv: tuple[str, ...], under_valgrind: bool, prefix: str,
 
 
 def execute(name: str, port: int, scratch: Path, under_valgrind: bool,
-            env: dict[str, str]) -> None:
+            env: dict[str, str], binary: str) -> None:
     """One workload's request sequence: the state it reads, then its calls."""
     services = [Service(port) for _ in range(CLIENTS)]
     small, large = document(24, 1), document(256, 2)
@@ -130,7 +138,7 @@ def execute(name: str, port: int, scratch: Path, under_valgrind: bool,
     prefix = str(scratch / f"{name}.cli")
 
     def call(*argv: str) -> None:
-        cli(argv, under_valgrind, prefix, env)
+        cli(argv, under_valgrind, prefix, env, binary)
 
     def clients(work: Callable[[Service, list[str]], object]) -> None:
         # Each client owns one connection and every version of its own slugs.
@@ -211,7 +219,8 @@ def workload_env(port: int, database: str, store: Path) -> dict[str, str]:
     return {**os.environ, **values, **MEASURED_ENV}
 
 
-def counted(database: str, name: str, scratch: Path) -> int:
+def counted(database: str, name: str, scratch: Path,
+            binary: str = "valgrind") -> int:
     """One workload's count on its own fresh server and database (measure()
     resets first), so the count reproduces standalone."""
     with socket.socket() as probe:
@@ -221,13 +230,13 @@ def counted(database: str, name: str, scratch: Path) -> int:
     store.mkdir()
     server_prefix = str(scratch / f"{name}.server")
     server = subprocess.Popen(  # pylint: disable=consider-using-with
-        [*valgrind_argv(server_prefix), sys.executable, "-m", "uvicorn",
+        [*valgrind_argv(server_prefix, binary), sys.executable, "-m", "uvicorn",
          "backend.app:app", "--host", "127.0.0.1", "--port", str(port),
          "--log-level", "warning"], env=workload_env(port, database, store))
     try:
         serve(port, server)
         execute(name, port, scratch, under_valgrind=True,
-                env=workload_env(port, database, store))
+                env=workload_env(port, database, store), binary=binary)
     finally:
         server.terminate()
         server.wait(timeout=120)
@@ -236,13 +245,13 @@ def counted(database: str, name: str, scratch: Path) -> int:
     return sum(read_count(path) for path in files)
 
 
-def workload(database: str,
-             names: tuple[str, ...] = WORKLOADS) -> dict[str, int]:
+def workload(database: str, names: tuple[str, ...] = WORKLOADS,
+             binary: str = "valgrind") -> dict[str, int]:
     """Count the named workloads; the database must already hold the schema."""
     counts: dict[str, int] = {}
     with tempfile.TemporaryDirectory() as scratch:
         for name in names:
-            counts[name] = counted(database, name, Path(scratch))
+            counts[name] = counted(database, name, Path(scratch), binary)
     return counts
 
 
@@ -264,7 +273,8 @@ def wall_times(database: str) -> dict[str, float]:
             for name in WORKLOADS:
                 started = time.perf_counter()
                 execute(name, port, Path(scratch), under_valgrind=False,
-                        env=workload_env(port, database, store))
+                        env=workload_env(port, database, store),
+                        binary="valgrind")
                 wall[name] = time.perf_counter() - started
         finally:
             server.terminate()
@@ -272,17 +282,18 @@ def wall_times(database: str) -> dict[str, float]:
     return wall
 
 
-def measure(database: str, out: Path, base_sha: str | None) -> int:
+def measure(database: str, out: Path, base_sha: str | None,
+            binary: str = "valgrind") -> int:
     """Count every workload on a fresh database, time it natively, write the file."""
     counts = {}
     with tempfile.TemporaryDirectory() as scratch:
         for name in WORKLOADS:
             reset(ROOT, database)
-            counts[name] = counted(database, name, Path(scratch))
+            counts[name] = counted(database, name, Path(scratch), binary)
     reset(ROOT, database)
     artifact = {"schema_version": speed_budget.SCHEMA_VERSION,
                 "base_sha": base_sha or None,
-                "toolchain": speed_budget.toolchain(),
+                "toolchain": speed_budget.toolchain(binary),
                 "counts": counts,
                 "wall_seconds": wall_times(database)}
     payload = json.dumps(artifact, indent=2, sort_keys=True)
@@ -379,9 +390,21 @@ def rebaseline_command(args: argparse.Namespace) -> int:
 
 
 def workload_command(args: argparse.Namespace) -> int:
+    refusal = valgrind_refusal(args.valgrind)
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 1
     names = (args.workload,) if args.workload else WORKLOADS
-    print(json.dumps(workload(args.database, names)))
+    print(json.dumps(workload(args.database, names, args.valgrind)))
     return 0
+
+
+def measure_command(args: argparse.Namespace) -> int:
+    refusal = valgrind_refusal(args.valgrind)
+    if refusal:
+        print(refusal, file=sys.stderr)
+        return 1
+    return measure(args.database, args.out, args.base_sha, args.valgrind)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -391,6 +414,8 @@ def main(argv: list[str] | None = None) -> int:
     count = sub.add_parser("workload", help="count workloads under valgrind")
     count.add_argument("--database", required=True)
     count.add_argument("--workload", choices=WORKLOADS)
+    count.add_argument("--valgrind", default="valgrind",
+                       help="the counter binary to run everything under")
     count.set_defaults(func=workload_command)
     measure_parser = sub.add_parser(
         "measure", help="count every workload and write the measurement file")
@@ -399,8 +424,9 @@ def main(argv: list[str] | None = None) -> int:
     measure_parser.add_argument(
         "--base-sha", default=os.environ.get("GITHUB_SHA", ""),
         help="the commit the run measured; defaults to $GITHUB_SHA")
-    measure_parser.set_defaults(func=lambda args: measure(
-        args.database, args.out, args.base_sha))
+    measure_parser.add_argument("--valgrind", default="valgrind",
+                                help="the counter binary to run everything under")
+    measure_parser.set_defaults(func=measure_command)
     check = sub.add_parser("check", help="compare against the recorded counts")
     check.add_argument("--measurements", type=Path, required=True)
     check.add_argument("--budget", type=Path, default=speed_budget.ARTIFACT)
