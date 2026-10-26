@@ -327,6 +327,16 @@ def test_a_non_finite_or_boolean_budget_value_fails(tmp_path: Path,
     assert "not a finite number" in done.stdout
 
 
+def test_a_same_equality_boolean_budget_value_fails(tmp_path: Path) -> None:
+    repo, base = _seeded(tmp_path, {"w.pub": 1, "w.list": 200})
+    head = _commit(repo, "replace one with true",
+                   **{BUDGET: json.dumps(_budget({"w.pub": True, "w.list": 200}))})
+    done = _pull(repo, base, head)
+    assert done.returncode == 1
+    assert 'workloads["w.pub"]' in done.stdout
+    assert "not a finite number" in done.stdout
+
+
 def test_the_environment_carries_the_revisions(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 300),
@@ -375,6 +385,7 @@ def test_an_unlabelled_run_with_no_inputs_refuses(tmp_path: Path) -> None:
 
 def test_a_dispatch_run_with_a_head_but_no_base_skips(tmp_path: Path) -> None:
     repo, _ = _seeded(tmp_path)
-    done = _run(repo, "--event", "workflow_dispatch", "--head", "HEAD")
+    done = _run(repo, "--event", "workflow_dispatch", "--head", "HEAD",
+                env={"DOCS_HUB_BASE_SHA": ""})
     assert done.returncode == 0
     assert "skipping" in done.stdout

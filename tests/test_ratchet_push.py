@@ -280,12 +280,6 @@ def _seed_remote(tmp_path: Path) -> tuple[Path, str]:
         check=True, capture_output=True, text=True).stdout.strip()
 
 
-def _master_bytes(tmp_path: Path, rel: str) -> bytes:
-    return subprocess.run(
-        ["git", "-C", str(tmp_path / "origin.git"), "show", f"refs/heads/master:{rel}"],
-        check=True, capture_output=True).stdout
-
-
 def _measurement(tmp_path: Path, base: str) -> None:
     budget = json.loads(
         (_REPO / ".github/speed-budget.json").read_text(encoding="utf-8"))
@@ -336,7 +330,7 @@ def _run_push_step(tmp_path: Path, staged: str,
                           "GIT_WORK_TREE", "GIT_INDEX_FILE", "XDG_CONFIG_HOME",
                           "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"}}
     return subprocess.run(
-        ["bash", "-e", str(script)], cwd=tmp_path, check=False,
+        [_bash(), "-e", str(script)], cwd=tmp_path, check=False,
         capture_output=True, text=True, timeout=120,
         env={**env, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
              "HOME": str(home), "RUNNER_TEMP": str(tmp_path),

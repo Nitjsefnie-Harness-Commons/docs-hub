@@ -261,11 +261,10 @@ def _declaration_mismatch(document: str, key: str, was: object,
             "and to the diff carries")
 
 
-def _collect_declarations(cwd: Path, base: str,
-                          head: str) -> tuple[list, list]:
+def _collect_declarations(cwd: Path, base: str, head: str,
+                          paths_by_commit: dict[str, list[str]]) -> tuple[list, list]:
     """(pool, findings): a pure commit's lines pooled; any other line is
     a finding."""
-    paths_by_commit = _commit_paths(cwd, base, head)
     pool, findings = [], []
     for sha, lines in _commits_with_declaration_lines(cwd, base, head):
         outside = sorted(set(paths_by_commit.get(sha, [])) - {DOCUMENT})
@@ -337,21 +336,23 @@ def _relaxations(base: object, head: object, declarations: list,
             findings.append(_finding(DOCUMENT, key, None, now, "key added"))
             continue
         was = before[key]
-        if was == now:
-            continue
         if _under(key, "toolchain"):
-            if key not in chain:
+            if was != now and key not in chain:
                 findings.append(_finding(
                     DOCUMENT, key, was, now,
                     "changed without a budget-only commit"))
             continue
-        if key == "schema_version":
-            findings.append(_finding(
-                DOCUMENT, key, was, now, "schema_version changed"))
+        if key == "counter" and was == now:
             continue
         if not _is_number(now):
             findings.append(_finding(
                 DOCUMENT, key, was, now, "not a finite number"))
+            continue
+        if was == now:
+            continue
+        if key == "schema_version":
+            findings.append(_finding(
+                DOCUMENT, key, was, now, "schema_version changed"))
             continue
         if not _is_number(was):
             findings.append(_finding(
@@ -373,7 +374,8 @@ def _judge(cwd: Path, window_base: str, head_sha: str) -> list[str]:
     paths_by_commit = _commit_paths(cwd, window_base, head_sha)
     pure = [sha for sha, paths in paths_by_commit.items()
             if not set(paths) - {DOCUMENT}]
-    pool, findings = _collect_declarations(cwd, window_base, head_sha)
+    pool, findings = _collect_declarations(
+        cwd, window_base, head_sha, paths_by_commit)
     findings.extend(_relaxations(
         read_document(cwd, window_base, DOCUMENT),
         read_document(cwd, head_sha, DOCUMENT),
