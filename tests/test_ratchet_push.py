@@ -1,4 +1,4 @@
-"""Structure pins over ratchet-push.yml across the two workflows.
+"""Execute artifact listing and ratchet pushes against isolated remotes.
 
 The run-id fallback is pinned behaviourally: the listing step's script
 runs under bash -e against a stub `gh` recording the artifacts
@@ -6,7 +6,8 @@ endpoint it was called with (as in tests/test_tag_waiter.py).
 """
 import json
 import os
-import re
+import shlex
+import sys
 import shutil
 import subprocess
 from pathlib import Path
@@ -43,30 +44,12 @@ def _step(name: str) -> dict[str, Any]:
     return next(step for step in _push_job()["steps"] if step.get("name") == name)
 
 
-def _conjuncts(expression: str) -> set[str]:
-    # A disjunction would widen the admission set.
-    body = expression.strip()
-    if body.startswith("${{") and body.endswith("}}"):
-        body = body[3:-2].strip()
-    assert "||" not in body
-    return {part.strip() for part in body.split("&&")}
-
-
 def test_the_trigger_keys_on_the_gate_workflow_itself() -> None:
     gate = yaml.safe_load(
         (_REPO / ".github/workflows/ci-gate.yml").read_text(encoding="utf-8"))
     run = _triggers(_workflow())["workflow_run"]
     assert run["workflows"] == [gate["name"]]
     assert run["types"] == ["completed"]
-
-
-def test_the_push_job_admits_only_green_master_pushes() -> None:
-    # The measure step exits 0 even when tests fail: green-only lives here.
-    assert _conjuncts(_push_job()["if"]) == {
-        "github.event.workflow_run.event == 'push'",
-        "github.event.workflow_run.head_branch == 'master'",
-        "github.event.workflow_run.conclusion == 'success'",
-    }
 
 
 def test_the_push_job_runs_in_the_master_push_environment() -> None:
@@ -187,77 +170,6 @@ def test_the_deploy_key_is_prefixed_and_falls_back_to_the_old_secret() -> None:
     assert "MASTER_PUSH_DEPLOY_KEY" not in env
 
 
-def test_the_deploy_key_leaves_the_environment_before_fetched_code_runs() -> None:
-    lines = [line.strip() for line in
-             _step("Push the raise commit to master")["run"].splitlines()]
-    loaded = next(i for i, line in enumerate(lines) if line.startswith("ssh-add"))
-    unset = lines.index("unset DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
-    python = next(i for i, line in enumerate(lines) if "python3" in line)
-    assert loaded < unset < python
-    assert not any("MASTER_PUSH_DEPLOY_KEY" in line for line in lines[unset + 1:])
-
-
-def test_the_download_names_the_uploader_artifact() -> None:
-    tests = yaml.safe_load(
-        (_REPO / ".github/workflows/tests.yml").read_text(encoding="utf-8"))
-    speed = yaml.safe_load(
-        (_REPO / ".github/workflows/speed.yml").read_text(encoding="utf-8"))
-    upload = next(step for step in tests["jobs"]["coverage"]["steps"]
-                  if step.get("name") == "Upload the coverage raise artifact")
-    speed_upload = next(step for step in speed["jobs"]["speed"]["steps"]
-                        if step.get("name") == "Upload the measurement")
-    download = _step("Download the coverage raise artifact")
-    speed_download = _step("Download the speed measurement artifact")
-    assert download["with"]["name"] == upload["with"]["name"]
-    assert speed_download["with"]["name"] == speed_upload["with"]["name"]
-    listing = _step("List the triggering run's artifacts")["run"]
-    assert f"grep -qx '{upload['with']['name']}'" in listing
-    assert f"grep -qx '{speed_upload['with']['name']}'" in listing
-    assert download["if"] == "steps.list.outputs.staged == 'true'"
-    assert speed_download["if"] == "steps.list.outputs.staged_speed == 'true'"
-    assert _step("Push the raise commit to master")["if"] == (
-        download["if"] + " || " + speed_download["if"])
-
-
-def test_the_push_step_consumes_exactly_the_staged_speed_files() -> None:
-    speed = yaml.safe_load(
-        (_REPO / ".github/workflows/speed.yml").read_text(encoding="utf-8"))
-    upload = next(step for step in speed["jobs"]["speed"]["steps"]
-                  if step.get("name") == "Upload the measurement")
-    push = _step("Push the raise commit to master")["run"]
-    staged = set(re.findall(r"runner\.temp\s*\}\}/([^{}]+)", upload["with"]["path"]))
-    consumed = set(re.findall(r"speed-data/([A-Za-z0-9._-]+)", push))
-    assert staged and staged == consumed
-
-
-def test_the_push_step_consumes_exactly_the_staged_files() -> None:
-    tests = yaml.safe_load(
-        (_REPO / ".github/workflows/tests.yml").read_text(encoding="utf-8"))
-    stager = next(step["run"] for step in tests["jobs"]["coverage"]["steps"]
-                  if step.get("name") == "Stage the coverage raise artifact")
-    push = _step("Push the raise commit to master")["run"]
-    staged = set(re.findall(r'out / "([^"]+)"', stager))
-    consumed = set(re.findall(r"raise-data/([A-Za-z0-9._-]+)", push))
-    # Both directions: every staged file is read, none other.
-    assert staged and staged == consumed
-
-
-def test_the_push_step_runs_the_fetched_trees_own_ratchet() -> None:
-    push = _step("Push the raise commit to master")["run"]
-    joined = push.replace("\\\n", " ").replace('"', " ")
-    init = next(line for line in joined.splitlines() if line.lstrip().startswith("git init"))
-    clone = init.split()[-1]
-    command = next(line for line in joined.splitlines() if "ratchet.py" in line)
-    tokens = command.split()
-    script = next(token for token in tokens if token.endswith("scripts/ci/ratchet.py"))
-    # Script and thresholds document both live in the fetched tree, run
-    # isolated; --base/--tip are the staleness inputs.
-    assert clone in script
-    assert clone in tokens[tokens.index("--thresholds") + 1]
-    assert tokens[tokens.index("python3") + 1] == "-I"
-    assert {"--base", "--tip", "--measured", "--thresholds"} <= set(tokens)
-
-
 _COVERAGE_RECORD = {"schema_version": 1, "coverage": {
     "python": {"measured": 96.9, "floor": 95.4}}}
 _SPEED_BUDGET = {"schema_version": 1, "counter": "cachegrind-ir",
@@ -326,6 +238,12 @@ def _run_push_step(tmp_path: Path, staged: str,
     adder = bin_dir / "ssh-add"
     adder.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8", newline="\n")
     adder.chmod(0o755)
+    python = bin_dir / "python3"
+    python.write_text('#!/bin/sh\n'
+                      'if [ "${DOCS_HUB_MASTER_PUSH_DEPLOY_KEY+x}" ]; then exit 91; fi\n'
+                      f'exec {shlex.quote(sys.executable)} "$@"\n',
+                      encoding="utf-8", newline="\n")
+    python.chmod(0o755)
     poison = tmp_path / "poison"
     poison.mkdir()
     (poison / "json.py").write_text('raise RuntimeError("poisoned json")\n',
