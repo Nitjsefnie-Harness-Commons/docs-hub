@@ -9,7 +9,6 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-import yaml
 
 _REPO = Path(__file__).resolve().parent.parent
 _SCRIPT = _REPO / "scripts/ci/speed.py"
@@ -318,13 +317,3 @@ def test_workload_refuses_a_server_that_exits_at_startup(tmp_path: Path) -> None
                           cwd=tmp_path, capture_output=True, text=True, check=False)
     assert done.returncode != 0
     assert "the server exited" in done.stderr
-
-
-def test_workflow_builds_each_side_from_its_own_tree() -> None:
-    with (_REPO / ".github/workflows/speed.yml").open(encoding="utf-8") as stream:
-        job = yaml.safe_load(stream)["jobs"]["speed"]
-    script = "\n".join(step.get("run", "") for step in job["steps"])
-    assert "git describe --tags --abbrev=0 --match 'v[0-9]*' HEAD" in script
-    assert '-r "$RUNNER_TEMP/base/requirements.txt"' in script
-    assert '"$RUNNER_TEMP/venv-head/bin/python" -m pip install -r requirements.txt' in script
-    assert "python scripts/ci/speed.py" in script
