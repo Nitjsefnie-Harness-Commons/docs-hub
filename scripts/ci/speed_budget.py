@@ -80,6 +80,8 @@ def load_measurement(path: Path) -> dict:
 
 
 def _validate_measurement(measurement: object) -> None:
+    if not isinstance(measurement, dict):
+        raise BudgetError("the measurement is not a JSON object")
     counts = measurement.get("counts")
     if not isinstance(counts, dict) or not all(
             isinstance(name, str) and isinstance(count, int)
