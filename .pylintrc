@@ -1,8 +1,10 @@
 [MASTER]
 ignore-paths=^\.venv/.*$,^store/.*$,^node_modules/.*$
 
-# Every disable below is a pattern this codebase uses deliberately, not a
-# finding waved through. The gate exists for real defects; a rule the code
+# Every disable below is a pattern this codebase uses deliberately, or a rule
+# another gate now supersedes -- the size-baseline records ratchet for
+# too-many-lines -- not a finding waved through. The gate exists for real
+# defects; a rule the code
 # structurally cannot satisfy is the one that trains people to ignore output.
 # Real defects the gate found on its first run -- an unused import, an open()
 # with no encoding, a lifespan parameter shadowing the app it is attached to,
