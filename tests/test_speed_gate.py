@@ -398,3 +398,40 @@ def test_a_counted_run_refuses_a_missing_valgrind_binary(
                        "--valgrind", "/nonexistent/valgrind"]) == 1
     assert "no valgrind binary at" in capsys.readouterr().err
     assert not out.exists()
+
+
+@pytest.mark.parametrize("count", [0, -1, True, 1.5, "1000"])
+def test_measurement_refuses_an_invalid_count(
+        policy: ModuleType, tmp_path: Path, count: object) -> None:
+    path = tmp_path / "measurement.json"
+    path.write_text(json.dumps(_measurement({"service.publish": count})), encoding="utf-8")
+    with pytest.raises(policy.BudgetError, match="integers"):
+        policy.load_measurement(path)
+
+
+@pytest.mark.parametrize("field", ["python", "valgrind", "runner_image", "lock_sha256"])
+@pytest.mark.parametrize("value", [[], {}, 1, False])
+@pytest.mark.parametrize("kind", ["budget", "measurement"])
+def test_toolchain_refuses_values_other_than_strings_or_null(
+        policy: ModuleType, tmp_path: Path, field: str,
+        value: object, kind: str) -> None:
+    chain = {**TOOLCHAIN, field: value}
+    document = (_budget(toolchain=chain) if kind == "budget"
+                else _measurement({"service.publish": 1000}, chain))
+    path = tmp_path / "data.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+    load = policy.load if kind == "budget" else policy.load_measurement
+    with pytest.raises(policy.BudgetError, match="toolchain"):
+        load(path)
+
+
+def test_tighten_refuses_zero_without_rewriting_the_budget(
+        speed: ModuleType, tmp_path: Path) -> None:
+    budget, measurement = tmp_path / "budget.json", tmp_path / "m.json"
+    budget.write_text(json.dumps(_budget()), encoding="utf-8")
+    original = budget.read_bytes()
+    measurement.write_text(json.dumps(_measurement(
+        {"service.publish": 0, "service.list": 2000})), encoding="utf-8")
+    assert speed.main(["tighten", "--measurements", str(measurement),
+                       "--budget", str(budget)]) == 1
+    assert budget.read_bytes() == original
