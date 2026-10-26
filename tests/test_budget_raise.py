@@ -410,7 +410,7 @@ def test_a_synthetic_merge_cannot_sanction_mixed_work(
     done = _pull(repo, base, "HEAD")
     assert done.returncode == 1, done.stdout + done.stderr
     if declaration:
-        assert "carries declaration lines but also touches src/app.py" in done.stdout
+        assert "does not match a raise in this diff" in done.stdout
         assert "raised; it may only fall" in done.stdout
     else:
         assert "toolchain.lock_sha256" in done.stdout
