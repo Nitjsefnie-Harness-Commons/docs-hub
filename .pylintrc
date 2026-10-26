@@ -24,7 +24,12 @@ disable=
 # Route handlers and the repository layer take one parameter per column;
 # collapsing them into a dict would move the argument checking out of the
 # signature and into the body, where nothing verifies it.
-    duplicate-code
+    duplicate-code,
+# Module length is gated per file by the size-baseline workflow's records
+# ratchet (.github/size-baseline.json), which supersedes the flat 1000-line
+# cap: a recorded file may exceed it, and every tracked .py is measured --
+# nothing unrecorded sits above 1000.
+    too-many-lines
 
 # Metrics, raised rather than disabled: a handler with eight query filters is
 # fine, a handler with twenty is a real smell and should still go red.
