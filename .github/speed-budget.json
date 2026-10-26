@@ -1,7 +1,7 @@
 {
   "counter": "cachegrind-ir",
   "schema_version": 1,
-  "tolerance_pct": 1.0,
+  "tolerance_pct": 0.5,
   "toolchain": {
     "lock_sha256": "8ab6677622e0a43e4819586d0b6bb0da1a7695362a85b2cb8c36a0d8fb158cee",
     "python": "3.15.1 (main, Oct 21 2026, 14:53:25) [GCC 13.3.0]",
