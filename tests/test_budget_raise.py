@@ -146,6 +146,9 @@ def test_a_duplicate_declaration_fails(tmp_path: Path) -> None:
     'Budget-Raise: .github/speed-budget.json workloads["w.pub"] 100 ->',
     "Budget-Raise: .github/speed-budget.json",
     f"Budget-Raise: {BUDGET} tolerance_pct 1.0 -> NaN",
+    f'Budget-Raise: {BUDGET} toolchain.python "x" -> 1',
+    f'Budget-Raise: {BUDGET} toolchain.python "x" -> []',
+    f'Budget-Raise: {BUDGET} toolchain.python {{}} -> "x"',
 ])
 def test_a_malformed_declaration_line_fails(tmp_path: Path, line: str) -> None:
     repo, base = _seeded(tmp_path)
