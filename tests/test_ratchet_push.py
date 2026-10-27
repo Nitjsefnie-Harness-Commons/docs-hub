@@ -54,6 +54,13 @@ def _conjuncts(expression: str) -> set[str]:
     return {part.strip() for part in body.split("&&")}
 
 
+def _disjuncts(expression: str) -> set[frozenset[str]]:
+    body = re.sub(r"\s+", " ", expression).strip()
+    if body.startswith("${{") and body.endswith("}}"):
+        body = body[3:-2]
+    return {frozenset(_conjuncts(part)) for part in body.split("||")}
+
+
 def test_the_trigger_keys_on_the_gate_workflow_itself() -> None:
     gate = yaml.safe_load(
         (_REPO / ".github/workflows/ci-gate.yml").read_text(encoding="utf-8"))
@@ -208,7 +215,11 @@ def test_the_download_names_the_uploader_artifact() -> None:
     assert download["with"]["name"] == upload["with"]["name"]
     assert f"grep -qx '{upload['with']['name']}'" in _step(
         "List the triggering run's artifacts")["run"]
-    assert download["if"] in _step("Push the raise commit to master")["if"].split(" || ")
+    # The push step holds the deploy key: one disjunct per staged arm, no other.
+    disjuncts = _disjuncts(_step("Push the raise commit to master")["if"])
+    assert disjuncts == {frozenset({"steps.list.outputs.staged == 'true'"}),
+                         frozenset({"steps.list.outputs.staged_speed == 'true'"})}
+    assert frozenset(_conjuncts(download["if"])) in disjuncts
 
 
 def test_the_push_step_consumes_exactly_the_staged_files() -> None:
