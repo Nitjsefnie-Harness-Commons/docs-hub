@@ -10,9 +10,9 @@
   },
   "workloads": {
     "cli.text": 17657328241,
-    "cli.transfer": 19813566249,
+    "cli.transfer": 19813362010,
     "service.list": 8295609270,
-    "service.publish": 8206821843,
+    "service.publish": 8206759899,
     "service.versions": 8272774371
   }
 }
