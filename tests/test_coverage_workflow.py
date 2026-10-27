@@ -1,6 +1,7 @@
 """Pin the coverage job's floor plumbing, changed-lines report and raise artifact."""
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -33,6 +34,24 @@ def _thresholds() -> ModuleType:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def _push_download_name() -> str:
+    """The raise artifact's consumer side: the push workflow's download step."""
+    workflow = yaml.safe_load(
+        (_REPO / ".github/workflows/ratchet-push.yml").read_text(encoding="utf-8"))
+    return next(step["with"]["name"] for step in workflow["jobs"]["push"]["steps"]
+                if "with" in step)
+
+
+def _conjuncts(expression: str) -> set[str]:
+    # The condition must be one conjunction: a disjunction would widen the
+    # admission set past the designed one.
+    body = expression.strip()
+    if body.startswith("${{") and body.endswith("}}"):
+        body = body[3:-2].strip()
+    assert "||" not in body
+    return {part.strip() for part in body.split("&&")}
 
 
 def _run_script(tmp_path: Path, script: str, env: dict[str, str],
@@ -132,5 +151,32 @@ def test_the_report_step_appends_the_tool_output_to_the_summary(
 
 def test_the_report_step_is_information_only() -> None:
     step = _step("Coverage of changed lines (informational)")
+    assert _conjuncts(step["if"]) >= _conjuncts(_step("Coverage summary")["if"]) | {
+        "github.event_name == 'pull_request'"}
+    assert "--fail-under" not in step["run"]
     # A failing report shows at step level but cannot fail the job.
     assert step.get("continue-on-error") is True
+
+
+def test_the_staging_step_runs_only_on_green_master_pushes() -> None:
+    assert _conjuncts(_step("Stage the coverage raise artifact")["if"]) >= _conjuncts(
+        _step("Coverage summary")["if"]) | {
+        "github.event_name == 'push'", "github.ref == 'refs/heads/master'"}
+
+
+def test_no_run_step_carries_a_floor_literal() -> None:
+    # The floor is only ever read from the recorded file; a literal here is
+    # the old gate's interim value sneaking back in.
+    text = (_REPO / ".github/workflows/tests.yml").read_text(encoding="utf-8")
+    assert re.search(r"--fail-under=\d", text) is None
+
+
+def test_the_artifact_name_matches_the_staged_directory() -> None:
+    # The push workflow downloads by the uploader's name, so the two
+    # workflows cannot drift apart.
+    steps = _coverage_job()["steps"]
+    stage = next(index for index, step in enumerate(steps)
+                 if step.get("name") == "Stage the coverage raise artifact")
+    upload = steps[stage + 1]
+    assert upload["with"]["name"] == _push_download_name()
+    assert upload["if"] == steps[stage]["if"]

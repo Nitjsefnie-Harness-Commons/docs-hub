@@ -1,4 +1,4 @@
-"""Execute artifact listing and ratchet pushes against isolated remotes.
+"""Structure pins over ratchet-push.yml across the two workflows.
 
 The run-id fallback is pinned behaviourally: the listing step's script
 runs under bash -e against a stub `gh` recording the artifacts
@@ -6,6 +6,7 @@ endpoint it was called with (as in tests/test_tag_waiter.py).
 """
 import json
 import os
+import re
 import shlex
 import sys
 import shutil
@@ -44,12 +45,30 @@ def _step(name: str) -> dict[str, Any]:
     return next(step for step in _push_job()["steps"] if step.get("name") == name)
 
 
+def _conjuncts(expression: str) -> set[str]:
+    # A disjunction would widen the admission set.
+    body = expression.strip()
+    if body.startswith("${{") and body.endswith("}}"):
+        body = body[3:-2].strip()
+    assert "||" not in body
+    return {part.strip() for part in body.split("&&")}
+
+
 def test_the_trigger_keys_on_the_gate_workflow_itself() -> None:
     gate = yaml.safe_load(
         (_REPO / ".github/workflows/ci-gate.yml").read_text(encoding="utf-8"))
     run = _triggers(_workflow())["workflow_run"]
     assert run["workflows"] == [gate["name"]]
     assert run["types"] == ["completed"]
+
+
+def test_the_push_job_admits_only_green_master_pushes() -> None:
+    # The measure step exits 0 even when tests fail: green-only lives here.
+    assert _conjuncts(_push_job()["if"]) == {
+        "github.event.workflow_run.event == 'push'",
+        "github.event.workflow_run.head_branch == 'master'",
+        "github.event.workflow_run.conclusion == 'success'",
+    }
 
 
 def test_the_push_job_runs_in_the_master_push_environment() -> None:
@@ -109,17 +128,17 @@ cat "${GH_ARTIFACTS:-/dev/null}"
     gh.chmod(0o755)
     env = {key: value for key, value in os.environ.items()
            if key not in {"REPO", "RUN_ID", "DOCS_HUB_RUN_ID"}}
-    env_updates = {"PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", **workflow_env,
-                   "REPO": "example/repository",
-                   "GITHUB_OUTPUT": str(tmp_path / "output.txt"),
-                   "GH_LOG": str(tmp_path / "gh-calls.log")}
     if artifacts is not None:
         (tmp_path / "artifacts.txt").write_text(
             "".join(f"{name}\n" for name in artifacts), encoding="utf-8")
-        env_updates["GH_ARTIFACTS"] = str(tmp_path / "artifacts.txt")
+        env["GH_ARTIFACTS"] = str(tmp_path / "artifacts.txt")
     return subprocess.run(
         [_bash(), "-e", str(script)], check=False, capture_output=True,
-        text=True, timeout=5, env={**env, **env_updates},
+        text=True, timeout=5,
+        env={**env, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", **workflow_env,
+             "REPO": "example/repository",
+             "GITHUB_OUTPUT": str(tmp_path / "output.txt"),
+             "GH_LOG": str(tmp_path / "gh-calls.log")},
     )
 
 
@@ -168,6 +187,56 @@ def test_the_deploy_key_is_prefixed_and_falls_back_to_the_old_secret() -> None:
     assert (expression.index("secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
             < expression.index("secrets.MASTER_PUSH_DEPLOY_KEY"))
     assert "MASTER_PUSH_DEPLOY_KEY" not in env
+
+
+def test_the_deploy_key_leaves_the_environment_before_fetched_code_runs() -> None:
+    lines = [line.strip() for line in
+             _step("Push the raise commit to master")["run"].splitlines()]
+    loaded = next(i for i, line in enumerate(lines) if line.startswith("ssh-add"))
+    unset = lines.index("unset DOCS_HUB_MASTER_PUSH_DEPLOY_KEY")
+    python = next(i for i, line in enumerate(lines) if "python3" in line)
+    assert loaded < unset < python
+    assert not any("MASTER_PUSH_DEPLOY_KEY" in line for line in lines[unset + 1:])
+
+
+def test_the_download_names_the_uploader_artifact() -> None:
+    tests = yaml.safe_load(
+        (_REPO / ".github/workflows/tests.yml").read_text(encoding="utf-8"))
+    upload = next(step for step in tests["jobs"]["coverage"]["steps"]
+                  if step.get("name") == "Upload the coverage raise artifact")
+    download = _step("Download the coverage raise artifact")
+    assert download["with"]["name"] == upload["with"]["name"]
+    assert f"grep -qx '{upload['with']['name']}'" in _step(
+        "List the triggering run's artifacts")["run"]
+    assert download["if"] in _step("Push the raise commit to master")["if"].split(" || ")
+
+
+def test_the_push_step_consumes_exactly_the_staged_files() -> None:
+    tests = yaml.safe_load(
+        (_REPO / ".github/workflows/tests.yml").read_text(encoding="utf-8"))
+    stager = next(step["run"] for step in tests["jobs"]["coverage"]["steps"]
+                  if step.get("name") == "Stage the coverage raise artifact")
+    push = _step("Push the raise commit to master")["run"]
+    staged = set(re.findall(r'out / "([^"]+)"', stager))
+    consumed = set(re.findall(r"raise-data/([A-Za-z0-9._-]+)", push))
+    # Both directions: every staged file is read, none other.
+    assert staged and staged == consumed
+
+
+def test_the_push_step_runs_the_fetched_trees_own_ratchet() -> None:
+    push = _step("Push the raise commit to master")["run"]
+    joined = push.replace("\\\n", " ").replace('"', " ")
+    init = next(line for line in joined.splitlines() if line.lstrip().startswith("git init"))
+    clone = init.split()[-1]
+    command = next(line for line in joined.splitlines() if "ratchet.py" in line)
+    tokens = command.split()
+    script = next(token for token in tokens if token.endswith("scripts/ci/ratchet.py"))
+    # Script and thresholds document both live in the fetched tree, run
+    # isolated; --base/--tip are the staleness inputs.
+    assert clone in script
+    assert clone in tokens[tokens.index("--thresholds") + 1]
+    assert tokens[tokens.index("python3") + 1] == "-I"
+    assert {"--base", "--tip", "--measured", "--thresholds"} <= set(tokens)
 
 
 _COVERAGE_RECORD = {"schema_version": 1, "coverage": {
