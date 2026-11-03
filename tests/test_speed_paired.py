@@ -192,8 +192,8 @@ def test_refuse_mismatch_fails_a_mismatched_head_whatever_its_counts_say(
     capsys.readouterr()
     assert speed.main(["check", *without, "--refuse-mismatch"]) == 1
     assert _refusal(capsys.readouterr().out) == [
-        "toolchain: the budget does not record the measured toolchain on valgrind; a pull "
-        "request passes once its budget does (CONTRIBUTING.md, speed budget)"]
+        "toolchain: the budget does not record the measured toolchain on valgrind; "
+        "the refusal clears once the budget records it (CONTRIBUTING.md, speed budget)"]
 
 
 def test_refuse_mismatch_names_every_differing_field_and_keeps_the_report(

@@ -94,13 +94,14 @@ names, against `.github/speed-budget.json` with a recorded toolchain,
 or, on a toolchain mismatch, against the base commit measured in the
 same job with its own lock (that verdict decides every run but a pull
 request's; a pull request whose toolchain differs from its own budget's
-fails until it carries its rebaseline), `scripts/ci/speed.py`; counts taken outside that image do not
-compare with CI's). Its `aggregate` job folds
-every leg and fails closed, with `conflict-markers` on every push and PR
-and PR-only `base-freshness`, which fails when `master` holds a gate-input
-commit the head lacks, naming the commit and file. CONTRIBUTING.md's table
-gives the local commands; CodeQL runs on GitHub. Run the applicable local
-checks before pushing rather than using CI as the first check.
+fails until it carries its rebaseline), `scripts/ci/speed.py`; counts
+taken outside that image do not compare with CI's). Its `aggregate` job
+folds every leg and fails closed, with `conflict-markers` on every push
+and PR and PR-only `base-freshness`, which fails when `master` holds a
+gate-input commit the head lacks, naming the commit and file.
+CONTRIBUTING.md's table gives the local commands; CodeQL runs on GitHub.
+Run the applicable local checks before pushing rather than using CI as
+the first check.
 
 The coverage floor is recorded, not fixed: `.github/ci-thresholds.json`
 holds a measurement and a floor exactly 1.5 points below it, and the

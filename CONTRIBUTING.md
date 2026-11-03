@@ -182,17 +182,19 @@ Python or valgrind) therefore stays red until that commit lands, and on a
 Dependabot pull request a maintainer adds it. Likewise a `master` whose
 toolchain moved without a rebaseline turns every pull request that does
 not itself rebaseline red until one lands on `master`. After that commit
-the toolchains match and the
-ordinary budget check applies. Until then every run whose toolchain
-differs from the budget's takes the paired path, refusals included: its
-counts are compared only with its own base commit's, the budget's counts
-are not consulted, and `tighten` lowers nothing.
+the toolchains match and the ordinary budget check applies. Until then
+every run whose toolchain differs from the budget's takes the paired
+path, refusals included: its counts are compared only with its own base
+commit's, the budget's counts are not consulted, and `tighten` lowers
+nothing.
 
-To rebaseline a Dependabot (or any other toolchain-bump) pull request:
+To rebaseline a Dependabot (or any other toolchain-bump) pull request,
+work from a checkout of that pull request's branch:
 
 1. Download its CI run's artifact with
    `gh run download <run-id> -n speed-measurement`, which writes
-   `measurement.json`.
+   `measurement.json` and, on a mismatch run, `base-measurement.json`.
+   Only `measurement.json` is read below; commit only the budget.
 2. Run
    `python3 scripts/ci/speed.py rebaseline --measurements measurement.json --budget .github/speed-budget.json`
    and review the resulting counts. It rewrites the budget, prints its
@@ -201,10 +203,10 @@ To rebaseline a Dependabot (or any other toolchain-bump) pull request:
    included; endpoints are JSON strings or `null`, and `absent` marks an
    added or removed key, for example `Budget-Raise: .github/speed-budget.json toolchain.image "old image" -> "new image"`)
    and one per recorded count that rose. It prints nothing for a lowered,
-   unchanged or added workload count (an added workload needs no
-   declaration) or for `tolerance_pct`, which a rebaseline carries over;
-   raising that by hand needs its own line. A first seed, with no prior
-   budget, prints nothing.
+   unchanged or added workload count, a removed workload, or for
+   `tolerance_pct`, which a rebaseline carries over; an added workload
+   needs no declaration, and raising the tolerance by hand needs its own
+   line. A first seed, with no prior budget, prints nothing.
 3. Commit only `.github/speed-budget.json`, with the printed lines as the
    commit message body, and push to the pull request branch. Leave
    `[dependabot skip]` out of the message.
@@ -212,9 +214,11 @@ To rebaseline a Dependabot (or any other toolchain-bump) pull request:
 This costs one such commit per pull request that moves the speed lock or
 image. Dependabot stops rebasing a branch once another author has pushed
 to it, unless a commit message carries `[dependabot skip]`, which lets it
-force-push over that commit. `@dependabot recreate`, or a superseding
-Dependabot pull request, drops the commit, and it is redone from the new
-run's artifact.
+force-push over that commit. Once Dependabot stops rebasing, the
+maintainer must keep the branch current with `master` for the
+`base-freshness` leg. A branch update that moves the lock again needs a
+fresh rebaseline. `@dependabot recreate`, or a superseding Dependabot pull
+request, drops the commit, and it is redone from the new run's artifact.
 
 The speed job runs in a container from the image `.github/speed/Dockerfile`
 pins by digest, and installs valgrind and `libc6-dbg` at exact versions from
