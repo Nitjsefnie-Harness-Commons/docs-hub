@@ -136,6 +136,7 @@ jobs:
           TAG_WAIT_SLEEP_SECONDS="${TAG_WAIT_SLEEP_SECONDS:-20}"
           # The ci gate aggregate is the one check a master push must carry.
           required='aggregate'
+          unset runs
           deadline=$(( SECONDS + TAG_WAIT_DEADLINE_SECONDS ))
           while [ "$SECONDS" -lt "$deadline" ]; do
             workflow_runs="$(gh api --paginate \
@@ -190,6 +191,12 @@ jobs:
             exit 0
           done
           echo "Timed out after $TAG_WAIT_DEADLINE_SECONDS seconds waiting for checks on ${DOCS_HUB_SHA:-${SHA}}" >&2
+          if [ -z "${runs+polled}" ]; then
+            echo "No poll ran before the deadline." >&2
+          else
+            echo "Checks reported by the last poll:" >&2
+            echo "$runs" | awk '{print "    " $0}' >&2
+          fi
           exit 1
 
   tag:

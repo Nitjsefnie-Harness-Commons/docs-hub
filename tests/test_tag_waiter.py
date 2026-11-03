@@ -177,6 +177,24 @@ def test_running_required_check_waits_until_deadline(tmp_path: Path):
     assert "Timed out" in result.stderr
 
 
+def test_timeout_reports_the_last_poll(tmp_path: Path):
+    checks = [_check(name, None, "in_progress") for name in _REQUIRED]
+    # Two seconds, so that a poll runs: SECONDS can end a 1-second loop before its first.
+    result = _run_waiter(tmp_path, checks, deadline=2)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "\n    in_progress\tnull\taggregate\tnull\n" in result.stderr
+
+
+def test_timeout_before_any_poll_says_none_ran(tmp_path: Path):
+    # An inherited runs variable must not pass for a poll's output.
+    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED], deadline=0,
+                         workflow_env={"DOCS_HUB_REPO": "example/repository",
+                                       "DOCS_HUB_SHA": "0" * 40, "runs": "inherited"})
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Reported checks:" not in result.stdout
+    assert "No poll ran before the deadline." in result.stderr
+
+
 def _gate_row(name: str, run_id: int) -> dict[str, str | None]:
     return _check(name, "failure",
                   html_url=f"https://github.com/example/repository/actions/runs/{run_id}/job/1")
