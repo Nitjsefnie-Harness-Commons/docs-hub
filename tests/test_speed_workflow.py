@@ -123,12 +123,15 @@ def test_the_base_and_check_steps_read_the_mismatch_steps_own_answer(tmp_path: P
 
 
 def test_the_base_step_reads_the_budget_raise_steps_event_variables() -> None:
+    # The measured commit is the checkout's HEAD, never DOCS_HUB_HEAD_SHA.
     raise_env = _step("Refuse an undeclared budget raise")["env"]
-    assert _step(_BASE)["env"] == {name: raise_env[name] for name in _EVENT}
+    assert _step(_BASE)["env"] == {name: raise_env[name] for name in _EVENT
+                                   if name != "DOCS_HUB_HEAD_SHA"}
 
 
 def _checkout(tmp_path: Path) -> dict[str, str]:
-    """A checkout at a pull request head whose lock differs from its merge base's."""
+    """A pull request's merge commit checked out: master + head, whose lock
+    differs from master's, with master past the fork point."""
     repo = f._repo(tmp_path)
     for name in ("speed_base.py", "budget_raise.py", "budget_chain.py"):
         (repo / "scripts/ci").mkdir(parents=True, exist_ok=True)
@@ -137,6 +140,8 @@ def _checkout(tmp_path: Path) -> dict[str, str]:
     shas["master"] = f._commit(repo, "master moves", **{"src/other.py": "print(1)\n"})
     f._git(repo, "checkout", "-q", "-b", "side", shas["fork"])
     shas["head"] = f._commit(repo, "head", **{"requirements-speed.txt": "lock at head\n"})
+    f._git(repo, "checkout", "-q", "--detach", shas["master"])
+    f._git(repo, "merge", "-q", "--no-ff", "-m", "Merge head into master", shas["head"])
     return shas
 
 
@@ -155,7 +160,7 @@ def _interpreters(tmp_path: Path) -> Path:
     return bin_dir
 
 
-def test_a_mismatch_measures_the_merge_base_with_its_own_lock(tmp_path: Path) -> None:
+def test_a_mismatch_measures_the_base_tip_with_its_own_lock(tmp_path: Path) -> None:
     shas = _checkout(tmp_path)
     runner = tmp_path / "runner"
     runner.mkdir()
@@ -164,17 +169,19 @@ def test_a_mismatch_measures_the_merge_base_with_its_own_lock(tmp_path: Path) ->
         "DOCS_HUB_HEAD_SHA": shas["head"], "DOCS_HUB_BEFORE_SHA": ""}, _interpreters(tmp_path))
     assert done.returncode == 0, done.stdout + done.stderr
     tree = runner / "base-tree"
-    assert f._git(tree, "rev-parse", "HEAD") == shas["fork"]
+    assert f._git(tree, "rev-parse", "HEAD") == shas["master"]
+    assert (tmp_path / "repo/requirements-speed.txt").read_text(encoding="utf-8") \
+        == "lock at head\n"
     assert (tree / "requirements-speed.txt").read_text(encoding="utf-8") == "lock at fork\n"
     assert _calls(tmp_path / "python.log") == [["-m", "venv", f"{runner}/base-venv"]]
     assert _calls(tmp_path / "base-venv.log") == [
         ["-m", "pip", "install", "--require-hashes", "-r", f"{tree}/requirements-speed.txt"],
         ["scripts/ci/speed.py", "measure", "--tree", str(tree), "--database", "docs_speed",
-         "--out", f"{runner}/base-measurement.json", "--base-sha", shas["fork"]]]
+         "--out", f"{runner}/base-measurement.json", "--base-sha", shas["master"]]]
 
 
 @pytest.mark.parametrize("event", [
-    {"DOCS_HUB_EVENT_NAME": "push", "DOCS_HUB_BEFORE_SHA": f.ZERO},
+    {"DOCS_HUB_EVENT_NAME": "push", "DOCS_HUB_BEFORE_SHA": "abc1234"},
     {"DOCS_HUB_EVENT_NAME": "pull_request", "DOCS_HUB_BASE_SHA": "nosuchrev"},
 ])
 def test_an_unresolved_base_fails_the_step_before_anything_is_built(

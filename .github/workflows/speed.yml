@@ -112,6 +112,8 @@ jobs:
 
       # Same job, same Python and valgrind; the base tree's own lock, so a
       # lock bump is part of the head's delta. This checkout's harness drives it.
+      # The base pairs with the checkout: a pull request's base tip (the
+      # merge commit's), a push's ancestor `before`, else HEAD's first parent.
       - name: Measure the base commit beside this one
         if: steps.mismatch.outputs.mismatch == 'true'
         run: |
@@ -125,7 +127,6 @@ jobs:
             --out "$RUNNER_TEMP/base-measurement.json" --base-sha "$base"
         env:
           DOCS_HUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          DOCS_HUB_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           DOCS_HUB_BEFORE_SHA: ${{ github.event.before }}
           DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
 

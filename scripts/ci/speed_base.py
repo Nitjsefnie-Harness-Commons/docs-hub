@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Print the commit a toolchain-mismatched speed run measures beside its head.
+"""Print the commit a toolchain-mismatched speed run measures beside HEAD.
 
-pull_request: the merge base; push: `before`; else the head's first parent.
-Whatever it cannot resolve exits 1.
+CONTRIBUTING.md's speed row gives the rule per event; the rest exits 1.
 """
 from __future__ import annotations
 
@@ -19,31 +18,36 @@ _FULL_SHA = re.compile(r"[0-9a-f]{40}")
 
 
 def base_commit(cwd: Path, env: Mapping[str, str]) -> str:
-    event, head = env.get("DOCS_HUB_EVENT_NAME"), env.get("DOCS_HUB_HEAD_SHA")
+    event = env.get("DOCS_HUB_EVENT_NAME")
     if not event:
         raise ValueError("no event name (DOCS_HUB_EVENT_NAME): the run is not wired")
-    if not head:
-        raise ValueError(f"a {event} run needs the head revision (DOCS_HUB_HEAD_SHA)")
     budget_raise.require_full_history(cwd)
-    head_sha = budget_raise.resolve_commit(cwd, head)
+    head = budget_raise.resolve_commit(cwd, "HEAD")
     if event == "pull_request":
-        base = env.get("DOCS_HUB_BASE_SHA")
-        if not base:
+        if not env.get("DOCS_HUB_BASE_SHA"):
             raise ValueError("a pull_request run needs the base revision (DOCS_HUB_BASE_SHA)")
-        return budget_raise.merge_base(cwd, budget_raise.resolve_commit(cwd, base), head_sha)
+        base = budget_raise.resolve_commit(cwd, env["DOCS_HUB_BASE_SHA"])
+        if not budget_raise.is_ancestor(cwd, base, head):
+            raise ValueError(f"{base} is not an ancestor of the checked-out {head}")
+        return base
     if event == "push":
         before = env.get("DOCS_HUB_BEFORE_SHA") or ""
-        if not _FULL_SHA.fullmatch(before) or before == "0" * 40:
-            raise ValueError(f"a push run measures the commit it came from, and {before!r} "
-                             "is not a full non-zero SHA (DOCS_HUB_BEFORE_SHA)")
-        before_sha = budget_raise.resolve_commit(cwd, before)
-        if not budget_raise.is_ancestor(cwd, before_sha, head_sha):
-            raise ValueError(f"{before} is not an ancestor of {head}")
-        return before_sha
+        if not _FULL_SHA.fullmatch(before):
+            raise ValueError(f"{before!r} is not a full SHA (DOCS_HUB_BEFORE_SHA)")
+        if before != "0" * 40 and _contains(cwd, before, head):
+            return before
     try:
-        return budget_raise.resolve_commit(cwd, f"{head_sha}^1")
+        return budget_raise.resolve_commit(cwd, f"{head}^1")
     except ValueError:
         raise ValueError(f"{head} has no first parent to measure") from None
+
+
+def _contains(cwd: Path, before: str, head: str) -> bool:
+    try:  # A force push's old tip may never have been fetched.
+        resolved = budget_raise.resolve_commit(cwd, before)
+    except ValueError:
+        return False
+    return budget_raise.is_ancestor(cwd, resolved, head)
 
 
 def main() -> int:
