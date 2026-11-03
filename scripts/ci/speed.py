@@ -10,7 +10,8 @@ inside Postgres), for which wall time is the only signal.
 
     speed.py workload --database NAME [--workload NAME] [--valgrind PATH]
     speed.py measure --database NAME --out FILE [--base-sha SHA] [--valgrind PATH] [--tree DIR]
-    speed.py check --measurements FILE [--budget FILE] [--summary FILE]
+    speed.py check --measurements FILE [--budget FILE] [--summary FILE] [--base-measurements FILE]
+    speed.py mismatch --measurements FILE --budget FILE
     speed.py tighten --measurements FILE --budget FILE
     speed.py rebaseline --measurements FILE [--budget FILE]
 """
@@ -33,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import speed_budget  # noqa: E402  pylint: disable=wrong-import-position
+import speed_paired  # noqa: E402  pylint: disable=wrong-import-position
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKLOADS = ("service.publish", "service.list", "service.versions",
@@ -317,7 +319,9 @@ def write_document(path: Path, budget: dict) -> None:
 def render_toolchain(result: dict) -> list[str]:
     if not result["toolchain_diff"]:
         return ["toolchain: match"]
-    lines = ["toolchain: MISMATCH — a rebaseline commit is required", "",
+    remedy = (f"counts judged against base commit {result['base_sha']}, measured in this job"
+              if "base_sha" in result else "a rebaseline commit is required")
+    lines = [f"toolchain: MISMATCH — {remedy}", "",
              "| field | recorded | measured |", "|---|---|---|"]
     lines.extend(f"| {field} | {recorded} | {measured} |" for field, (recorded, measured)
                  in result["toolchain_diff"].items())
@@ -328,8 +332,9 @@ def render_check(budget: dict, result: dict) -> str:
     """The gate table, then the toolchain block."""
     tolerance = f'{budget["tolerance_pct"]:g}%'
     chain = "mismatch" if result["toolchain_diff"] else "match"
+    reference = "base" if "base_sha" in result else "budget"
     lines = [f"### Speed budget ({speed_budget.COUNTER})", "",
-             "| workload | count | budget | delta | tolerance | toolchain | verdict |",
+             f"| workload | count | {reference} | delta | tolerance | toolchain | verdict |",
              "|---|---|---|---|---|---|---|"]
     for row in result["rows"]:
         count = "-" if row["count"] is None else str(row["count"])
@@ -357,7 +362,13 @@ def check_command(args: argparse.Namespace) -> int:
     budget = speed_budget.load(args.budget)
     measurement = speed_budget.load_measurement(args.measurements)
     result = speed_budget.check(budget, measurement)
-    report = render_check(budget, result)
+    note = ""
+    if args.base_measurements and result["toolchain_diff"]:
+        result = speed_paired.paired_check(
+            budget, measurement, speed_budget.load_measurement(args.base_measurements))
+    elif args.base_measurements:
+        note = "\n\nbase measurements ignored: the toolchain matches the budget"
+    report = render_check(budget, result) + note
     if measurement.get("wall_seconds"):
         report += "\n\n" + render_wall(measurement["wall_seconds"])
     print(report)
@@ -365,6 +376,14 @@ def check_command(args: argparse.Namespace) -> int:
         with open(args.summary, "a", encoding="utf-8") as summary:
             summary.write(report + "\n")
     return 1 if result["failed"] else 0
+
+
+def mismatch_command(args: argparse.Namespace) -> int:
+    budget = speed_budget.load(args.budget)
+    measurement = speed_budget.load_measurement(args.measurements)
+    diff = speed_budget.toolchain_diff(budget["toolchain"], measurement["toolchain"])
+    print("true" if diff else "false")
+    return 0
 
 
 def tighten_command(args: argparse.Namespace) -> int:
@@ -437,7 +456,13 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--measurements", type=Path, required=True)
     check.add_argument("--budget", type=Path, default=speed_budget.ARTIFACT)
     check.add_argument("--summary", default="")
+    check.add_argument("--base-measurements", type=Path,
+                       help="the base commit's counts from this job, judged on a mismatch")
     check.set_defaults(func=check_command)
+    mismatch = sub.add_parser("mismatch", help="print whether the toolchain left the budget's")
+    mismatch.add_argument("--measurements", type=Path, required=True)
+    mismatch.add_argument("--budget", type=Path, required=True)
+    mismatch.set_defaults(func=mismatch_command)
     tighten = sub.add_parser("tighten", help="follow a count down once it falls more "
                              f"than {speed_budget.TIGHTEN_MARGIN_SHARE:.0%}% of tolerance_pct")
     tighten.add_argument("--measurements", type=Path, required=True)

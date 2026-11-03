@@ -264,7 +264,7 @@ def _seed_remote(tmp_path: Path) -> tuple[Path, str]:
     seed = tmp_path / "seed"
     seed.mkdir()
     for rel in ("scripts/ci/ratchet.py", "scripts/ci/thresholds.py",
-                "scripts/ci/speed.py", "scripts/ci/speed_budget.py"):
+                "scripts/ci/speed.py", "scripts/ci/speed_budget.py", "scripts/ci/speed_paired.py"):
         target = seed / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(_REPO / rel, target)
@@ -463,7 +463,7 @@ def test_landing_survives_a_legitimate_automated_raise(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "source"
     for rel in ("scripts/ci/ratchet.py", "scripts/ci/thresholds.py",
-                "scripts/ci/speed.py", "scripts/ci/speed_budget.py",
+                "scripts/ci/speed.py", "scripts/ci/speed_budget.py", "scripts/ci/speed_paired.py",
                 ".github/ci-thresholds.json", ".github/speed-budget.json",
                 ".github/workflows/ratchet-push.yml"):
         target = source / rel
