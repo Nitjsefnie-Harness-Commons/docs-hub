@@ -39,8 +39,6 @@ jobs:
           echo "image17=$image17" >> "$GITHUB_OUTPUT"
           echo "speed=$speed" >> "$GITHUB_OUTPUT"
 
-  # The counts run inside one digest-pinned image, so Python, libc and
-  # valgrind come from the commit, not from the runner image.
   speed:
     needs: images
     runs-on: ubuntu-24.04
@@ -70,9 +68,7 @@ jobs:
       DOCS_HUB_SPEED_IMAGE: ${{ needs.images.outputs.speed }}
 
     steps:
-      # Before the checkout: without git it fetches a tarball with no history.
-      # The snapshot is the image's own (its debian.sources names it), so
-      # libc6-dbg matches the image's libc6; a new image needs new pins here.
+      # git first: without it the checkout has no history.
       - name: Install git, the Postgres client and valgrind
         timeout-minutes: 5
         run: |
@@ -93,7 +89,7 @@ jobs:
           EOF
           apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
           apt-get install -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends git postgresql-client valgrind=1:3.24.0-3 libc6-dbg=2.41-12+deb13u4
-          # The runner owns the mounted workspace; later git calls run as root.
+          # The runner owns the workspace; git runs as root.
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -123,7 +119,7 @@ jobs:
         run: |
           "$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py measure \
             --database docs_speed --out "$RUNNER_TEMP/measurement.json"
-          # In a container job runner.temp can expand to the host's path.
+          # runner.temp can name the host's path here.
           echo "temp=$RUNNER_TEMP" >> "$GITHUB_OUTPUT"
 
       - name: Ask whether the toolchain left the budget's
@@ -137,12 +133,9 @@ jobs:
             *) echo "speed.py mismatch printed '$mismatch', not true or false" >&2; exit 1 ;;
           esac
 
-      # Same job, same Python and valgrind; the base tree's own lock, so a
-      # lock bump is part of the head's delta. This checkout's harness drives it.
-      # The base pairs with the checkout: a pull request's base tip (the
-      # merge commit's), a push's ancestor `before`, else HEAD's first parent.
-      # The event variables stay in this step: the counted children inherit
-      # the measure step's environment, which must match the head's.
+      # Same image, the base tree's own lock, this checkout's harness; the base is
+      # a PR's base tip, a push's ancestor `before`, else HEAD's first parent.
+      # The event variables stay here, out of the counted children's env.
       - name: Resolve the base commit beside this one
         if: steps.mismatch.outputs.mismatch == 'true'
         run: python3 scripts/ci/speed_base.py > "$RUNNER_TEMP/base-sha"
