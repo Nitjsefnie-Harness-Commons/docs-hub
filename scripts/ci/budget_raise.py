@@ -93,7 +93,7 @@ def merge_base(cwd: Path, base: str, head: str) -> str:
     return sha
 
 
-def _is_ancestor(cwd: Path, maybe: str, descendant: str) -> bool:
+def is_ancestor(cwd: Path, maybe: str, descendant: str) -> bool:
     """Whether maybe is an ancestor of descendant (the push window's
     membership rule)."""
     result = _git(cwd, ["merge-base", "--is-ancestor", maybe, descendant])
@@ -399,7 +399,7 @@ def run(cwd: Path, base: str | None, head: str | None, before: str | None,
             return 0, ["budget-raise: the push created its branch, so no "
                        "window precedes it — skipping"]
         before_sha = resolve_commit(cwd, before)
-        if not _is_ancestor(cwd, before_sha, head_sha):
+        if not is_ancestor(cwd, before_sha, head_sha):
             raise ValueError(
                 f"{before} is not an ancestor of {head}; the push window is "
                 "not the push's own commits")
