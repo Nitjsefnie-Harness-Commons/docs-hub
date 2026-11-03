@@ -160,6 +160,7 @@ jobs:
         run: |
           test -f scripts/ci/speed_budget.py
           test -f scripts/ci/speed_paired.py
+          test -f scripts/ci/budget_chain.py
           case "$DOCS_HUB_SPEED_MISMATCH" in
             true) set -- --base-measurements "$RUNNER_TEMP/base-measurement.json" ;;
             false) set -- ;;

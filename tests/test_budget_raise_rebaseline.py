@@ -138,11 +138,14 @@ def _rebaseline(repo: Path, tmp_path: Path, counts: dict,
 
 @pytest.mark.parametrize("event", ["pull_request", "push"])
 @pytest.mark.parametrize("keep_toolchain_lines", [True, False])
+@pytest.mark.parametrize("old_image", [pytest.param(f.CHAIN_A["image"], id="string_image"),
+                                       pytest.param(None, id="null_image")])
 def test_the_printed_declarations_are_the_commit_body_the_gate_accepts(
-        tmp_path: Path, event: str, keep_toolchain_lines: bool) -> None:
+        tmp_path: Path, event: str, keep_toolchain_lines: bool, old_image: str | None) -> None:
     repo = f._repo(tmp_path)
     base = f._commit(repo, "seed", **{f.CODE: "print(1)\n", f.BUDGET: json.dumps(
-        f._budget(dict(zip(_NAMES, (100, 400, 100, 100, 100)))))})
+        f._budget(dict(zip(_NAMES, (100, 400, 100, 100, 100))),
+                  chain={**f.CHAIN_A, "image": old_image}))})
     chain = {**f.CHAIN_A, "image": 'new "tool" -> image', "lock_sha256": "cd" * 32}
     generated = _rebaseline(repo, tmp_path, dict(zip(_NAMES, (300, 200, 100, 250, 100))), chain)
     assert generated.returncode == 0, generated.stdout + generated.stderr

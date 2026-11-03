@@ -340,8 +340,8 @@ def render_check(budget: dict, result: dict) -> str:
 
 def render_refusal(result: dict) -> str:
     fields = ", ".join(result["toolchain_diff"])
-    return (f"toolchain: the budget does not record the measured toolchain on {fields}; a pull "
-            "request passes once its budget does (CONTRIBUTING.md, speed budget)")
+    return (f"toolchain: the budget does not record the measured toolchain on {fields}; "
+            "the refusal clears once the budget records it (CONTRIBUTING.md, speed budget)")
 
 
 def render_wall(wall: dict[str, float]) -> str:

@@ -223,7 +223,7 @@ def test_the_check_step_passes_its_flags_by_mismatch_and_event(
         tmp_path: Path, mismatch: str, event: str, expected: list[str] | None) -> None:
     runner, log = tmp_path / "runner", tmp_path / "calls.log"
     _stub(runner / "venv/bin/python", log)
-    for name in ("speed_budget.py", "speed_paired.py"):
+    for name in ("speed_budget.py", "speed_paired.py", "budget_chain.py"):
         (tmp_path / "scripts/ci").mkdir(parents=True, exist_ok=True)
         (tmp_path / "scripts/ci" / name).write_text("", encoding="utf-8")
     done = _run_step(_CHECK, tmp_path, runner,
@@ -236,6 +236,17 @@ def test_the_check_step_passes_its_flags_by_mismatch_and_event(
                             f"{runner}/measurement.json", "--budget", ".github/speed-budget.json",
                             "--summary", f"{runner}/summary.md",
                             *(arg.format(runner=runner) for arg in expected)]]
+
+
+def test_the_check_step_refuses_a_missing_budget_chain(tmp_path: Path) -> None:
+    runner, log = tmp_path / "runner", tmp_path / "calls.log"
+    _stub(runner / "venv/bin/python", log)
+    for name in ("speed_budget.py", "speed_paired.py"):
+        (tmp_path / "scripts/ci").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "scripts/ci" / name).write_text("", encoding="utf-8")
+    done = _run_step(_CHECK, tmp_path, runner,
+                     {"DOCS_HUB_SPEED_MISMATCH": "false", "DOCS_HUB_EVENT_NAME": "push"})
+    assert done.returncode != 0 and _calls(log) == []
 
 
 def test_the_check_step_reads_the_event_name_through_its_env_alone() -> None:
