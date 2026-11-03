@@ -107,8 +107,9 @@ at startup and is what upgrades a deployed instance.
 ## CI
 
 One `ci gate` workflow owns the gate set's `push` and `pull_request`
-triggers, with no path filter — documentation-only pushes run it too. It
-folds ten gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
+triggers, with no path filter — documentation-only pushes run it too;
+only `size-baseline` also runs standalone, on pull requests and on pushes
+to `main` or `master`. It folds ten gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
 `size-baseline`, `actionlint`, `secrets`, and `speed`. Their local commands
 are listed below; CodeQL runs on GitHub:
 

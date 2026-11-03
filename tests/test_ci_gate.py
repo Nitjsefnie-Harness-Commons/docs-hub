@@ -12,6 +12,11 @@ _CALLEES = ("tests", "lint", "types", "eslint", "audit", "actionlint", "codeql",
             "speed", "size-baseline")
 _LEGS = (*_CALLEES, "conflict-markers", "base-freshness")
 _SCHEDULED = {"audit", "codeql", "secrets"}
+# The size-ratchet install block keeps its own pull_request and push triggers.
+_STANDALONE = "size-baseline"
+_SIZE_BASELINE_GROUP = (
+    "${{ github.workflow == 'size baseline' && format('size-baseline-{0}', github.ref)"
+    " || format('size-baseline-called-{0}', github.run_id) }}")
 
 
 def _workflow(filename: str = "ci-gate.yml") -> dict[str, Any]:
@@ -74,7 +79,7 @@ def test_ci_gate_calls_all_ten_gates_with_minimal_permissions() -> None:
             assert "permissions" not in job
 
 
-@pytest.mark.parametrize("name", _CALLEES)
+@pytest.mark.parametrize("name", [name for name in _CALLEES if name != _STANDALONE])
 def test_callees_leave_push_and_pull_request_to_the_gate(name: str) -> None:
     workflow = _workflow(f"{name}.yml")
     triggers = _triggers(workflow)
@@ -83,14 +88,31 @@ def test_callees_leave_push_and_pull_request_to_the_gate(name: str) -> None:
         expected.add("schedule")
         assert triggers["schedule"]
     assert set(triggers) == expected
-    if name == "codeql":
-        assert "permissions" not in workflow
-    elif "permissions" in workflow:
-        assert workflow["permissions"] == {"contents": "read"}
     # `github.ref` inside a called workflow is the caller's ref, so without
     # the event name a callee's own schedule/dispatch run shares the gate's
     # called-leg group on that ref and cancels an in-flight push leg.
     assert "github.event_name" in workflow["concurrency"]["group"]
+    _assert_read_only_permissions(name, workflow)
+
+
+def test_size_baseline_runs_standalone_in_a_group_no_called_run_shares() -> None:
+    workflow = _workflow(f"{_STANDALONE}.yml")
+    assert _triggers(workflow) == {
+        "pull_request": None, "push": {"branches": ["main", "master"]}, "workflow_call": None,
+    }
+    # A called run's `github.workflow` is the caller's name, so it takes the
+    # run_id arm and never shares the standalone run's ref-keyed group.
+    assert workflow["name"] == "size baseline"
+    assert _workflow()["name"].casefold() != workflow["name"]
+    assert workflow["concurrency"] == {"group": _SIZE_BASELINE_GROUP, "cancel-in-progress": True}
+    _assert_read_only_permissions(_STANDALONE, workflow)
+
+
+def _assert_read_only_permissions(name: str, workflow: dict[str, Any]) -> None:
+    if name == "codeql":
+        assert "permissions" not in workflow
+    elif "permissions" in workflow:
+        assert workflow["permissions"] == {"contents": "read"}
     for job_name, job in workflow["jobs"].items():
         permissions = job.get("permissions", {})
         if name == "codeql" and job_name == "analyze":
