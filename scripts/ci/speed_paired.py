@@ -12,6 +12,8 @@ def paired_check(document: dict, head: dict, base: dict) -> dict:
     if drift:
         raise speed_budget.BudgetError(
             f"the base measurement's toolchain differs from the head's on {', '.join(drift)}")
+    if not base.get("base_sha"):
+        raise speed_budget.BudgetError("the base measurement names no base_sha")
     counts, bases, budgets = head["counts"], base["counts"], document["workloads"]
     tolerance = document["tolerance_pct"]
     rows, failed = [], False
@@ -30,4 +32,4 @@ def paired_check(document: dict, head: dict, base: dict) -> dict:
                      "delta": delta, "verdict": verdict})
     return {"toolchain_diff": speed_budget.toolchain_diff(document["toolchain"],
                                                           head["toolchain"]),
-            "rows": rows, "failed": failed, "base_sha": base.get("base_sha")}
+            "rows": rows, "failed": failed, "base_sha": base["base_sha"]}
