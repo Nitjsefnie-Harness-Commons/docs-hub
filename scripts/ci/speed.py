@@ -10,7 +10,8 @@ inside Postgres), for which wall time is the only signal.
 
     speed.py workload --database NAME [--workload NAME] [--valgrind PATH]
     speed.py measure --database NAME --out FILE [--base-sha SHA] [--valgrind PATH] [--tree DIR]
-    speed.py check --measurements FILE [--budget FILE] [--summary FILE] [--base-measurements FILE]
+    speed.py check --measurements FILE [--budget FILE] [--summary FILE]
+                   [--base-measurements FILE] [--refuse-mismatch]
     speed.py mismatch --measurements FILE --budget FILE
     speed.py tighten --measurements FILE --budget FILE
     speed.py rebaseline --measurements FILE [--budget FILE]
@@ -347,6 +348,12 @@ def render_check(budget: dict, result: dict) -> str:
     return "\n".join(lines)
 
 
+def render_refusal(result: dict) -> str:
+    fields = ", ".join(result["toolchain_diff"])
+    return (f"toolchain: the measured toolchain differs from the budget's on {fields}; the pull "
+            "request needs its declared rebaseline commit (CONTRIBUTING.md, speed budget)")
+
+
 def render_wall(wall: dict[str, float]) -> str:
     lines = ["### Wall time (non-gating)", "",
              "The instruction counter cannot see off-CPU latency (event-loop "
@@ -368,14 +375,17 @@ def check_command(args: argparse.Namespace) -> int:
             budget, measurement, speed_budget.load_measurement(args.base_measurements))
     elif args.base_measurements:
         note = "\n\nbase measurements ignored: the toolchain matches the budget"
+    refused = args.refuse_mismatch and bool(result["toolchain_diff"])
     report = render_check(budget, result) + note
+    if refused:
+        report += "\n\n" + render_refusal(result)
     if measurement.get("wall_seconds"):
         report += "\n\n" + render_wall(measurement["wall_seconds"])
     print(report)
     if args.summary:
         with open(args.summary, "a", encoding="utf-8") as summary:
             summary.write(report + "\n")
-    return 1 if result["failed"] else 0
+    return 1 if result["failed"] or refused else 0
 
 
 def mismatch_command(args: argparse.Namespace) -> int:
@@ -457,6 +467,8 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--summary", default="")
     check.add_argument("--base-measurements", type=Path,
                        help="the base commit's counts from this job, judged on a mismatch")
+    check.add_argument("--refuse-mismatch", action="store_true",
+                       help="fail whenever the toolchain differs from the budget's")
     check.set_defaults(func=check_command)
     mismatch = sub.add_parser("mismatch", help="print whether the toolchain left the budget's")
     mismatch.add_argument("--measurements", type=Path, required=True)

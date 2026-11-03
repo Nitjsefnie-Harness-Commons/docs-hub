@@ -125,7 +125,7 @@ are listed below; CodeQL runs on GitHub:
 | `size-baseline` | the tracked-file line-count ratchet over `.github/size-baseline.json` | — (GitHub-hosted action) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
-| `speed` | inside the digest-pinned image `.github/speed/Dockerfile` names, this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain (Python, valgrind, that image, the `requirements-speed.txt` hash); fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is a full SHA of an ancestor, else, for an all-zero `before` (a new branch) or one that is not a fetched ancestor (a rewritten history), the checkout's first parent; on any other event, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; the job also fails when the event name is missing, the history is shallow, a pull request's base is missing, unknown or not an ancestor of the checkout, a push's `before` is missing or not a full lowercase SHA, the rule falls back to the checkout's first parent and the checkout has none (a commit without a parent has nothing to pair with), the base measurement names no commit, or the base and head toolchains differ on any field but `lock_sha256` | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind and a Postgres you can `createdb` on; only inside the same image do the counts compare with CI's (the docker command is below the speed paragraphs); `docs_speed` is a disposable database, reset by `measure` |
+| `speed` | inside the digest-pinned image `.github/speed/Dockerfile` names, this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain (Python, valgrind, that image, the `requirements-speed.txt` hash); fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is a full SHA of an ancestor, else, for an all-zero `before` (a new branch) or one that is not a fetched ancestor (a rewritten history), the checkout's first parent; on any other event, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; a pull request also fails whenever its measured toolchain differs from the budget's on any field, so its paired verdict is reported but a toolchain change must carry its rebaseline; the job also fails when the event name is missing, the history is shallow, a pull request's base is missing, unknown or not an ancestor of the checkout, a push's `before` is missing or not a full lowercase SHA, the rule falls back to the checkout's first parent and the checkout has none (a commit without a parent has nothing to pair with), the base measurement names no commit, or the base and head toolchains differ on any field but `lock_sha256` | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind and a Postgres you can `createdb` on; only inside the same image do the counts compare with CI's (the docker command is below the speed paragraphs); `docs_speed` is a disposable database, reset by `measure` |
 
 The `aggregate` job folds every leg and fails closed, with two local legs
 of its own: `conflict-markers` on every push and PR, and `base-freshness`
@@ -171,17 +171,21 @@ A toolchain mismatch (any recorded `toolchain` field, `lock_sha256`
 included, differing from the run's) is judged by that paired run: the
 head's counts against the base commit's, measured in the same job by
 this checkout's `scripts/ci/speed.py`, the budget still deciding the
-workload set. A pull request that moves a toolchain field (the
-`requirements-speed.txt` lock, the image, Python or valgrind) should
-carry its declared rebaseline commit, taken from its own CI run's
-measurement, whether its paired run passes or fails; on a Dependabot pull
-request a maintainer adds it. After that commit the toolchains match and
-the ordinary budget check applies. Until one lands on `master`, every run
-whose toolchain differs from the budget's takes that paired path,
-refusals included: its counts are compared only with its own base
-commit's, the budget's counts are not consulted, and `tighten` lowers
-nothing. To rebaseline, take `measurement.json` from that run's
-`speed-measurement` artifact, run
+workload set. On a push that paired verdict decides the job. A pull
+request whose toolchain differs from its own budget's fails whatever its
+paired run says, the paired table and an added line naming the differing
+fields staying in the report: it must carry its declared rebaseline
+commit, taken from its own CI run's measurement. A pull request that
+moves a toolchain field (the `requirements-speed.txt` lock, the image,
+Python or valgrind) therefore stays red until that commit lands, and on a
+Dependabot pull request a maintainer adds it. Likewise a `master` whose
+toolchain moved without a rebaseline turns every pull request red until
+one lands on `master`. After that commit the toolchains match and the
+ordinary budget check applies. Until then every run whose toolchain
+differs from the budget's takes the paired path, refusals included: its
+counts are compared only with its own base commit's, the budget's counts
+are not consulted, and `tighten` lowers nothing. To rebaseline, take
+`measurement.json` from that run's `speed-measurement` artifact, run
 `python3 scripts/ci/speed.py rebaseline --measurements measurement.json --budget .github/speed-budget.json`,
 review the resulting counts, and commit only the budget. Every changed
 `toolchain` leaf, including `lock_sha256`, needs its exact declaration like
