@@ -141,10 +141,20 @@ jobs:
       # lock bump is part of the head's delta. This checkout's harness drives it.
       # The base pairs with the checkout: a pull request's base tip (the
       # merge commit's), a push's ancestor `before`, else HEAD's first parent.
+      # The event variables stay in this step: the counted children inherit
+      # the measure step's environment, which must match the head's.
+      - name: Resolve the base commit beside this one
+        if: steps.mismatch.outputs.mismatch == 'true'
+        run: python3 scripts/ci/speed_base.py > "$RUNNER_TEMP/base-sha"
+        env:
+          DOCS_HUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DOCS_HUB_BEFORE_SHA: ${{ github.event.before }}
+          DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
+
       - name: Measure the base commit beside this one
         if: steps.mismatch.outputs.mismatch == 'true'
         run: |
-          base="$(python3 scripts/ci/speed_base.py)"
+          read -r base < "$RUNNER_TEMP/base-sha"
           git worktree add --detach "$RUNNER_TEMP/base-tree" "$base"
           python -m venv "$RUNNER_TEMP/base-venv"
           "$RUNNER_TEMP/base-venv/bin/python" -m pip install --require-hashes \
@@ -152,10 +162,6 @@ jobs:
           "$RUNNER_TEMP/base-venv/bin/python" scripts/ci/speed.py measure \
             --tree "$RUNNER_TEMP/base-tree" --database docs_speed \
             --out "$RUNNER_TEMP/base-measurement.json" --base-sha "$base"
-        env:
-          DOCS_HUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          DOCS_HUB_BEFORE_SHA: ${{ github.event.before }}
-          DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
 
       - name: Check the counts against the committed budget
         run: |
