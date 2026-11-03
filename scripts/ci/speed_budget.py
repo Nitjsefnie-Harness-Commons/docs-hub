@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """The speed gate's budget: schema, toolchain identity, check/tighten/rebaseline.
 
-`tighten` only follows a count down; `rebaseline` may raise one; the
-gate semantics are on `check`.
+`tighten` only follows a count down past a margin; `rebaseline` may
+raise one; the gate semantics are on `check`.
 """
 from __future__ import annotations
 
@@ -21,6 +21,8 @@ COUNTER = "cachegrind-ir"
 SCHEMA_VERSION = 1
 # The tolerance a first seed (no committed budget) takes.
 DEFAULT_TOLERANCE_PCT = 1.0
+# Share of tolerance_pct a drop must exceed to tighten; spread under it commits nothing.
+TIGHTEN_MARGIN_SHARE = 0.5
 TOOLCHAIN_FIELDS = ("python", "valgrind", "runner_image", "lock_sha256")
 
 
@@ -165,15 +167,16 @@ def check(document: dict, measurement: dict) -> dict:
 
 
 def tighten(document: dict, measurement: dict) -> dict[str, int] | None:
-    """Each workload the measurement found cheaper, lowered."""
+    """Workloads with each drop past the margin lowered, else None."""
     if toolchain_diff(document.get("toolchain"),
                       measurement.get("toolchain")):
         return None
     if check(document, measurement)["failed"]:
         return None
     counts = measurement["counts"]
+    margin = TIGHTEN_MARGIN_SHARE * document["tolerance_pct"] / 100
     lowered = {name: counts[name] for name in document["workloads"]
-               if counts[name] < document["workloads"][name]}
+               if counts[name] < document["workloads"][name] * (1 - margin)}
     return {**document["workloads"], **lowered} if lowered else None
 
 
