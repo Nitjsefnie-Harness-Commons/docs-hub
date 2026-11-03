@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """The speed gate's budget: schema, toolchain identity, check/tighten/rebaseline.
 
-`tighten` only follows a count down past a margin; `rebaseline` may
-raise one; the gate semantics are on `check`.
+`rebaseline` may raise a count; the gate semantics are on `check`.
 """
 from __future__ import annotations
 
@@ -166,7 +165,8 @@ def check(document: dict, measurement: dict) -> dict:
 
 
 def tighten(document: dict, measurement: dict) -> dict[str, int] | None:
-    """Workloads with each drop past the margin lowered, else None."""
+    """Workloads with each drop past the margin lowered; None on a toolchain
+    mismatch, a failed check, or no such drop."""
     if toolchain_diff(document.get("toolchain"),
                       measurement.get("toolchain")):
         return None
