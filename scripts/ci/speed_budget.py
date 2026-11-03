@@ -17,7 +17,7 @@ from pathlib import Path
 ARTIFACT = Path(__file__).resolve().parents[2] / ".github" / "speed-budget.json"
 COUNTER = "cachegrind-ir"
 SCHEMA_VERSION = 1
-# The tolerance a first seed (no committed budget) takes.
+# A first seed's tolerance (no budget yet).
 DEFAULT_TOLERANCE_PCT = 1.0
 # Share of tolerance_pct a drop must exceed to tighten; spread under it commits nothing.
 TIGHTEN_MARGIN_SHARE = 0.5
@@ -117,7 +117,6 @@ def toolchain(lock: Path, binary: str = "valgrind") -> dict[str, str | None]:
                              capture_output=True, text=True).stdout.strip()
     return {"python": sys.version.splitlines()[0],
             "valgrind": version or None,
-            # The speed job sets it to the container image it counts in.
             "image": os.environ.get("DOCS_HUB_SPEED_IMAGE") or None,
             "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest()}
 
