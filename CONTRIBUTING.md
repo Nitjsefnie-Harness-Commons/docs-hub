@@ -169,10 +169,17 @@ A toolchain mismatch (any recorded `toolchain` field, `lock_sha256`
 included, differing from the run's) is judged by that paired run: the
 head's counts against the base commit's, measured in the same job by
 this checkout's `scripts/ci/speed.py`, the budget still deciding the
-workload set. `tighten` lowers nothing on a mismatch, and until the
-budget records the new toolchain every run measures twice. A paired
-failure needs a reviewed rebaseline commit on that pull request, after
-which the toolchains match and the ordinary budget check applies: run
+workload set. A pull request that moves a toolchain field (the
+`requirements-speed.txt` lock, the image, Python or valgrind) should
+carry its declared rebaseline commit, taken from its own CI run's
+measurement, whether its paired run passes or fails; on a Dependabot pull
+request a maintainer adds it. After that commit the toolchains match and
+the ordinary budget check applies. Until one lands on `master`, every run
+whose toolchain differs from the budget's takes that paired path,
+refusals included: its counts are compared only with its own base
+commit's, the budget's counts are not consulted, and `tighten` lowers
+nothing. To rebaseline, take `measurement.json` from that run's
+`speed-measurement` artifact, run
 `python3 scripts/ci/speed.py rebaseline --measurements measurement.json --budget .github/speed-budget.json`,
 review the resulting counts, and commit only the budget. Every changed
 `toolchain` leaf, including `lock_sha256`, needs its exact declaration like
