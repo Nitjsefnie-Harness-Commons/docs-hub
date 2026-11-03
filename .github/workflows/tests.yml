@@ -1,15 +1,18 @@
 name: tests
 
-# The suite is not unit-testable in isolation: conftest.py drops and recreates
-# a real `docs_test` database from backend/schema.sql, then runs every test
-# against it. So CI needs a Postgres, and the matrix is over POSTGRES versions
-# rather than platforms — this service only ever runs on Linux behind nginx,
-# but it is developed against whatever Postgres the box happens to have, and
-# the deployed one (17) is not the only one it should work on.
+# conftest.py drops and recreates a real `docs_test` database from
+# backend/schema.sql and runs every test not marked `portable` against it. So
+# the suites and coverage jobs need a Postgres, and the matrix is over POSTGRES
+# versions rather than platforms — this service only ever runs on Linux behind
+# nginx, but it is developed against whatever Postgres the box happens to
+# have, and the deployed one (17) is not the only one it should work on. The
+# portable job runs the client's database-free tests on Windows, macOS and
+# Linux.
 #
-# tests/test_cli.py runs everywhere now: the agent-facing CLI lives in this
-# repository as docs_hub_cli/ and is driven as `python -m docs_hub_cli.cli`,
-# so there is nothing left for a runner to be missing.
+# tests/test_cli.py runs wherever the whole suite does: the agent-facing CLI
+# lives in this repository as docs_hub_cli/ and is driven as
+# `python -m docs_hub_cli.cli`, so there is nothing left for a runner to be
+# missing.
 
 on:
   workflow_call:
@@ -133,6 +136,35 @@ jobs:
           # An intermittent shutdown segfault leaves no stack without this (issue 75).
           PYTHONFAULTHANDLER: "1"
         run: python -m pytest -v -ra
+
+  portable:
+    name: portable (${{ matrix.os }}, ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.14 is the client wheel's requires-python floor.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.14", "3.15"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run the portable tests
+        # No test selected exits 5, so an emptied marker fails the job.
+        run: python -m pytest -m portable -v -ra
 
   coverage:
     # A JOB of its own rather than steps in the matrix: coverage of the same

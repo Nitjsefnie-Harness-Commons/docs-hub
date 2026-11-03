@@ -10,6 +10,8 @@ import pytest
 
 from docs_hub_cli import cli
 
+pytestmark = pytest.mark.portable
+
 
 @pytest.fixture
 def run_cli(monkeypatch):

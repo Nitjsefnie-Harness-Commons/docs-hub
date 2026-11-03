@@ -39,8 +39,8 @@ import pytest
 
 from docs_hub_cli import _settings, cli
 
-# Port 9 is `discard`, and nothing listens on it here; see the module docstring.
-_DEAD_URL = "http://127.0.0.1:9"
+pytestmark = pytest.mark.portable
+_DEAD_URL = "http://127.0.0.1:9"  # Port 9 (discard): nothing listens; see the module docstring.
 
 
 @pytest.fixture(autouse=True)
