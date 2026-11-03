@@ -16,7 +16,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 ARTIFACT = Path(__file__).resolve().parents[2] / ".github" / "speed-budget.json"
-LOCK = Path(__file__).resolve().parents[2] / "requirements-speed.txt"
 COUNTER = "cachegrind-ir"
 SCHEMA_VERSION = 1
 # The tolerance a first seed (no committed budget) takes.
@@ -113,8 +112,8 @@ def _load_json(path: Path, judge: Callable[[object], None]) -> dict:
     return document
 
 
-def toolchain(binary: str = "valgrind") -> dict[str, str | None]:
-    """What counts depend on but no code change controls."""
+def toolchain(lock: Path, binary: str = "valgrind") -> dict[str, str | None]:
+    """A count's inputs other than code."""
     version = subprocess.run([binary, "--version"], check=True,
                              capture_output=True, text=True).stdout.strip()
     image = " ".join(part for part in (os.environ.get("ImageOS"),
@@ -122,7 +121,7 @@ def toolchain(binary: str = "valgrind") -> dict[str, str | None]:
     return {"python": sys.version.splitlines()[0],
             "valgrind": version or None,
             "runner_image": image or None,
-            "lock_sha256": hashlib.sha256(LOCK.read_bytes()).hexdigest()}
+            "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest()}
 
 
 def toolchain_diff(recorded: object, measured: object) -> dict[str, tuple]:
