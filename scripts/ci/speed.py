@@ -44,7 +44,7 @@ CLIENTS = 4
 USERS = ("CREATE TABLE IF NOT EXISTS users (user_id BIGINT PRIMARY KEY, "
          "config JSONB NOT NULL DEFAULT '{}'::jsonb)")
 # Every counted child runs with a fixed hash seed and no bytecode cache:
-# either unpinned would make the count nondeterministic.
+# either left free would widen the count's run-to-run spread.
 MEASURED_ENV = {"PYTHONHASHSEED": "0", "PYTHONDONTWRITEBYTECODE": "1"}
 # Valgrind is 20-50x slower than native: these counts replace the wall
 # gate's (96 slugs, 3 versions, list x4, versions x8, transfer x40, text
@@ -319,7 +319,7 @@ def write_document(path: Path, budget: dict) -> None:
 def render_toolchain(result: dict) -> list[str]:
     if not result["toolchain_diff"]:
         return ["toolchain: match"]
-    remedy = (f"counts judged against base commit {result['base_sha']}, measured in this job"
+    remedy = (f"counts judged against base commit {result['base_sha']}"
               if "base_sha" in result else "a rebaseline commit is required")
     lines = [f"toolchain: MISMATCH — {remedy}", "",
              "| field | recorded | measured |", "|---|---|---|"]
