@@ -43,3 +43,4 @@ version = { attr = "docs_hub_cli.__version__" }
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = ["portable: needs no database; tests.yml runs these on Windows, macOS and Linux"]

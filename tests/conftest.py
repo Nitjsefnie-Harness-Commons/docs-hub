@@ -8,7 +8,19 @@ _REPO = Path(__file__).resolve().parent.parent
 _SCHEMA = _REPO / "backend" / "schema.sql"
 
 
-@pytest.fixture(scope="session", autouse=True)
+def _portable(item):
+    return item.get_closest_marker("portable") is not None
+
+
+def pytest_collection_modifyitems(items):
+    leaks = [item.nodeid for item in items
+             if _portable(item) and "_test_env" in item.fixturenames]
+    if leaks:
+        raise pytest.UsageError(
+            "portable tests request the database fixture: " + ", ".join(leaks))
+
+
+@pytest.fixture(scope="session")
 def _test_env(tmp_path_factory):
     # Recreate a clean docs_test DB.
     subprocess.run(["dropdb", "--if-exists", "docs_test"], check=True)
@@ -37,11 +49,19 @@ def _test_env(tmp_path_factory):
     subprocess.run(["dropdb", "--if-exists", "docs_test"], check=True)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _database(request):
+    # Session scope: ready before module fixtures such as test_cli.py's server.
+    if not all(_portable(item) for item in request.session.items):
+        request.getfixturevalue("_test_env")
+
+
 @pytest.fixture(autouse=True)
-def _clean_tables():
-    """Truncate docs tables before each test for isolation."""
-    from backend import db
-    with db.docs_conn() as c:
-        c.execute("TRUNCATE docs RESTART IDENTITY CASCADE")
-        c.commit()
+def _clean_tables(request):
+    """Truncate docs tables before each non-portable test for isolation."""
+    if not _portable(request.node):
+        from backend import db
+        with db.docs_conn() as c:
+            c.execute("TRUNCATE docs RESTART IDENTITY CASCADE")
+            c.commit()
     yield

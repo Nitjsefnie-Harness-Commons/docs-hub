@@ -11,6 +11,8 @@ import pytest
 
 from docs_hub_cli import cli
 
+pytestmark = pytest.mark.portable
+
 
 @pytest.fixture
 def filter_server(monkeypatch):

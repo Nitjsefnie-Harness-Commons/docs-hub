@@ -114,7 +114,7 @@ are listed below; CodeQL runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
-| `tests` | the suite against Postgres 16 and 17, plus a coverage job gated on the floor recorded in `.github/ci-thresholds.json` (below), plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom and reports `app.js` line coverage with no threshold | `.venv/bin/pytest -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
+| `tests` | the suite against Postgres 16 and 17, plus the tests marked `portable` (no database) on Windows, macOS and Linux with Python 3.14 and 3.15, plus a coverage job gated on the floor recorded in `.github/ci-thresholds.json` (below), plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom and reports `app.js` line coverage with no threshold | `.venv/bin/pytest -v` / `.venv/bin/pytest -m portable -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
 | `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
 | `types` | pyright over `backend/` | `pyright` |
 | `eslint` | eslint over `public/` and the JavaScript tests in `tests/` | `npm ci && npx eslint public tests` |
