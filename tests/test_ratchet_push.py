@@ -219,7 +219,14 @@ def test_the_download_names_the_uploader_artifact() -> None:
     disjuncts = _disjuncts(_step("Push the raise commit to master")["if"])
     assert disjuncts == {frozenset({"steps.list.outputs.staged == 'true'"}),
                          frozenset({"steps.list.outputs.staged_speed == 'true'"})}
-    assert frozenset(_conjuncts(download["if"])) in disjuncts
+    assert frozenset(_conjuncts(download["if"])) == frozenset(
+        {"steps.list.outputs.staged == 'true'"})
+
+
+def test_the_speed_download_runs_only_for_the_speed_arm() -> None:
+    download = _step("Download the speed measurement artifact")
+    assert frozenset(_conjuncts(download["if"])) == frozenset(
+        {"steps.list.outputs.staged_speed == 'true'"})
 
 
 def test_the_push_step_consumes_exactly_the_staged_files() -> None:
