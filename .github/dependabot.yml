@@ -25,8 +25,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
-    labels:
-      - dependencies
 
   # The eslint and jsdom toolchain. Nothing here is served to a browser,
   # so a bump can only affect the eslint and app.js test jobs.
@@ -40,8 +38,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
-    labels:
-      - dependencies
 
   # The workflows pin every action to a commit SHA with the version in a
   # trailing comment. A SHA pin does not move at all — which is the point,
@@ -58,8 +54,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
-    labels:
-      - dependencies
     groups:
       # Group every action bump into one pull request. github/codeql-action's
       # init and analyze steps are separate dependencies that must stay on one
@@ -92,8 +86,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "ci"
-    labels:
-      - dependencies
     ignore:
       - dependency-name: postgres
         update-types:
