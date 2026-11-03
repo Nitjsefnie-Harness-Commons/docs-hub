@@ -207,9 +207,11 @@ docker rm -f speed-pg && docker network rm speed
 Run the last line, which removes the Postgres container and the network,
 whether or not the measurement succeeded.
 `out/measurement.json` is then a head measurement taken the way the job
-takes it; its counts compare with a CI measurement of the same commit only
-because both ran in this image, and they agree within the same-toolchain
-spread (measured at most 0.06%), not exactly. Valgrind refuses
+takes it. Counts are expected to agree with a CI measurement of the same
+commit only inside this same pinned image. The one spread measured is
+between two same-code, same-toolchain GitHub-hosted runs, taken before the
+job moved into this image (at most 0.06%); how closely a run on another
+host agrees with CI is not measured. Valgrind refuses
 to start under Docker's near-unlimited open-file limit, hence `--ulimit`. A
 digest bump of that image is a toolchain change like any other, and its
 commit also moves the snapshot timestamp to the new image's own (its
