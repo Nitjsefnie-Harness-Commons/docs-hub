@@ -23,7 +23,7 @@ def _run(run_id: int, event: str) -> dict[str, str | int]:
 
 
 def _run_waiter(tmp_path: Path, checks: list[dict[str, str | None]],
-                deadline: int = 1,
+                deadline: int = 10,
                 workflow_env: dict[str, str] | None = None,
                 runs: list[dict[str, str | int]] | None = None
                 ) -> subprocess.CompletedProcess[str]:
@@ -62,7 +62,7 @@ raise SystemExit(result.returncode)
         extra["RUNS"] = json.dumps({"workflow_runs": runs})
     return subprocess.run(
         ["bash", "-e", str(script)], check=False, capture_output=True, text=True,
-        timeout=5,
+        timeout=deadline + 4,
         env={**env, **extra,
              "TAG_WAIT_DEADLINE_SECONDS": str(deadline),
              "TAG_WAIT_SLEEP_SECONDS": "0.05"},
@@ -91,7 +91,8 @@ def test_workflow_env_prefers_prefix_and_accepts_legacy(tmp_path: Path,
 
 @pytest.mark.parametrize("missing", _REQUIRED)
 def test_missing_required_check_waits_until_deadline(tmp_path: Path, missing: str):
-    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED if name != missing])
+    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED if name != missing],
+                         deadline=1)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Timed out" in result.stderr
 
@@ -136,7 +137,7 @@ def test_additional_success_check_is_allowed(tmp_path: Path, name: str):
 
 
 def test_nested_success_cannot_replace_aggregate(tmp_path: Path):
-    result = _run_waiter(tmp_path, [_check("tests / suites (3.15, 16)")])
+    result = _run_waiter(tmp_path, [_check("tests / suites (3.15, 16)")], deadline=1)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Timed out" in result.stderr
 
@@ -171,7 +172,7 @@ def test_failed_readiness_prefix_is_not_exempt(tmp_path: Path):
 
 def test_running_required_check_waits_until_deadline(tmp_path: Path):
     checks = [_check(name, None, "in_progress") for name in _REQUIRED]
-    result = _run_waiter(tmp_path, checks)
+    result = _run_waiter(tmp_path, checks, deadline=1)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Timed out" in result.stderr
 
@@ -219,7 +220,7 @@ def test_schedule_rows_are_skipped(tmp_path: Path):
 def test_missing_aggregate_with_push_rows_times_out(tmp_path: Path):
     row = _check("security-review",
                  html_url="https://github.com/example/repository/actions/runs/1/job/1")
-    result = _run_waiter(tmp_path, [row], runs=[_run(1, "push")])
+    result = _run_waiter(tmp_path, [row], runs=[_run(1, "push")], deadline=1)
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Timed out" in result.stderr
 
