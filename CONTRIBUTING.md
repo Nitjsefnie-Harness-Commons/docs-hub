@@ -123,7 +123,7 @@ are listed below; CodeQL runs on GitHub:
 | `size-baseline` | the tracked-file line-count ratchet over `.github/size-baseline.json` | — (GitHub-hosted action) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
-| `speed` | this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain; fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is an ancestor; otherwise, including a push that creates a branch or rewrites history, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; a base it cannot resolve (a shallow history, a pull request base that is not an ancestor of the checkout, a root commit) fails the job | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind installed and a Postgres you can `createdb` on; `docs_speed` is a disposable database, reset by `measure` |
+| `speed` | inside the digest-pinned image `.github/speed/Dockerfile` names, this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain (Python, valgrind, that image, the `requirements-speed.txt` hash); fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is a full SHA of an ancestor, else, for an all-zero `before` (a new branch) or one that is not a fetched ancestor (a rewritten history), the checkout's first parent; on any other event, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; the job also fails when the event name is missing, the history is shallow, a pull request's base is missing, unknown or not an ancestor of the checkout, a push's `before` is missing or not a full lowercase SHA, the commit to pair with is a root commit, the base measurement names no commit, or the base and head toolchains differ on any field but `lock_sha256` | `speed.py measure --database docs_speed --out measurement.json`, then `speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind and a Postgres you can `createdb` on; only inside the same image do the counts compare with CI's (the docker command is below the speed paragraphs); `docs_speed` is a disposable database, reset by `measure` |
 
 The `aggregate` job folds every leg and fails closed, with two local legs
 of its own: `conflict-markers` on every push and PR, and `base-freshness`
@@ -146,7 +146,8 @@ own.
 The speed budget ratchets down in the same workflow: after a green
 `master` push, `tighten` uses the `speed-measurement` artifact to lower
 each workload whose count fell below its budget by more than half of
-`tolerance_pct` to its measured count, only with a matching toolchain and
+`tolerance_pct` (a percentage of that workload's budget) to its measured
+count, only with a matching toolchain and
 no failed workloads; a smaller drop keeps the recorded count, so
 run-to-run spread under that margin commits nothing. It keeps the
 toolchain and tolerance; when the budget changes and `master` has not
@@ -175,10 +176,38 @@ which the toolchains match and the ordinary budget check applies: run
 `python3 scripts/ci/speed.py rebaseline --measurements measurement.json --budget .github/speed-budget.json`,
 review the resulting counts, and commit only the budget. Every changed
 `toolchain` leaf, including `lock_sha256`, needs its exact declaration like
-counts do, for example `Budget-Raise: .github/speed-budget.json toolchain.runner_image "old image" -> "new image"`.
+counts do, for example `Budget-Raise: .github/speed-budget.json toolchain.image "old image" -> "new image"`.
 Toolchain endpoints use JSON strings or `null`; `absent` declares an added or
 removed key. Include the numeric declarations above for any raised counts or
 tolerance in the same commit.
+
+The speed job runs in a container from the image `.github/speed/Dockerfile`
+pins by digest, and installs valgrind and `libc6-dbg` at exact versions from
+a snapshot.debian.org source fixed to that image's build timestamp; the
+counts depend on that image, so a count taken outside it does not compare
+with CI's. To reproduce CI's counts, put the `run` lines of the speed job's
+install, virtualenv and measure steps into `steps.sh` in an empty directory
+`out/`, and run them in the same image beside a Postgres reachable as
+`postgres`:
+
+```bash
+image="$(sed -n 's/\r$//; s/^FROM //p' .github/speed/Dockerfile)"
+docker network create speed
+docker run -d --name speed-pg --network speed --network-alias postgres \
+  -e POSTGRES_PASSWORD=postgres "$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
+docker run --rm --network speed --ulimit nofile=65536:65536 \
+  -v "$PWD:/src:ro" -v "$PWD/out:/out" -w /src \
+  -e RUNNER_TEMP=/out -e GITHUB_OUTPUT=/out/output -e GITHUB_WORKSPACE=/src \
+  -e DOCS_HUB_SPEED_IMAGE="$image" -e PGHOST=postgres -e PGUSER=postgres \
+  -e PGPASSWORD=postgres -e PYTHONDONTWRITEBYTECODE=1 "$image" bash -e /out/steps.sh
+```
+
+`out/measurement.json` is then the job's head measurement. Valgrind refuses
+to start under Docker's near-unlimited open-file limit, hence `--ulimit`. A
+digest bump of that image is a toolchain change like any other, and its
+commit also moves the snapshot timestamp to the new image's own (its
+`/etc/apt/sources.list.d/debian.sources` names it) and the valgrind and
+`libc6-dbg` pins to that snapshot's versions.
 
 `pip install -r requirements-dev.txt -r requirements-test.txt` gets the
 Python toolchain. `package.json` exists only to pin eslint and jsdom (the

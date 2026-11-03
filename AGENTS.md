@@ -87,9 +87,11 @@ coverage floor, plus the `public/app.js` test in jsdom),
 (pip-audit, npm audit), `codeql`, `size-baseline` (the tracked-file
 line-count ratchet), `actionlint` (actionlint + zizmor),
 `secrets` (gitleaks), and `speed` (this head's Cachegrind instruction
-counts against `.github/speed-budget.json` with a recorded toolchain,
+counts, taken inside the digest-pinned image `.github/speed/Dockerfile`
+names, against `.github/speed-budget.json` with a recorded toolchain,
 or, on a toolchain mismatch, against the base commit measured in the
-same job with its own lock, `scripts/ci/speed.py`). Its `aggregate` job folds
+same job with its own lock, `scripts/ci/speed.py`; counts taken outside
+that image do not compare with CI's). Its `aggregate` job folds
 every leg and fails closed, with `conflict-markers` on every push and PR
 and PR-only `base-freshness`, which fails when `master` holds a gate-input
 commit the head lacks, naming the commit and file. CONTRIBUTING.md's table
@@ -105,7 +107,8 @@ lowers it automatically. On a pull request the
 coverage of changed lines is reported in the job summary with no
 threshold of its own. The speed arm uses `tighten` after a green `master`
 push to lower each workload in `.github/speed-budget.json` that fell by
-more than half of `tolerance_pct`, only with a matching toolchain, no
+more than half of `tolerance_pct` (a percentage of that workload's
+budget), only with a matching toolchain, no
 failed workloads and `master` still at the measured commit; it keeps the
 toolchain and tolerance. Raising a workload count or tolerance needs a
 matching Budget-Raise declaration per raised key on a commit touching
