@@ -88,7 +88,8 @@ coverage floor, plus the `public/app.js` test in jsdom),
 line-count ratchet), `actionlint` (actionlint + zizmor),
 `secrets` (gitleaks), and `speed` (this head's Cachegrind instruction
 counts against `.github/speed-budget.json` with a recorded toolchain,
-`scripts/ci/speed.py`). Its `aggregate` job folds
+or, on a toolchain mismatch, against the base commit measured in the
+same job with its own lock, `scripts/ci/speed.py`). Its `aggregate` job folds
 every leg and fails closed, with `conflict-markers` on every push and PR
 and PR-only `base-freshness`, which fails when `master` holds a gate-input
 commit the head lacks, naming the commit and file. CONTRIBUTING.md's table

@@ -123,7 +123,7 @@ are listed below; CodeQL runs on GitHub:
 | `size-baseline` | the tracked-file line-count ratchet over `.github/size-baseline.json` | — (GitHub-hosted action) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
-| `speed` | this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain; fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; a toolchain mismatch compares nothing, reports recorded vs measured, exits 0 and needs a rebaseline commit | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind installed and a Postgres you can `createdb` on; `docs_speed` is a disposable database, reset by `measure` |
+| `speed` | this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain; fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures the base commit (a pull request's merge base, a push's `before`, otherwise the head's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; a base it cannot resolve (a shallow history, a branch-creating push) fails the job | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind installed and a Postgres you can `createdb` on; `docs_speed` is a disposable database, reset by `measure` |
 
 The `aggregate` job folds every leg and fails closed, with two local legs
 of its own: `conflict-markers` on every push and PR, and `base-freshness`
@@ -164,7 +164,14 @@ malformed, duplicate, leftover or otherwise unconsumed declarations. A
 rebase merge keeps the declaration lines; a squash may drop them, which
 then refuses on `master`'s push.
 
-A toolchain mismatch requires a reviewed rebaseline commit: run
+A toolchain mismatch (any recorded `toolchain` field, `lock_sha256`
+included, differing from the run's) is judged by that paired run: the
+head's counts against the base commit's, measured in the same job by
+this checkout's `scripts/ci/speed.py`, the budget still deciding the
+workload set. `tighten` lowers nothing on a mismatch, and until the
+budget records the new toolchain every run measures twice. A paired
+failure needs a reviewed rebaseline commit on that pull request, after
+which the toolchains match and the ordinary budget check applies: run
 `python3 scripts/ci/speed.py rebaseline --measurements measurement.json --budget .github/speed-budget.json`,
 review the resulting counts, and commit only the budget. Every changed
 `toolchain` leaf, including `lock_sha256`, needs its exact declaration like
