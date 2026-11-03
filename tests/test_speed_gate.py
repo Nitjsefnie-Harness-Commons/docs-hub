@@ -239,17 +239,39 @@ def test_check_renders_the_wall_time_table(speed: ModuleType, tmp_path: Path,
 
 
 def test_tighten_lowers_only_the_workloads_that_fell(policy: ModuleType) -> None:
-    result = policy.tighten(_budget(), _measurement({"service.publish": 900,
+    result = policy.tighten(_budget(), _measurement({"service.publish": 800,
                                                      "service.list": 2500}))
-    assert result == {"service.publish": 900, "service.list": 2000}
+    assert result == {"service.publish": 800, "service.list": 2000}
+
+
+# tolerance_pct 30 puts the margin at 15%: 850 sits on it for a 1000 budget.
+@pytest.mark.parametrize("count, expected", [
+    (850, None), (849, {"service.publish": 849, "service.list": 2000})])
+def test_tighten_lowers_only_a_drop_past_half_the_tolerance(
+        policy: ModuleType, count: int, expected: dict | None) -> None:
+    assert policy.tighten(_budget(), _measurement(
+        {"service.publish": count, "service.list": 2000})) == expected
+
+
+def test_tighten_keeps_a_drop_inside_the_margin_beside_one_past_it(
+        policy: ModuleType) -> None:
+    result = policy.tighten(_budget(), _measurement({"service.publish": 849,
+                                                     "service.list": 1800}))
+    assert result == {"service.publish": 849, "service.list": 2000}
+
+
+def test_tighten_follows_every_drop_at_zero_tolerance(policy: ModuleType) -> None:
+    result = policy.tighten(_budget(tolerance_pct=0), _measurement(
+        {"service.publish": 999, "service.list": 2000}))
+    assert result == {"service.publish": 999, "service.list": 2000}
 
 
 def test_tighten_never_raises(policy: ModuleType) -> None:
     # service.publish measured over budget (within tolerance): tighten must
-    # leave it at 1000 while following service.list down to 1900.
+    # leave it at 1000 while following service.list down to 1600.
     result = policy.tighten(_budget(), _measurement({"service.publish": 1100,
-                                                     "service.list": 1900}))
-    assert result == {"service.publish": 1000, "service.list": 1900}
+                                                     "service.list": 1600}))
+    assert result == {"service.publish": 1000, "service.list": 1600}
 
 
 def test_tighten_writes_nothing_when_nothing_fell(policy: ModuleType) -> None:
@@ -260,7 +282,7 @@ def test_tighten_writes_nothing_when_nothing_fell(policy: ModuleType) -> None:
 def test_tighten_is_a_noop_on_a_toolchain_mismatch(policy: ModuleType) -> None:
     measured = {**TOOLCHAIN, "lock_sha256": "cd" * 32}
     assert policy.tighten(_budget(), _measurement(
-        {"service.publish": 900, "service.list": 2000}, measured)) is None
+        {"service.publish": 800, "service.list": 2000}, measured)) is None
 
 
 def test_tighten_is_a_noop_after_a_failure(policy: ModuleType) -> None:
@@ -273,26 +295,27 @@ def test_tighten_writes_the_budget_only_when_something_fell(
     budget, measurement = tmp_path / "budget.json", tmp_path / "m.json"
     budget.write_text(json.dumps(_budget()), encoding="utf-8")
     measurement.write_text(json.dumps(_measurement(
-        {"service.publish": 900, "service.list": 2500})), encoding="utf-8")
+        {"service.publish": 800, "service.list": 2500})), encoding="utf-8")
     assert speed.main(["tighten", "--measurements", str(measurement),
                        "--budget", str(budget)]) == 0
     document = json.loads(budget.read_text(encoding="utf-8"))
-    assert document["workloads"] == {"service.publish": 900,
+    assert document["workloads"] == {"service.publish": 800,
                                      "service.list": 2000}
     assert document["toolchain"] == TOOLCHAIN
     assert document["tolerance_pct"] == 30
     before = budget.read_bytes()
+    # A drop inside the margin (800 * 0.85 = 680) writes nothing either.
     measurement.write_text(json.dumps(_measurement(
-        {"service.publish": 1000, "service.list": 2000})), encoding="utf-8")
+        {"service.publish": 750, "service.list": 2000})), encoding="utf-8")
     assert speed.main(["tighten", "--measurements", str(measurement),
                        "--budget", str(budget)]) == 0
     assert budget.read_bytes() == before
     # A toolchain difference blocks the write even when counts fell: the
     # budget's recorded side survives the mismatch byte for byte. The count
-    # falls against the budget half one already tightened (900), so a mutant
-    # that tightens past the mismatch changes these bytes.
+    # falls past the margin of the budget half one already tightened (800),
+    # so a mutant that tightens past the mismatch changes these bytes.
     measurement.write_text(json.dumps(_measurement(
-        {"service.publish": 800, "service.list": 2500}, MEASURED_CHAIN)),
+        {"service.publish": 600, "service.list": 2500}, MEASURED_CHAIN)),
         encoding="utf-8")
     assert speed.main(["tighten", "--measurements", str(measurement),
                        "--budget", str(budget)]) == 0

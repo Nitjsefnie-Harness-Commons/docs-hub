@@ -145,12 +145,14 @@ own.
 
 The speed budget ratchets down in the same workflow: after a green
 `master` push, `tighten` uses the `speed-measurement` artifact to lower
-each cheaper workload to its measured count, only with a matching
-toolchain and no failed workloads. It keeps the toolchain and tolerance;
-when the budget changes and `master` has not moved, the speed arm commits
-"Tighten the speed budget (automated)". A raise is never automatic: each
-raised workload count or `tolerance_pct` needs exactly one matching line
-in a commit message:
+each workload whose count fell below its budget by more than half of
+`tolerance_pct` to its measured count, only with a matching toolchain and
+no failed workloads; a smaller drop keeps the recorded count, so
+run-to-run spread under that margin commits nothing. It keeps the
+toolchain and tolerance; when the budget changes and `master` has not
+moved, the speed arm commits "Tighten the speed budget (automated)". A
+raise is never automatic: each raised workload count or `tolerance_pct`
+needs exactly one matching line in a commit message:
 
 ```
 Budget-Raise: .github/speed-budget.json <key> <from> -> <to>

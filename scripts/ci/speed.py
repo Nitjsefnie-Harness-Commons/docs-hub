@@ -370,8 +370,10 @@ def tighten_command(args: argparse.Namespace) -> int:
     measurement = speed_budget.load_measurement(args.measurements)
     workloads = speed_budget.tighten(budget, measurement)
     if workloads is None:
-        print("nothing was tightened: the toolchain differs or a workload "
-              "failed its budget")
+        print("nothing was tightened: the toolchain differs, a workload "
+              "failed its budget, or no workload fell more than "
+              f"{speed_budget.TIGHTEN_MARGIN_SHARE:.0%} of tolerance_pct "
+              "below its budget")
         return 0
     write_document(args.budget, {**budget, "workloads": workloads})
     lowered = ", ".join(name for name in workloads

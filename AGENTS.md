@@ -103,12 +103,13 @@ above the recorded measurement and `master` has not moved since; nothing
 lowers it automatically. On a pull request the
 coverage of changed lines is reported in the job summary with no
 threshold of its own. The speed arm uses `tighten` after a green `master`
-push to lower cheaper workloads in `.github/speed-budget.json`, only with
-a matching toolchain, no failed workloads and `master` still at the
-measured commit; it keeps the toolchain and tolerance. Raising a workload
-count or tolerance needs a matching Budget-Raise declaration per raised
-key on a commit touching only the budget file (CONTRIBUTING.md gives the
-format); raises are never automatic.
+push to lower each workload in `.github/speed-budget.json` that fell by
+more than half of `tolerance_pct`, only with a matching toolchain, no
+failed workloads and `master` still at the measured commit; it keeps the
+toolchain and tolerance. Raising a workload count or tolerance needs a
+matching Budget-Raise declaration per raised key on a commit touching
+only the budget file (CONTRIBUTING.md gives the format); raises are never
+automatic.
 
 Two more workflows are the release chain rather than gates: `tag` watches
 `docs_hub_cli/__init__.py` on `master`, requires `aggregate` to succeed and
