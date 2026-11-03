@@ -3,9 +3,8 @@ name: tests
 # conftest.py drops and recreates a real `docs_test` database from
 # backend/schema.sql and runs every test not marked `portable` against it. So
 # the suites and coverage jobs need a Postgres, and the matrix is over POSTGRES
-# versions rather than platforms — this service only ever runs on Linux behind
-# nginx, but it is developed against whatever Postgres the box happens to
-# have, and the deployed one (17) is not the only one it should work on. The
+# versions rather than platforms: the service only runs on Linux behind nginx,
+# and the deployed Postgres (17) is not the only one it should work on. The
 # portable job runs the client's database-free tests on Windows, macOS and
 # Linux.
 #
@@ -142,6 +141,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # macos-14, not macos-latest: actions/runner#4833.
         os: [ubuntu-latest, windows-latest, macos-14]
         # 3.14 is the client wheel's requires-python floor.
         python: ["3.14", "3.15"]
