@@ -20,23 +20,35 @@ jobs:
     timeout-minutes: 5
     outputs:
       image17: ${{ steps.pins.outputs.image17 }}
+      speed: ${{ steps.pins.outputs.speed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - id: pins
-        name: Read the Postgres image pin
+        name: Read the Postgres and speed image pins
         run: |
           image17="$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
           case "$image17" in postgres:17.*@sha256:*) ;;
             *) echo ".github/postgres/17/Dockerfile does not pin a postgres 17 image: $image17" >&2; exit 1 ;;
           esac
+          speed="$(sed -n 's/\r$//; s/^FROM //p' .github/speed/Dockerfile)"
+          case "$speed" in python:3.*@sha256:*) ;;
+            *) echo ".github/speed/Dockerfile does not pin a python 3 image: $speed" >&2; exit 1 ;;
+          esac
           echo "image17=$image17" >> "$GITHUB_OUTPUT"
+          echo "speed=$speed" >> "$GITHUB_OUTPUT"
 
+  # The counts run inside one digest-pinned image, so Python, libc and
+  # valgrind come from the commit, not from the runner image.
   speed:
     needs: images
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    container:
+      image: ${{ needs.images.outputs.speed }} # zizmor: ignore[unpinned-images] - resolved at runtime from the digest-pinned Dockerfile this workflow's images job reads
+      # Valgrind refuses to start under Docker's near-unlimited fd limit.
+      options: --ulimit nofile=65536:65536
 
     services:
       postgres:
@@ -48,33 +60,46 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-        ports:
-          - 5432:5432
 
     env:
-      PGHOST: localhost
+      PGHOST: postgres
       PGPORT: "5432"
       PGUSER: postgres
       PGPASSWORD: postgres
       PYTHONDONTWRITEBYTECODE: "1"
+      DOCS_HUB_SPEED_IMAGE: ${{ needs.images.outputs.speed }}
 
     steps:
+      # Before the checkout: without git it fetches a tarball with no history.
+      # The snapshot is the image's own (its debian.sources names it), so
+      # libc6-dbg matches the image's libc6; a new image needs new pins here.
+      - name: Install git, the Postgres client and valgrind
+        timeout-minutes: 5
+        run: |
+          cat > /etc/apt/sources.list.d/debian.sources <<'EOF'
+          Types: deb
+          URIs: https://snapshot.debian.org/archive/debian/20261020T213255Z
+          Suites: trixie trixie-updates
+          Components: main
+          Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
+          Check-Valid-Until: no
+
+          Types: deb
+          URIs: https://snapshot.debian.org/archive/debian-security/20261020T213255Z
+          Suites: trixie-security
+          Components: main
+          Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
+          Check-Valid-Until: no
+          EOF
+          apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          apt-get install -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends git postgresql-client valgrind=1:3.24.0-3 libc6-dbg=2.41-12+deb13u4
+          # The runner owns the mounted workspace; later git calls run as root.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.15.1"
-          cache: pip
-          cache-dependency-path: requirements-speed.txt
-
-      - name: Install the Postgres client and valgrind
-        timeout-minutes: 5
-        run: |
-          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
-          sudo apt-get install -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends postgresql-client valgrind=1:3.22.0-0ubuntu3
 
       - name: Build the virtualenv from the speed lock
         run: |
@@ -98,6 +123,8 @@ jobs:
         run: |
           "$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py measure \
             --database docs_speed --out "$RUNNER_TEMP/measurement.json"
+          # In a container job runner.temp can expand to the host's path.
+          echo "temp=$RUNNER_TEMP" >> "$GITHUB_OUTPUT"
 
       - name: Ask whether the toolchain left the budget's
         id: mismatch
@@ -146,7 +173,7 @@ jobs:
         env:
           DOCS_HUB_SPEED_MISMATCH: ${{ steps.mismatch.outputs.mismatch }}
 
-      # Both paths share runner.temp, the artifact root: ratchet-push reads
+      # Both paths share $RUNNER_TEMP, the artifact root: ratchet-push reads
       # measurement.json there; base-measurement.json exists only on a mismatch.
       - name: Upload the measurement
         if: ${{ !cancelled() && steps.measure.conclusion == 'success' }}
@@ -154,6 +181,6 @@ jobs:
         with:
           name: speed-measurement
           path: |
-            ${{ runner.temp }}/measurement.json
-            ${{ runner.temp }}/base-measurement.json
+            ${{ steps.measure.outputs.temp }}/measurement.json
+            ${{ steps.measure.outputs.temp }}/base-measurement.json
           if-no-files-found: error

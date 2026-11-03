@@ -135,21 +135,25 @@ def test_dependabot_docker_directories_are_the_ones_the_images_jobs_read():
     updates = yaml.safe_load(
         (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
     docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")
-    assert docker["directories"] == ["/.github/postgres/16", "/.github/postgres/17"]
+    assert docker["directories"] == ["/.github/postgres/16", "/.github/postgres/17",
+                                     "/.github/speed"]
 
 
 def test_dependabot_docker_ignore_uses_update_types():
     # Dependabot's docker ecosystem rejects `versions` in an ignore condition
     # (invalid version requirements there); the semantic-versioning levels go
-    # in `update-types`, and the ruling pins exactly the major level — any
-    # other list would silently change which updates are suppressed.
+    # in `update-types`, and the ruling pins exactly the major level for
+    # postgres — any other list would silently change which updates are suppressed.
     updates = yaml.safe_load(
         (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
     docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")
     assert docker["ignore"]
     for condition in docker["ignore"]:
         assert "versions" not in condition, condition
-        assert condition["update-types"] == ["version-update:semver-major"], condition
+    postgres = [condition for condition in docker["ignore"]
+                if condition["dependency-name"] == "postgres"]
+    assert postgres == [{"dependency-name": "postgres",
+                         "update-types": ["version-update:semver-major"]}]
 
 
 @pytest.mark.parametrize("major", [16, 17])

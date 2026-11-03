@@ -58,6 +58,9 @@
 !.github/postgres/17/
 .github/postgres/17/*
 !.github/postgres/17/Dockerfile
+!.github/speed/
+.github/speed/*
+!.github/speed/Dockerfile
 
 # --- application ------------------------------------------------------
 !backend/

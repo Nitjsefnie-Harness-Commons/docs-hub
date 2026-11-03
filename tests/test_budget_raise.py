@@ -20,7 +20,7 @@ ZERO = "0" * 40
 CODE = "src/app.py"
 
 CHAIN_A = {"python": "Python 3.15.1", "valgrind": "valgrind-3.22.0",
-           "runner_image": "ubuntu24 20261023", "lock_sha256": "ab" * 32}
+           "image": "python:3.15.1-slim-trixie", "lock_sha256": "ab" * 32}
 CHAIN_B = {**CHAIN_A, "lock_sha256": "cd" * 32}
 
 

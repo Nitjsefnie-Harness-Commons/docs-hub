@@ -69,14 +69,15 @@ updates:
         patterns:
           - "*"
 
-  # The CI service images. Like the actions above, a digest pin never moves on
-  # its own — and these Dockerfiles are the only place the digest is written,
-  # so the bump lands where CI reads it. The major-ignore keeps the same
-  # reviewed-upgrade flow as every other pin here.
+  # The CI service images and the speed job's image. Like the actions above, a
+  # digest pin never moves on its own — and these Dockerfiles are the only place
+  # the digest is written, so the bump lands where CI reads it. The ignores keep
+  # the same reviewed-upgrade flow as every other pin here.
   - package-ecosystem: docker
     directories:
       - "/.github/postgres/16"
       - "/.github/postgres/17"
+      - "/.github/speed"
     schedule:
       interval: weekly
       day: wednesday
@@ -89,3 +90,7 @@ updates:
       - dependency-name: postgres
         update-types:
           - "version-update:semver-major"
+      - dependency-name: python
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"

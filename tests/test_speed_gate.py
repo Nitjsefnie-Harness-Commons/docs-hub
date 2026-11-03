@@ -37,7 +37,7 @@ def _policy() -> ModuleType:
 
 TOOLCHAIN = {"python": "3.15.1 (main, Oct 21 2026, 14:53:25) [GCC 13.3.0]",
              "valgrind": "valgrind-3.24.0",
-             "runner_image": "ubuntu24 20261023.334.3",
+             "image": "python:3.15.1-slim-trixie@sha256:" + "53" * 32,
              "lock_sha256": "ab" * 32}
 
 # Differs from TOOLCHAIN in one field, so a mutant that carries either
@@ -177,7 +177,7 @@ def test_check_on_a_toolchain_mismatch_compares_nothing(
 
 
 def test_a_null_toolchain_field_differs(policy: ModuleType) -> None:
-    measured = {**TOOLCHAIN, "runner_image": None}
+    measured = {**TOOLCHAIN, "image": None}
     result = policy.check(_budget(), _measurement(
         {"service.publish": 900000, "service.list": 2000}, measured))
     assert set(_rows(result).values()) == {"not compared"}
@@ -436,7 +436,7 @@ def test_measurement_refuses_an_invalid_count(
         policy.load_measurement(path)
 
 
-@pytest.mark.parametrize("field", ["python", "valgrind", "runner_image", "lock_sha256"])
+@pytest.mark.parametrize("field", ["python", "valgrind", "image", "lock_sha256"])
 @pytest.mark.parametrize("value", [[], {}, 1, False])
 @pytest.mark.parametrize("kind", ["budget", "measurement"])
 def test_toolchain_refuses_values_other_than_strings_or_null(
