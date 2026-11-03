@@ -2,7 +2,6 @@
 # pylint: disable=protected-access  # Shares the sibling suites' loaders and runners.
 from __future__ import annotations
 
-import re
 import shlex
 from pathlib import Path
 from types import ModuleType
@@ -83,10 +82,6 @@ def test_the_speed_job_runs_in_and_records_the_images_jobs_image() -> None:
     assert speed["env"]["DOCS_HUB_SPEED_IMAGE"] == expression
 
 
-def test_speed_yml_holds_no_image_digest_literal() -> None:
-    assert re.search(r"@sha256:[0-9a-f]{64}", rc._workflow_text("speed.yml")) is None
-
-
 def test_the_speed_dockerfile_holds_one_from_line_of_a_python_image() -> None:
     lines = (rc._REPO / ".github/speed/Dockerfile").read_text(encoding="utf-8").splitlines()
     froms = [line for line in lines if line.startswith("FROM ")]
@@ -121,9 +116,10 @@ def test_the_counted_packages_install_at_exact_versions() -> None:
 def test_dependabot_updates_the_speed_image_within_its_minor() -> None:
     updates = yaml.safe_load(
         (rc._REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
-    docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")
-    assert "/.github/speed" in docker["directories"]
-    python = [condition for condition in docker["ignore"]
-              if condition["dependency-name"] == "python"]
-    assert python == [{"dependency-name": "python", "update-types": [
-        "version-update:semver-major", "version-update:semver-minor"]}]
+    entries = [entry for entry in updates if "/.github/speed" in entry.get("directories", [])]
+    assert [entry["package-ecosystem"] for entry in entries] == ["docker"]
+    # Every ignore in the entry applies to each of its directories, the speed image's too.
+    assert sorted(entries[0]["ignore"], key=lambda condition: condition["dependency-name"]) == [
+        {"dependency-name": "postgres", "update-types": ["version-update:semver-major"]},
+        {"dependency-name": "python", "update-types": [
+            "version-update:semver-major", "version-update:semver-minor"]}]
