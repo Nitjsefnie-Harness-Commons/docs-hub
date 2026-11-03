@@ -165,7 +165,7 @@ jobs:
             false) set -- ;;
             *) echo "the mismatch step answered '$DOCS_HUB_SPEED_MISMATCH', not true or false" >&2; exit 1 ;;
           esac
-          # A pull request must carry its own rebaseline; a push keeps the paired verdict.
+          # A pull request must carry its own rebaseline; every other event keeps the paired verdict.
           if [ "$DOCS_HUB_EVENT_NAME" = pull_request ]; then set -- "$@" --refuse-mismatch; fi
           "$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py check \
             --measurements "$RUNNER_TEMP/measurement.json" \

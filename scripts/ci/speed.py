@@ -307,16 +307,6 @@ def measure(database: str, out: Path, base_sha: str | None, tree: Path,
     return 0
 
 
-def write_document(path: Path, budget: dict) -> None:
-    """Replace the budget file's bytes, preserving its mode, in one rename."""
-    payload = json.dumps(budget, indent=2, sort_keys=True) + "\n"
-    temp = path.with_name(f".{path.name}.tmp")
-    temp.write_text(payload, encoding="utf-8")
-    if path.exists():
-        temp.chmod(path.stat().st_mode)
-    os.replace(temp, path)
-
-
 def render_toolchain(result: dict) -> list[str]:
     if not result["toolchain_diff"]:
         return ["toolchain: match"]
@@ -350,8 +340,8 @@ def render_check(budget: dict, result: dict) -> str:
 
 def render_refusal(result: dict) -> str:
     fields = ", ".join(result["toolchain_diff"])
-    return (f"toolchain: the measured toolchain differs from the budget's on {fields}; the pull "
-            "request needs its declared rebaseline commit (CONTRIBUTING.md, speed budget)")
+    return (f"toolchain: the budget does not record the measured toolchain on {fields}; a pull "
+            "request passes once its budget does (CONTRIBUTING.md, speed budget)")
 
 
 def render_wall(wall: dict[str, float]) -> str:
@@ -406,7 +396,7 @@ def tighten_command(args: argparse.Namespace) -> int:
               f"{speed_budget.TIGHTEN_MARGIN_SHARE:.0%} of tolerance_pct "
               "below its budget")
         return 0
-    write_document(args.budget, {**budget, "workloads": workloads})
+    speed_budget.write_document(args.budget, {**budget, "workloads": workloads})
     lowered = ", ".join(name for name in workloads
                         if workloads[name] < budget["workloads"][name])
     print(f"tightened {lowered}")
@@ -416,8 +406,11 @@ def tighten_command(args: argparse.Namespace) -> int:
 def rebaseline_command(args: argparse.Namespace) -> int:
     budget = speed_budget.load(args.budget) if args.budget.exists() else None
     measurement = speed_budget.load_measurement(args.measurements)
-    write_document(args.budget, speed_budget.rebaseline(budget, measurement, WORKLOADS))
-    print(f"rebaselined {args.budget} from {args.measurements}")
+    rebaselined = speed_budget.rebaseline(budget, measurement, WORKLOADS)
+    speed_budget.write_document(args.budget, rebaselined)
+    print(f"rebaselined {args.budget} from {args.measurements}", file=sys.stderr)
+    for line in speed_budget.declarations(budget, rebaselined):
+        print(line)
     return 0
 
 

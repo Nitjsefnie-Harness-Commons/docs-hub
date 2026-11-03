@@ -92,9 +92,9 @@ line-count ratchet), `actionlint` (actionlint + zizmor),
 counts, taken inside the digest-pinned image `.github/speed/Dockerfile`
 names, against `.github/speed-budget.json` with a recorded toolchain,
 or, on a toolchain mismatch, against the base commit measured in the
-same job with its own lock (that verdict decides a push; a pull request
-whose toolchain differs from its own budget's fails until it carries its
-rebaseline), `scripts/ci/speed.py`; counts taken outside that image do not
+same job with its own lock (that verdict decides every run but a pull
+request's; a pull request whose toolchain differs from its own budget's
+fails until it carries its rebaseline), `scripts/ci/speed.py`; counts taken outside that image do not
 compare with CI's). Its `aggregate` job folds
 every leg and fails closed, with `conflict-markers` on every push and PR
 and PR-only `base-freshness`, which fails when `master` holds a gate-input

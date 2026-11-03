@@ -173,7 +173,8 @@ def test_mismatch_exits_one_on_an_unreadable_input(
 
 
 def _refusal(out: str) -> list[str]:
-    return [line for line in out.splitlines() if line.startswith("toolchain: the measured")]
+    return [line for line in out.splitlines()
+            if line.startswith("toolchain: the budget does not record")]
 
 
 @pytest.mark.parametrize("paired", [True, False])
@@ -191,8 +192,8 @@ def test_refuse_mismatch_fails_a_mismatched_head_whatever_its_counts_say(
     capsys.readouterr()
     assert speed.main(["check", *without, "--refuse-mismatch"]) == 1
     assert _refusal(capsys.readouterr().out) == [
-        "toolchain: the measured toolchain differs from the budget's on valgrind; the pull "
-        "request needs its declared rebaseline commit (CONTRIBUTING.md, speed budget)"]
+        "toolchain: the budget does not record the measured toolchain on valgrind; a pull "
+        "request passes once its budget does (CONTRIBUTING.md, speed budget)"]
 
 
 def test_refuse_mismatch_names_every_differing_field_and_keeps_the_report(
@@ -207,7 +208,7 @@ def test_refuse_mismatch_names_every_differing_field_and_keeps_the_report(
     assert summary.read_text(encoding="utf-8") == out
     lines = out.splitlines()
     (refusal,) = _refusal(out)
-    assert "differs from the budget's on python, valgrind, lock_sha256;" in refusal
+    assert "measured toolchain on python, valgrind, lock_sha256;" in refusal
     # After the toolchain block, before the wall-time block; the tables stay.
     assert lines.index("| lock_sha256 | " + "ab" * 32 + " | " + "ef" * 32 + " |") \
         < lines.index(refusal) < lines.index("### Wall time (non-gating)")
@@ -225,16 +226,21 @@ def test_refuse_mismatch_fails_a_lock_only_difference_the_paired_check_tolerates
     assert speed.main(["check", *paired]) == 0
     capsys.readouterr()
     assert speed.main(["check", *paired, "--refuse-mismatch"]) == 1
-    assert "differs from the budget's on lock_sha256;" in capsys.readouterr().out
+    assert "measured toolchain on lock_sha256;" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("with_base", [False, True])
 @pytest.mark.parametrize("count,code", [(1300, 0), (1301, 1)])
 def test_refuse_mismatch_changes_nothing_on_a_matching_toolchain(
         speed: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str],
-        count: int, code: int) -> None:
-    argv = _files(tmp_path, f._measurement({"service.publish": count, "service.list": 2000}))
+        count: int, code: int, with_base: bool) -> None:
+    head = f._measurement({"service.publish": count, "service.list": 2000})
+    argv = _files(tmp_path, head, _base({"service.publish": 1000, "service.list": 2000}))
+    if with_base:
+        argv += ["--base-measurements", str(tmp_path / "base.json")]
     assert speed.main(["check", *argv]) == code
     plain = capsys.readouterr().out
     assert speed.main(["check", *argv, "--refuse-mismatch"]) == code
     assert capsys.readouterr().out == plain
     assert not _refusal(plain)
+    assert ("base measurements ignored: the toolchain matches the budget" in plain) is with_base

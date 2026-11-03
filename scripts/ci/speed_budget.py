@@ -14,6 +14,9 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import budget_chain  # noqa: E402  pylint: disable=wrong-import-position
+
 ARTIFACT = Path(__file__).resolve().parents[2] / ".github" / "speed-budget.json"
 COUNTER = "cachegrind-ir"
 SCHEMA_VERSION = 1
@@ -99,6 +102,16 @@ def _validate_chain_values(chain: dict) -> None:
     if any(value is not None and not isinstance(value, str)
            for value in chain.values()):
         raise BudgetError("toolchain values must be strings or null")
+
+
+def write_document(path: Path, budget: dict) -> None:
+    """Replace the budget file in one rename, keeping its mode."""
+    payload = json.dumps(budget, indent=2, sort_keys=True) + "\n"
+    temp = path.with_name(f".{path.name}.tmp")
+    temp.write_text(payload, encoding="utf-8")
+    if path.exists():
+        temp.chmod(path.stat().st_mode)
+    os.replace(temp, path)
 
 
 def _load_json(path: Path, judge: Callable[[object], None]) -> dict:
@@ -193,3 +206,24 @@ def rebaseline(document: dict | None, measurement: dict,
                 "tolerance_pct", DEFAULT_TOLERANCE_PCT),
             "toolchain": measurement["toolchain"],
             "workloads": {name: counts[name] for name in names}}
+
+
+def _endpoint(leaves: dict, name: str) -> str:
+    return json.dumps(leaves[name]) if name in leaves else "absent"
+
+
+def declarations(document: dict | None, rebaselined: dict) -> list[str]:
+    """The `Budget-Raise:` lines for each changed toolchain leaf and raised count."""
+    if document is None:
+        return []
+    old, new = document["toolchain"], rebaselined["toolchain"]
+    steps = [(budget_chain.key_path(["toolchain", field]),
+              _endpoint(old, field), _endpoint(new, field))
+             for field in sorted(set(old) | set(new))
+             if _endpoint(old, field) != _endpoint(new, field)]
+    steps.extend((budget_chain.key_path(["workloads", name]),
+                  str(document["workloads"][name]), str(count))
+                 for name, count in rebaselined["workloads"].items()
+                 if count > document["workloads"].get(name, count))
+    return [f"Budget-Raise: {budget_chain.DOCUMENT} {key} {was} -> {to}"
+            for key, was, to in steps]
