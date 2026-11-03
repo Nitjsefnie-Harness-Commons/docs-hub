@@ -99,18 +99,60 @@ jobs:
           "$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py measure \
             --database docs_speed --out "$RUNNER_TEMP/measurement.json"
 
+      - name: Ask whether the toolchain left the budget's
+        id: mismatch
+        run: |
+          mismatch="$("$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py mismatch \
+            --measurements "$RUNNER_TEMP/measurement.json" \
+            --budget .github/speed-budget.json)"
+          case "$mismatch" in
+            true|false) echo "mismatch=$mismatch" >> "$GITHUB_OUTPUT" ;;
+            *) echo "speed.py mismatch printed '$mismatch', not true or false" >&2; exit 1 ;;
+          esac
+
+      # Same job, same Python and valgrind; the base tree's own lock, so a
+      # lock bump is part of the head's delta. This checkout's harness drives it.
+      - name: Measure the base commit beside this one
+        if: steps.mismatch.outputs.mismatch == 'true'
+        run: |
+          base="$(python3 scripts/ci/speed_base.py)"
+          git worktree add --detach "$RUNNER_TEMP/base-tree" "$base"
+          python -m venv "$RUNNER_TEMP/base-venv"
+          "$RUNNER_TEMP/base-venv/bin/python" -m pip install --require-hashes \
+            -r "$RUNNER_TEMP/base-tree/requirements-speed.txt"
+          "$RUNNER_TEMP/base-venv/bin/python" scripts/ci/speed.py measure \
+            --tree "$RUNNER_TEMP/base-tree" --database docs_speed \
+            --out "$RUNNER_TEMP/base-measurement.json" --base-sha "$base"
+        env:
+          DOCS_HUB_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          DOCS_HUB_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          DOCS_HUB_BEFORE_SHA: ${{ github.event.before }}
+          DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
+
       - name: Check the counts against the committed budget
         run: |
           test -f scripts/ci/speed_budget.py
+          test -f scripts/ci/speed_paired.py
+          case "$DOCS_HUB_SPEED_MISMATCH" in
+            true) set -- --base-measurements "$RUNNER_TEMP/base-measurement.json" ;;
+            false) set -- ;;
+            *) echo "the mismatch step answered '$DOCS_HUB_SPEED_MISMATCH', not true or false" >&2; exit 1 ;;
+          esac
           "$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py check \
             --measurements "$RUNNER_TEMP/measurement.json" \
             --budget .github/speed-budget.json \
-            --summary "$GITHUB_STEP_SUMMARY"
+            --summary "$GITHUB_STEP_SUMMARY" "$@"
+        env:
+          DOCS_HUB_SPEED_MISMATCH: ${{ steps.mismatch.outputs.mismatch }}
 
+      # Both paths share runner.temp, the artifact root: ratchet-push reads
+      # measurement.json there; base-measurement.json exists only on a mismatch.
       - name: Upload the measurement
         if: ${{ !cancelled() && steps.measure.conclusion == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: speed-measurement
-          path: ${{ runner.temp }}/measurement.json
+          path: |
+            ${{ runner.temp }}/measurement.json
+            ${{ runner.temp }}/base-measurement.json
           if-no-files-found: error

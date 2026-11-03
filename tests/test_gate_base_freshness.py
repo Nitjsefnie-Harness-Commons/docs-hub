@@ -466,7 +466,8 @@ def test_base_added_fold_and_named_input_are_stale(
     assert "inputs/extra.txt" in gate.gate_paths(head)
 
 
-@pytest.mark.parametrize("policy", ["scripts/ci/speed_budget.py", "scripts/ci/budget_chain.py"])
+@pytest.mark.parametrize("policy", ["scripts/ci/speed_budget.py", "scripts/ci/budget_chain.py",
+                                    "scripts/ci/speed_paired.py", "scripts/ci/speed_base.py"])
 def test_a_speed_policy_only_base_commit_stales_the_speed_leg(
         tmp_path: Path, gate: ModuleType, policy: str) -> None:
     origin = tmp_path / "origin"
