@@ -1,14 +1,8 @@
 #!/usr/bin/env python3
-"""Print the base commit a toolchain-mismatched speed run measures beside its head.
+"""Print the commit a toolchain-mismatched speed run measures beside its head.
 
-Reads the event variables the budget-raise step reads: on a pull_request the
-merge base of DOCS_HUB_BASE_SHA and DOCS_HUB_HEAD_SHA, on a push
-DOCS_HUB_BEFORE_SHA (a full non-zero SHA that is an ancestor of the head),
-on any other event the head's first parent. A shallow history, or anything
-else it cannot resolve, exits 1 with a message: the paired run then fails
-rather than judging the head against a guessed base.
-
-    DOCS_HUB_EVENT_NAME=... DOCS_HUB_HEAD_SHA=... scripts/ci/speed_base.py
+pull_request: the merge base; push: `before`; else the head's first parent.
+Whatever it cannot resolve exits 1.
 """
 from __future__ import annotations
 
