@@ -146,7 +146,7 @@ jobs:
         # 3.14 is the client wheel's requires-python floor.
         python: ["3.14", "3.15"]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -164,6 +164,7 @@ jobs:
 
       - name: Run the portable tests
         # No test selected exits 5, so an emptied marker fails the job.
+        timeout-minutes: 10
         run: python -m pytest -m portable -v -ra
 
   coverage:
