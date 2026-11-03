@@ -206,7 +206,8 @@ def test_check_exits_zero_on_a_toolchain_mismatch(speed: ModuleType,
         {**TOOLCHAIN, "valgrind": "valgrind-3.22.0"})), encoding="utf-8")
     assert speed.main(["check", "--measurements", str(measurement),
                        "--budget", str(budget)]) == 0
-    assert "a rebaseline commit is required" in capsys.readouterr().out
+    assert ("toolchain: MISMATCH — counts not compared without a base measurement"
+            in capsys.readouterr().out.splitlines())
 
 
 def test_check_fails_a_count_past_the_budget_with_exit_one(
