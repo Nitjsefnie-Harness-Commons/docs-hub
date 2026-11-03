@@ -24,6 +24,7 @@ import test_ratchet_push as rp
 
 _MEASURE = "Measure this commit's workloads"
 _MISMATCH = "Ask whether the toolchain left the budget's"
+_RESOLVE = "Resolve the base commit beside this one"
 _BASE = "Measure the base commit beside this one"
 _CHECK = "Check the counts against the committed budget"
 _UPLOAD = "Upload the measurement"
@@ -89,8 +90,8 @@ def _expression(value: str) -> str:
 
 def test_the_paired_steps_sit_between_the_head_measure_and_the_upload() -> None:
     names = [step.get("name") for step in _steps()]
-    assert [name for name in names if name in {_MEASURE, _MISMATCH, _BASE, _CHECK, _UPLOAD}] \
-        == [_MEASURE, _MISMATCH, _BASE, _CHECK, _UPLOAD]
+    paired = [_MEASURE, _MISMATCH, _RESOLVE, _BASE, _CHECK, _UPLOAD]
+    assert [name for name in names if name in paired] == paired
 
 
 @pytest.mark.parametrize("printed, code, expected", [
@@ -118,15 +119,22 @@ def test_the_base_and_check_steps_read_the_mismatch_steps_own_answer(tmp_path: P
     assert _run_step(_MISMATCH, tmp_path, runner, {"STUB_PRINT": "true"}).returncode == 0
     (key,) = _outputs(runner)
     reference = f"steps.{_step(_MISMATCH)['id']}.outputs.{key}"
-    assert _expression(_step(_BASE)["if"]) == f"{reference} == 'true'"
+    for name in (_RESOLVE, _BASE):
+        assert _expression(_step(name)["if"]) == f"{reference} == 'true'", name
     assert _expression(_step(_CHECK)["env"]["DOCS_HUB_SPEED_MISMATCH"]) == reference
 
 
-def test_the_base_step_reads_the_budget_raise_steps_event_variables() -> None:
+def test_the_resolve_step_reads_the_budget_raise_steps_event_variables() -> None:
     # The measured commit is the checkout's HEAD, never DOCS_HUB_HEAD_SHA.
     raise_env = _step("Refuse an undeclared budget raise")["env"]
-    assert _step(_BASE)["env"] == {name: raise_env[name] for name in _EVENT
-                                   if name != "DOCS_HUB_HEAD_SHA"}
+    assert _step(_RESOLVE)["env"] == {name: raise_env[name] for name in _EVENT
+                                      if name != "DOCS_HUB_HEAD_SHA"}
+
+
+def test_both_measure_steps_count_under_the_jobs_env_alone() -> None:
+    # speed.py hands os.environ to every counted child, so a step-level
+    # variable on one side only would sit in that side's counts alone.
+    assert "env" not in _step(_MEASURE) and "env" not in _step(_BASE)
 
 
 def _checkout(tmp_path: Path) -> dict[str, str]:
@@ -164,9 +172,12 @@ def test_a_mismatch_measures_the_base_tip_with_its_own_lock(tmp_path: Path) -> N
     shas = _checkout(tmp_path)
     runner = tmp_path / "runner"
     runner.mkdir()
-    done = _run_step(_BASE, tmp_path / "repo", runner, {
+    done = _run_step(_RESOLVE, tmp_path / "repo", runner, {
         "DOCS_HUB_EVENT_NAME": "pull_request", "DOCS_HUB_BASE_SHA": shas["master"],
         "DOCS_HUB_HEAD_SHA": shas["head"], "DOCS_HUB_BEFORE_SHA": ""}, _interpreters(tmp_path))
+    assert done.returncode == 0, done.stdout + done.stderr
+    # The measure step gets no event variables (_run_step drops inherited ones).
+    done = _run_step(_BASE, tmp_path / "repo", runner, {}, _interpreters(tmp_path))
     assert done.returncode == 0, done.stdout + done.stderr
     tree = runner / "base-tree"
     assert f._git(tree, "rev-parse", "HEAD") == shas["master"]
@@ -189,7 +200,7 @@ def test_an_unresolved_base_fails_the_step_before_anything_is_built(
     shas = _checkout(tmp_path)
     runner = tmp_path / "runner"
     runner.mkdir()
-    done = _run_step(_BASE, tmp_path / "repo", runner,
+    done = _run_step(_RESOLVE, tmp_path / "repo", runner,
                      {"DOCS_HUB_HEAD_SHA": shas["head"], **event}, _interpreters(tmp_path))
     assert done.returncode != 0
     assert "speed-base: " in done.stderr
