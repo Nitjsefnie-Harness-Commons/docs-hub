@@ -66,6 +66,14 @@ def test_a_pull_request_measures_the_base_tip_its_merge_commit_was_built_on(
                  head_sha=shas["head"], before_sha=shas["step"]) == shas["master"] + "\n"
 
 
+def test_a_pull_request_measures_its_named_base_not_the_first_parent(
+        tmp_path: Path) -> None:
+    # fork is an ancestor of merge but not its first parent (master).
+    shas = _history(tmp_path)
+    assert _base(tmp_path, shas["merge"], event_name="pull_request",
+                 base_sha=shas["fork"]) == shas["fork"] + "\n"
+
+
 def test_a_push_measures_the_commit_it_came_from(tmp_path: Path) -> None:
     # head's first parent is step, so only the before route answers fork.
     shas = _history(tmp_path)
