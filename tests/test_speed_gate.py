@@ -351,17 +351,21 @@ def test_rebaseline_without_a_budget_seeds_the_default_tolerance(
     assert document["tolerance_pct"] == 1.0
 
 
-def test_measure_writes_counts_toolchain_wall_and_base_sha(
+def test_measure_writes_counts_toolchain_wall_and_base_sha_of_this_checkout_by_default(
         speed: ModuleType, monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path) -> None:
     counts = dict.fromkeys(speed.WORKLOADS, 111)
-    monkeypatch.setattr(speed, "reset", lambda tree, database: None)
-    monkeypatch.setattr(speed, "counted",
-                        lambda database, name, scratch, binary="valgrind": 111)
-    monkeypatch.setattr(speed, "wall_times",
-                        lambda database: dict.fromkeys(speed.WORKLOADS, 0.5))
-    monkeypatch.setattr(speed.speed_budget, "toolchain",
-                        lambda binary="valgrind": dict(TOOLCHAIN))
+    trees: list[Path] = []
+    monkeypatch.setattr(speed, "reset", lambda tree, database: trees.append(tree))
+    monkeypatch.setattr(speed, "counted", lambda database, name, scratch, tree,
+                        binary="valgrind": trees.append(tree) or 111)
+    monkeypatch.setattr(speed, "wall_times", lambda database, tree: trees.append(tree)
+                        or dict.fromkeys(speed.WORKLOADS, 0.5))
+    locks: list[Path] = []
+    monkeypatch.setattr(speed.speed_budget, "toolchain", lambda lock, binary="valgrind":
+                        locks.append(lock) or dict(TOOLCHAIN))
+    # Away from the checkout, so a default of the caller's cwd differs from it.
+    monkeypatch.chdir(tmp_path)
     out = tmp_path / "measurements.json"
     # A runner has no valgrind; the internals are faked, so the counter
     # binary only has to exist -- sys.executable does, and is never exec'd.
@@ -373,6 +377,9 @@ def test_measure_writes_counts_toolchain_wall_and_base_sha(
     assert artifact["toolchain"] == TOOLCHAIN
     assert artifact["wall_seconds"] == dict.fromkeys(speed.WORKLOADS, 0.5)
     assert artifact["base_sha"] == "abc123"
+    # One reset and one count per workload, the final reset, the wall run.
+    assert trees == [_REPO] * (2 * len(speed.WORKLOADS) + 2)
+    assert locks == [_REPO / "requirements-speed.txt"]
 
 
 def test_workload_prints_the_counts_as_json(speed: ModuleType,
@@ -388,15 +395,12 @@ def test_workload_prints_the_counts_as_json(speed: ModuleType,
 
 def test_workload_refuses_a_server_that_exits_at_startup(tmp_path: Path) -> None:
     stub, marker = tmp_path / "valgrind-stub", tmp_path / "stub-ran"
-    # POSIX: skip leading --opt[=value] tokens, exec the first non-option,
-    # so the subprocess IS the server (uvicorn from a cwd with no backend).
-    # The marker proves the stub ran, so the flag was threaded: on a box
-    # with a real valgrind the test would pass either way.
+    # POSIX: the stub IS the server, and exits at startup. The marker proves
+    # the stub ran, so the flag was threaded: on a box with a real valgrind
+    # the test would pass either way.
     stub.write_text('#!/bin/sh\n'
                     ': > "$STUB_MARKER"\n'
-                    'while [ "$#" -gt 0 ]; do\n'
-                    '    case "$1" in --*) shift ;; *) exec "$@" ;; esac\n'
-                    'done\n', encoding="utf-8")
+                    'exit 3\n', encoding="utf-8")
     stub.chmod(0o755)
     done = subprocess.run([sys.executable, str(_SCRIPT), "workload", "--database", "x",
                            "--valgrind", str(stub)],

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Gate each workload on a deterministic instruction count, not on wall time.
+"""Gate each workload on its instruction count, not on wall time: the count's
+same-toolchain spread measured <= 0.06%, well under the budget's tolerance_pct.
 
 Each workload runs on its own fresh server under `valgrind --tool=cachegrind
 --cache-sim=no`; scripts/ci/speed_budget.py compares the counts against
@@ -8,7 +9,7 @@ cannot see off-CPU latency (event-loop blocking, sleeps, lock waits, work
 inside Postgres), for which wall time is the only signal.
 
     speed.py workload --database NAME [--workload NAME] [--valgrind PATH]
-    speed.py measure --database NAME --out FILE [--base-sha SHA] [--valgrind PATH]
+    speed.py measure --database NAME --out FILE [--base-sha SHA] [--valgrind PATH] [--tree DIR]
     speed.py check --measurements FILE [--budget FILE] [--summary FILE]
     speed.py tighten --measurements FILE --budget FILE
     speed.py rebaseline --measurements FILE [--budget FILE]
@@ -113,12 +114,12 @@ def valgrind_refusal(binary: str) -> str | None:
 
 
 def cli(argv: tuple[str, ...], under_valgrind: bool, prefix: str,
-        env: dict[str, str], binary: str) -> None:
+        env: dict[str, str], binary: str, tree: Path) -> None:
     """Run one CLI call as its own subprocess, under valgrind when counted."""
     command = ([*valgrind_argv(prefix, binary), sys.executable] if under_valgrind
                else [sys.executable])
     child = subprocess.Popen(  # pylint: disable=consider-using-with
-        [*command, "-m", "docs_hub_cli.cli", *argv], cwd=ROOT, env=env,
+        [*command, "-m", "docs_hub_cli.cli", *argv], cwd=tree, env=env,
         stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     _, error = child.communicate()
     if child.returncode != 0:
@@ -129,7 +130,7 @@ def cli(argv: tuple[str, ...], under_valgrind: bool, prefix: str,
 
 
 def execute(name: str, port: int, scratch: Path, under_valgrind: bool,
-            env: dict[str, str], binary: str) -> None:
+            env: dict[str, str], binary: str, tree: Path) -> None:
     """One workload's request sequence: the state it reads, then its calls."""
     services = [Service(port) for _ in range(CLIENTS)]
     small, large = document(24, 1), document(256, 2)
@@ -138,7 +139,7 @@ def execute(name: str, port: int, scratch: Path, under_valgrind: bool,
     prefix = str(scratch / f"{name}.cli")
 
     def call(*argv: str) -> None:
-        cli(argv, under_valgrind, prefix, env, binary)
+        cli(argv, under_valgrind, prefix, env, binary, tree)
 
     def clients(work: Callable[[Service, list[str]], object]) -> None:
         # Each client owns one connection and every version of its own slugs.
@@ -219,10 +220,10 @@ def workload_env(port: int, database: str, store: Path) -> dict[str, str]:
     return {**os.environ, **values, **MEASURED_ENV}
 
 
-def counted(database: str, name: str, scratch: Path,
+def counted(database: str, name: str, scratch: Path, tree: Path,
             binary: str = "valgrind") -> int:
     """One workload's count on its own fresh server and database (measure()
-    resets first), so the count reproduces standalone."""
+    resets first), so the count reproduces standalone; `tree` is the code run."""
     with socket.socket() as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
@@ -232,11 +233,11 @@ def counted(database: str, name: str, scratch: Path,
     server = subprocess.Popen(  # pylint: disable=consider-using-with
         [*valgrind_argv(server_prefix, binary), sys.executable, "-m", "uvicorn",
          "backend.app:app", "--host", "127.0.0.1", "--port", str(port),
-         "--log-level", "warning"], env=workload_env(port, database, store))
+         "--log-level", "warning"], cwd=tree, env=workload_env(port, database, store))
     try:
         serve(port, server)
         execute(name, port, scratch, under_valgrind=True,
-                env=workload_env(port, database, store), binary=binary)
+                env=workload_env(port, database, store), binary=binary, tree=tree)
     finally:
         server.terminate()
         server.wait(timeout=120)
@@ -251,11 +252,11 @@ def workload(database: str, names: tuple[str, ...] = WORKLOADS,
     counts: dict[str, int] = {}
     with tempfile.TemporaryDirectory() as scratch:
         for name in names:
-            counts[name] = counted(database, name, Path(scratch), binary)
+            counts[name] = counted(database, name, Path(scratch), ROOT, binary)
     return counts
 
 
-def wall_times(database: str) -> dict[str, float]:
+def wall_times(database: str, tree: Path) -> dict[str, float]:
     """Each workload once, native — the only signal for off-CPU latency."""
     with tempfile.TemporaryDirectory() as scratch:
         with socket.socket() as probe:
@@ -266,7 +267,7 @@ def wall_times(database: str) -> dict[str, float]:
         server = subprocess.Popen(  # pylint: disable=consider-using-with
             [sys.executable, "-m", "uvicorn", "backend.app:app", "--host",
              "127.0.0.1", "--port", str(port), "--log-level", "warning"],
-            env=workload_env(port, database, store))
+            cwd=tree, env=workload_env(port, database, store))
         wall: dict[str, float] = {}
         try:
             serve(port, server)
@@ -274,7 +275,7 @@ def wall_times(database: str) -> dict[str, float]:
                 started = time.perf_counter()
                 execute(name, port, Path(scratch), under_valgrind=False,
                         env=workload_env(port, database, store),
-                        binary="valgrind")
+                        binary="valgrind", tree=tree)
                 wall[name] = time.perf_counter() - started
         finally:
             server.terminate()
@@ -282,20 +283,21 @@ def wall_times(database: str) -> dict[str, float]:
     return wall
 
 
-def measure(database: str, out: Path, base_sha: str | None,
+def measure(database: str, out: Path, base_sha: str | None, tree: Path,
             binary: str = "valgrind") -> int:
-    """Count every workload on a fresh database, time it natively, write the file."""
+    """Count every workload of `tree`'s code on a fresh database, time it
+    natively, write the file."""
     counts = {}
     with tempfile.TemporaryDirectory() as scratch:
         for name in WORKLOADS:
-            reset(ROOT, database)
-            counts[name] = counted(database, name, Path(scratch), binary)
-    reset(ROOT, database)
+            reset(tree, database)
+            counts[name] = counted(database, name, Path(scratch), tree, binary)
+    reset(tree, database)
     artifact = {"schema_version": speed_budget.SCHEMA_VERSION,
                 "base_sha": base_sha or None,
-                "toolchain": speed_budget.toolchain(binary),
+                "toolchain": speed_budget.toolchain(tree / "requirements-speed.txt", binary),
                 "counts": counts,
-                "wall_seconds": wall_times(database)}
+                "wall_seconds": wall_times(database, tree)}
     payload = json.dumps(artifact, indent=2, sort_keys=True)
     out.write_text(payload + "\n", encoding="utf-8")
     print(payload)
@@ -406,7 +408,7 @@ def measure_command(args: argparse.Namespace) -> int:
     if refusal:
         print(refusal, file=sys.stderr)
         return 1
-    return measure(args.database, args.out, args.base_sha, args.valgrind)
+    return measure(args.database, args.out, args.base_sha, args.tree, args.valgrind)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -428,13 +430,16 @@ def main(argv: list[str] | None = None) -> int:
         help="the commit the run measured; defaults to $GITHUB_SHA")
     measure_parser.add_argument("--valgrind", default="valgrind",
                                 help="the counter binary to run everything under")
+    measure_parser.add_argument("--tree", type=Path, default=ROOT,
+                                help="the checkout whose code is measured; defaults to this one")
     measure_parser.set_defaults(func=measure_command)
     check = sub.add_parser("check", help="compare against the recorded counts")
     check.add_argument("--measurements", type=Path, required=True)
     check.add_argument("--budget", type=Path, default=speed_budget.ARTIFACT)
     check.add_argument("--summary", default="")
     check.set_defaults(func=check_command)
-    tighten = sub.add_parser("tighten", help="follow counts down")
+    tighten = sub.add_parser("tighten", help="follow a count down once it falls more "
+                             f"than {speed_budget.TIGHTEN_MARGIN_SHARE:.0%}% of tolerance_pct")
     tighten.add_argument("--measurements", type=Path, required=True)
     tighten.add_argument("--budget", type=Path, required=True)
     tighten.set_defaults(func=tighten_command)
