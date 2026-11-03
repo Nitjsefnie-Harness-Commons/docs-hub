@@ -165,12 +165,15 @@ jobs:
             false) set -- ;;
             *) echo "the mismatch step answered '$DOCS_HUB_SPEED_MISMATCH', not true or false" >&2; exit 1 ;;
           esac
+          # A pull request must carry its own rebaseline; a push keeps the paired verdict.
+          if [ "$DOCS_HUB_EVENT_NAME" = pull_request ]; then set -- "$@" --refuse-mismatch; fi
           "$RUNNER_TEMP/venv/bin/python" scripts/ci/speed.py check \
             --measurements "$RUNNER_TEMP/measurement.json" \
             --budget .github/speed-budget.json \
             --summary "$GITHUB_STEP_SUMMARY" "$@"
         env:
           DOCS_HUB_SPEED_MISMATCH: ${{ steps.mismatch.outputs.mismatch }}
+          DOCS_HUB_EVENT_NAME: ${{ github.event_name }}
 
       # Both paths share $RUNNER_TEMP, the artifact root: ratchet-push reads
       # measurement.json there; base-measurement.json exists only on a mismatch.

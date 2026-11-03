@@ -208,23 +208,37 @@ def test_an_unresolved_base_fails_the_step_before_anything_is_built(
     assert _calls(tmp_path / "python.log") == [] and _calls(tmp_path / "base-venv.log") == []
 
 
-@pytest.mark.parametrize("mismatch, paired", [
-    ("true", ["--base-measurements", "{runner}/base-measurement.json"]), ("false", []),
-    ("", None), ("maybe", None),
+@pytest.mark.parametrize("mismatch, event, expected", [
+    ("true", "push", ["--base-measurements", "{runner}/base-measurement.json"]),
+    ("false", "push", []),
+    ("true", "pull_request", ["--base-measurements", "{runner}/base-measurement.json",
+                              "--refuse-mismatch"]),
+    ("false", "pull_request", ["--refuse-mismatch"]),
+    ("true", "workflow_dispatch", ["--base-measurements", "{runner}/base-measurement.json"]),
+    ("false", "pull_request_target", []),
+    ("false", "", []),
+    ("", "pull_request", None), ("maybe", "push", None),
 ])
-def test_the_check_step_passes_the_base_measurements_only_on_a_mismatch(
-        tmp_path: Path, mismatch: str, paired: list[str] | None) -> None:
+def test_the_check_step_passes_its_flags_by_mismatch_and_event(
+        tmp_path: Path, mismatch: str, event: str, expected: list[str] | None) -> None:
     runner, log = tmp_path / "runner", tmp_path / "calls.log"
     _stub(runner / "venv/bin/python", log)
     for name in ("speed_budget.py", "speed_paired.py"):
         (tmp_path / "scripts/ci").mkdir(parents=True, exist_ok=True)
         (tmp_path / "scripts/ci" / name).write_text("", encoding="utf-8")
-    done = _run_step(_CHECK, tmp_path, runner, {"DOCS_HUB_SPEED_MISMATCH": mismatch})
-    if paired is None:
+    done = _run_step(_CHECK, tmp_path, runner,
+                     {"DOCS_HUB_SPEED_MISMATCH": mismatch, "DOCS_HUB_EVENT_NAME": event})
+    if expected is None:
         assert done.returncode != 0 and _calls(log) == [], done.stdout + done.stderr
         return
     assert done.returncode == 0, done.stdout + done.stderr
     assert _calls(log) == [["scripts/ci/speed.py", "check", "--measurements",
                             f"{runner}/measurement.json", "--budget", ".github/speed-budget.json",
                             "--summary", f"{runner}/summary.md",
-                            *(arg.format(runner=runner) for arg in paired)]]
+                            *(arg.format(runner=runner) for arg in expected)]]
+
+
+def test_the_check_step_reads_the_event_name_through_its_env_alone() -> None:
+    step = _step(_CHECK)
+    assert _expression(step["env"]["DOCS_HUB_EVENT_NAME"]) == "github.event_name"
+    assert "${{" not in step["run"]
