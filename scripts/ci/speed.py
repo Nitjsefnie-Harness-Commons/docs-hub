@@ -320,7 +320,7 @@ def render_toolchain(result: dict) -> list[str]:
     if not result["toolchain_diff"]:
         return ["toolchain: match"]
     remedy = (f"counts judged against base commit {result['base_sha']}"
-              if "base_sha" in result else "a rebaseline commit is required")
+              if "base_sha" in result else "counts not compared without a base measurement")
     lines = [f"toolchain: MISMATCH — {remedy}", "",
              "| field | recorded | measured |", "|---|---|---|"]
     lines.extend(f"| {field} | {recorded} | {measured} |" for field, (recorded, measured)

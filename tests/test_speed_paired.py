@@ -133,7 +133,7 @@ def test_check_judges_a_mismatched_head_against_the_base_file(
     out = capsys.readouterr().out
     assert "| workload | count | base | delta |" in out
     assert f"counts judged against base commit {BASE_SHA}" in out
-    assert "a rebaseline commit is required" not in out
+    assert "without a base measurement" not in out
 
 
 def test_check_on_a_matching_toolchain_ignores_the_base_file(
