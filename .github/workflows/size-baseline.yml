@@ -25,7 +25,7 @@ jobs:
           persist-credentials: false
 
       - name: Check the tracked files against the ratchet
-        uses: Nitjsefnie-Actions/size-ratchet@0c9790acfe6bec19f1310a6e17428332185ea3ec # v1.1.0
+        uses: Nitjsefnie-Actions/size-ratchet@cb0deb632f24962ed3aee44811c576b7b8e9ba29 # v2.0.4
         with:
           mode: check
           base-ref: ${{ github.event.pull_request.base.sha || github.sha }}
