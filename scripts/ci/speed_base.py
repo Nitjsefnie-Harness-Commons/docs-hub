@@ -34,7 +34,7 @@ def base_commit(cwd: Path, env: Mapping[str, str]) -> str:
         before = env.get("DOCS_HUB_BEFORE_SHA") or ""
         if not _FULL_SHA.fullmatch(before):
             raise ValueError(f"{before!r} is not a full SHA (DOCS_HUB_BEFORE_SHA)")
-        if before != "0" * 40 and _contains(cwd, before, head):
+        if _contains(cwd, before, head):
             return before
     try:
         return budget_raise.resolve_commit(cwd, f"{head}^1")
@@ -43,7 +43,7 @@ def base_commit(cwd: Path, env: Mapping[str, str]) -> str:
 
 
 def _contains(cwd: Path, before: str, head: str) -> bool:
-    try:  # A force push's old tip may never have been fetched.
+    try:  # All-zero (a new branch) or an unfetched force-pushed tip: no commit.
         resolved = budget_raise.resolve_commit(cwd, before)
     except ValueError:
         return False
