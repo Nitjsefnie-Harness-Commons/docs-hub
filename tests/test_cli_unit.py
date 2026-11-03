@@ -46,7 +46,7 @@ _DEAD_URL = "http://127.0.0.1:9"  # Port 9 (discard): nothing listens; see the m
 @pytest.fixture(autouse=True)
 def _offline(monkeypatch):
     monkeypatch.setattr(cli, "_DEFAULT_URL", _DEAD_URL)
-    # conftest.py exports this already; restated so the file stands alone.
+    # conftest.py exports this on database runs; restated so the file stands alone.
     monkeypatch.setenv("DOCS_HUB_API_KEY", "test-api-key")
 
 

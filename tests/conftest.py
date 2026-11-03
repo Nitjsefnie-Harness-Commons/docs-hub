@@ -13,6 +13,7 @@ def _portable(item):
 
 
 def pytest_collection_modifyitems(items):
+    # Sees only a declared _test_env; the -m portable job is the real net.
     leaks = [item.nodeid for item in items
              if _portable(item) and "_test_env" in item.fixturenames]
     if leaks:
@@ -58,7 +59,7 @@ def _database(request):
 
 @pytest.fixture(autouse=True)
 def _clean_tables(request):
-    """Truncate docs tables before each non-portable test for isolation."""
+    """Truncate docs tables before each non-portable test."""
     if not _portable(request.node):
         from backend import db
         with db.docs_conn() as c:

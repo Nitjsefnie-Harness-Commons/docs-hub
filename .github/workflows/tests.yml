@@ -142,8 +142,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.14 is the client wheel's requires-python floor.
         os: [ubuntu-latest, windows-latest, macos-latest]
+        # 3.14 is the client wheel's requires-python floor.
         python: ["3.14", "3.15"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15

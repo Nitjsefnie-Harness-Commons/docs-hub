@@ -25,7 +25,8 @@ def run_cli(monkeypatch):
 
 @pytest.mark.parametrize("target, error_number", [
     ("missing/got.html", errno.ENOENT),
-    (".", errno.EISDIR),
+    # Windows refuses to open a directory for writing with EACCES, not EISDIR.
+    (".", errno.EACCES if sys.platform == "win32" else errno.EISDIR),
 ])
 def test_get_reports_an_unwritable_output_path(
         tmp_path, run_cli, capsys, target, error_number):
