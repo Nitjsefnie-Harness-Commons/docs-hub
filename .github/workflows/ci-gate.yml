@@ -4,8 +4,8 @@ name: ci gate
 # name. The paths-ignore gates disappeared on docs-only pushes, leaving no
 # check that could be required on every commit.
 #
-# This file owns every push and pull request but size-baseline's own. Other
-# callees keep only workflow_call, their crons and workflow_dispatch.
+# Callees leave push and pull_request to this file, except size-baseline;
+# the rest keep only workflow_call, their crons and workflow_dispatch.
 #
 # The fold fails closed on failed, cancelled, skipped or missing results and
 # reports every offending leg. Its one narrowing is base-freshness: that job

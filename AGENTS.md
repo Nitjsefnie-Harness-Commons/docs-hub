@@ -79,8 +79,9 @@ and a temp blob store — see `tests/conftest.py`. No live network.
 
 One `ci gate` workflow owns the gate set's `push` and `pull_request`
 triggers without a path filter, so documentation-only pushes run it too;
-only `size-baseline` also runs standalone, on pull requests and on pushes
-to `main` or `master`. It folds ten gates: `tests` (Postgres 16 and 17, plus the `portable`
+of its callees only `size-baseline` also has its own `pull_request`
+trigger and a `push` trigger on `main` and `master`.
+It folds ten gates: `tests` (Postgres 16 and 17, plus the `portable`
 tests on Windows, macOS and Linux with 3.14 and 3.15, plus the recorded
 coverage floor, plus the `public/app.js` test in jsdom),
 `lint` (pycodestyle, pylint), `types` (pyright over `backend/`), `eslint`
