@@ -4,11 +4,23 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from types import ModuleType
 
 import pytest
 
 import test_budget_raise as f
+import test_speed_gate as g
 from test_budget_raise_matrix import _event
+
+
+@pytest.fixture(name="speed")
+def _speed() -> ModuleType:
+    return g._load("ci_speed", g._SCRIPT)
+
+
+@pytest.fixture(name="policy")
+def _policy() -> ModuleType:
+    return g._load("ci_speed_budget", g._POLICY)
 
 
 def _line(field: str, before: object, after: object) -> str:
@@ -111,26 +123,117 @@ def test_one_toolchain_line_does_not_declare_another_field(tmp_path: Path) -> No
     assert "toolchain.lock_sha256" in result.stdout
 
 
-@pytest.mark.parametrize("declare_toolchain", [False, True])
-def test_generated_rebaseline_needs_numeric_and_toolchain_lines(
-        tmp_path: Path, declare_toolchain: bool) -> None:
-    names = ("service.publish", "service.list", "service.versions", "cli.transfer", "cli.text")
+_NAMES = ("service.publish", "service.list", "service.versions", "cli.transfer", "cli.text")
+
+
+def _rebaseline(repo: Path, tmp_path: Path, counts: dict,
+                chain: dict) -> subprocess.CompletedProcess:
+    measurement = tmp_path / "measurement.json"
+    measurement.write_text(json.dumps({"counts": counts, "toolchain": chain}), encoding="utf-8")
+    return subprocess.run([sys.executable, str(f._REPO / "scripts/ci/speed.py"),
+                           "rebaseline", "--measurements", str(measurement),
+                           "--budget", str(repo / f.BUDGET)], capture_output=True,
+                          text=True, check=False, timeout=20)
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+@pytest.mark.parametrize("keep_toolchain_lines", [True, False])
+def test_the_printed_declarations_are_the_commit_body_the_gate_accepts(
+        tmp_path: Path, event: str, keep_toolchain_lines: bool) -> None:
     repo = f._repo(tmp_path)
     base = f._commit(repo, "seed", **{f.CODE: "print(1)\n", f.BUDGET: json.dumps(
-        f._budget(dict.fromkeys(names, 100)))})
-    measurement = tmp_path / "measurement.json"
-    measurement.write_text(json.dumps({"counts": dict.fromkeys(names, 300),
-                                       "toolchain": {**f.CHAIN_A, "image": "new"}}),
-                           encoding="utf-8")
-    generated = subprocess.run([sys.executable, str(f._REPO / "scripts/ci/speed.py"),
-                                "rebaseline", "--measurements", str(measurement),
-                                "--budget", str(repo / f.BUDGET)], capture_output=True,
-                               text=True, check=False, timeout=20)
+        f._budget(dict(zip(_NAMES, (100, 400, 100, 100, 100)))))})
+    chain = {**f.CHAIN_A, "image": 'new "tool" -> image', "lock_sha256": "cd" * 32}
+    generated = _rebaseline(repo, tmp_path, dict(zip(_NAMES, (300, 200, 100, 250, 100))), chain)
     assert generated.returncode == 0, generated.stdout + generated.stderr
-    lines = [f._decl(f"workloads[{json.dumps(name)}]", 100, 300) for name in names]
-    if declare_toolchain:
-        lines.append(_line("image", f.CHAIN_A["image"], "new"))
+    lines = generated.stdout.splitlines()
+    assert len(lines) == 4 and all(line.startswith("Budget-Raise: ") for line in lines)
+    body = generated.stdout if keep_toolchain_lines else "".join(
+        line + "\n" for line in lines if "toolchain." not in line)
     f._git(repo, "add", f.BUDGET)
-    f._git(repo, "commit", "-m", "reviewed rebaseline\n\n" + "\n".join(lines))
-    result = _event(repo, base, "pull_request")
-    assert result.returncode == int(not declare_toolchain), result.stdout + result.stderr
+    f._git(repo, "commit", "-m", "reviewed rebaseline\n\n" + body)
+    result = _event(repo, base, event)
+    assert result.returncode == int(not keep_toolchain_lines), result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_an_added_workload_needs_no_printed_declaration(
+        tmp_path: Path, event: str) -> None:
+    repo = f._repo(tmp_path)
+    base = f._commit(repo, "seed", **{f.CODE: "print(1)\n", f.BUDGET: json.dumps(
+        f._budget(dict.fromkeys(_NAMES[:-1], 100)))})
+    generated = _rebaseline(repo, tmp_path, dict.fromkeys(_NAMES, 100), f.CHAIN_A)
+    assert generated.returncode == 0 and generated.stdout == "", generated.stdout + generated.stderr
+    f._git(repo, "add", f.BUDGET)
+    f._git(repo, "commit", "-m", "reviewed rebaseline")
+    result = _event(repo, base, event)
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _declared(policy: ModuleType, old: dict | None, **new: object) -> list[str]:
+    return policy.declarations(old, g._budget(**new))
+
+
+def test_declarations_name_a_raised_count_and_skip_the_rest(policy: ModuleType) -> None:
+    old = g._budget({"service.publish": 1000, "service.list": 2000, "cli.text": 500})
+    new = {"service.publish": 1500, "service.list": 1000, "cli.text": 500, "cli.transfer": 70}
+    assert _declared(policy, old, workloads=new) == [
+        f._decl('workloads["service.publish"]', "1000", "1500")]
+
+
+@pytest.mark.parametrize("was, now, rendered", [
+    ("old", "new", ('"old"', '"new"')),
+    (None, "new", ("null", '"new"')),
+    ("old", None, ('"old"', "null")),
+    ("a -> b", 'say "x"', ('"a -> b"', '"say \\"x\\""')),
+])
+def test_declarations_render_each_changed_toolchain_leaf_as_json(
+        policy: ModuleType, was: object, now: object, rendered: tuple[str, str]) -> None:
+    old = g._budget(toolchain={**g.TOOLCHAIN, "image": was})
+    assert _declared(policy, old, toolchain={**g.TOOLCHAIN, "image": now}) == [
+        f._decl("toolchain.image", *rendered)]
+
+
+def test_declarations_tell_an_absent_leaf_from_a_null_one(policy: ModuleType) -> None:
+    short = {key: value for key, value in g.TOOLCHAIN.items() if key != "image"}
+    assert _declared(policy, g._budget(toolchain=short), toolchain=g.TOOLCHAIN) == [
+        f._decl("toolchain.image", "absent", json.dumps(g.TOOLCHAIN["image"]))]
+    assert _declared(policy, g._budget(), toolchain=short) == [
+        f._decl("toolchain.image", json.dumps(g.TOOLCHAIN["image"]), "absent")]
+    assert _declared(policy, g._budget(toolchain={**g.TOOLCHAIN, "image": None}),
+                     toolchain=short) == [f._decl("toolchain.image", "null", "absent")]
+
+
+def test_declarations_list_toolchain_leaves_then_counts_and_nothing_else(
+        policy: ModuleType) -> None:
+    assert _declared(policy, g._budget(), tolerance_pct=99, toolchain=g.MEASURED_CHAIN,
+                     workloads={"service.publish": 1001, "service.list": 2000}) == [
+        f._decl("toolchain.lock_sha256", json.dumps(g.TOOLCHAIN["lock_sha256"]),
+                json.dumps(g.MEASURED_CHAIN["lock_sha256"])),
+        f._decl('workloads["service.publish"]', "1000", "1001")]
+    assert _declared(policy, g._budget()) == []
+
+
+def test_declarations_for_a_seed_are_empty(policy: ModuleType) -> None:
+    assert _declared(policy, None, toolchain=g.MEASURED_CHAIN) == []
+
+
+def test_rebaseline_prints_the_declarations_alone_on_stdout_and_its_status_on_stderr(
+        speed: ModuleType, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    budget, measurement = tmp_path / "budget.json", tmp_path / "m.json"
+    counts = dict.fromkeys(speed.WORKLOADS, 1000)
+    budget.write_text(json.dumps(g._budget(counts)), encoding="utf-8")
+    measurement.write_text(json.dumps(g._measurement(
+        {**counts, "service.list": 1200, "cli.text": 900}, g.MEASURED_CHAIN)), encoding="utf-8")
+    argv = ["rebaseline", "--measurements", str(measurement), "--budget", str(budget)]
+    assert speed.main(argv) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "\n".join([
+        f._decl("toolchain.lock_sha256", json.dumps(g.TOOLCHAIN["lock_sha256"]),
+                json.dumps(g.MEASURED_CHAIN["lock_sha256"])),
+        f._decl('workloads["service.list"]', "1000", "1200")]) + "\n"
+    assert captured.err == f"rebaselined {budget} from {measurement}\n"
+    budget.unlink()
+    assert speed.main(argv) == 0
+    captured = capsys.readouterr()
+    assert captured.out == "" and captured.err.startswith("rebaselined ")
