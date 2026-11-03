@@ -1,4 +1,4 @@
-"""A test marked portable never reaches the database fixtures in conftest.py."""
+"""A portable test runs without the database and cannot request `_test_env`."""
 import os
 import subprocess
 import sys

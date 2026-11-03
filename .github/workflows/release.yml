@@ -62,9 +62,9 @@ jobs:
     permissions:
       contents: read
 
-    # The suite below is not unit-testable in isolation: tests/conftest.py
-    # drops and recreates a real `docs_test` database from backend/schema.sql
-    # and runs everything against it. Publishing without running it would mean
+    # The suite below needs a real database: tests/conftest.py drops and
+    # recreates `docs_test` from backend/schema.sql for every test not marked
+    # `portable`. Publishing without running it would mean
     # shipping a client whose end-to-end agreement with the server was never
     # checked on this commit, so the release job carries the same Postgres the
     # tests job does, on the version the deployment runs.
