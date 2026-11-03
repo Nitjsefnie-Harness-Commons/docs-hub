@@ -118,9 +118,10 @@ jobs:
         # The suite calls dropdb/createdb/psql directly. The runner image does
         # ship a client, but which major version is an image detail that has
         # changed before — installing it makes the dependency explicit.
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-client
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo apt-get install -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends postgresql-client
           psql --version
 
       - name: Install dependencies
@@ -180,9 +181,10 @@ jobs:
             requirements-test.txt
 
       - name: Install the Postgres client
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends postgresql-client
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo apt-get install -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends postgresql-client
 
       - name: Install dependencies and the coverage toolchain
         run: |
