@@ -194,8 +194,13 @@ image="$(sed -n 's/\r$//; s/^FROM //p' .github/speed/Dockerfile)"
 docker network create speed
 docker run -d --name speed-pg --network speed --network-alias postgres \
   -e POSTGRES_PASSWORD=postgres "$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
-# TCP, because the image's first-start init server listens on the socket only.
-until docker exec speed-pg pg_isready -q -h 127.0.0.1 -U postgres; do sleep 1; done
+# TCP, because the image's first-start init server listens on the socket only;
+# 60 tries, so a container that exited ends the wait instead of spinning on it.
+for try in $(seq 60); do
+  docker exec speed-pg pg_isready -q -h 127.0.0.1 -U postgres && break
+  [ "$try" -lt 60 ] || echo "speed-pg is not ready after 60 tries; see docker logs speed-pg" >&2
+  sleep 1
+done
 docker run --rm --network speed --ulimit nofile=65536:65536 \
   -v "$PWD:/src:ro" -v "$PWD/out:/out" -w /src \
   -e RUNNER_TEMP=/out -e GITHUB_OUTPUT=/out/output -e GITHUB_WORKSPACE=/src \
