@@ -406,8 +406,7 @@ def tighten_command(args: argparse.Namespace) -> int:
 def rebaseline_command(args: argparse.Namespace) -> int:
     budget = speed_budget.load(args.budget) if args.budget.exists() else None
     measurement = speed_budget.load_measurement(args.measurements)
-    write_document(args.budget, speed_budget.rebaseline(budget, measurement,
-                                                        WORKLOADS))
+    write_document(args.budget, speed_budget.rebaseline(budget, measurement, WORKLOADS))
     print(f"rebaselined {args.budget} from {args.measurements}")
     return 0
 
@@ -463,6 +462,7 @@ def main(argv: list[str] | None = None) -> int:
     mismatch.add_argument("--measurements", type=Path, required=True)
     mismatch.add_argument("--budget", type=Path, required=True)
     mismatch.set_defaults(func=mismatch_command)
+    # argparse %-formats help, so the literal percent sign is written %%.
     tighten = sub.add_parser("tighten", help="follow a count down once it falls more "
                              f"than {speed_budget.TIGHTEN_MARGIN_SHARE:.0%}% of tolerance_pct")
     tighten.add_argument("--measurements", type=Path, required=True)
