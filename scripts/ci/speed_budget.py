@@ -21,7 +21,7 @@ SCHEMA_VERSION = 1
 DEFAULT_TOLERANCE_PCT = 1.0
 # Share of tolerance_pct a drop must exceed to tighten; spread under it commits nothing.
 TIGHTEN_MARGIN_SHARE = 0.5
-TOOLCHAIN_FIELDS = ("python", "valgrind", "runner_image", "lock_sha256")
+TOOLCHAIN_FIELDS = ("python", "valgrind", "image", "lock_sha256")
 
 
 class BudgetError(ValueError):
@@ -115,11 +115,10 @@ def toolchain(lock: Path, binary: str = "valgrind") -> dict[str, str | None]:
     """A count's inputs other than code."""
     version = subprocess.run([binary, "--version"], check=True,
                              capture_output=True, text=True).stdout.strip()
-    image = " ".join(part for part in (os.environ.get("ImageOS"),
-                                       os.environ.get("ImageVersion")) if part)
     return {"python": sys.version.splitlines()[0],
             "valgrind": version or None,
-            "runner_image": image or None,
+            # The speed job sets it to the container image it counts in.
+            "image": os.environ.get("DOCS_HUB_SPEED_IMAGE") or None,
             "lock_sha256": hashlib.sha256(lock.read_bytes()).hexdigest()}
 
 

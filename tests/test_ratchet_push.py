@@ -255,7 +255,7 @@ _COVERAGE_RECORD = {"schema_version": 1, "coverage": {
 _SPEED_BUDGET = {"schema_version": 1, "counter": "cachegrind-ir",
                  "tolerance_pct": 0.5, "toolchain": {
                      "python": "fixture", "valgrind": "fixture",
-                     "runner_image": None, "lock_sha256": "ab" * 32},
+                     "image": None, "lock_sha256": "ab" * 32},
                  "workloads": {"fixture": 2_000_000}}
 
 

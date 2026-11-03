@@ -16,7 +16,7 @@ def _line(field: str, before: object, after: object) -> str:
 
 
 @pytest.mark.parametrize("event", ["pull_request", "push"])
-@pytest.mark.parametrize("field", ["python", "valgrind", "runner_image", "lock_sha256"])
+@pytest.mark.parametrize("field", ["python", "valgrind", "image", "lock_sha256"])
 @pytest.mark.parametrize("mode, expected", [
     ("none", 1), ("exact", 0), ("mismatch", 1), ("duplicate", 1), ("impure", 1),
 ])
@@ -48,7 +48,7 @@ def test_toolchain_rebaseline_requires_its_own_exact_line(
 def test_toolchain_nulls_additions_and_removals_need_declarations(
         tmp_path: Path, event: str, declared: bool, shape: str) -> None:
     repo, base = f._seeded(tmp_path)
-    field = "compiler" if shape == "add" else "runner_image"
+    field = "compiler" if shape == "add" else "image"
     chain = dict(f.CHAIN_A)
     before = json.dumps(chain[field]) if field in chain else "absent"
     if shape == "remove":
@@ -68,7 +68,7 @@ def test_toolchain_nulls_additions_and_removals_need_declarations(
 def test_an_undeclared_rebaseline_cannot_exempt_a_triple_budget_measurement(tmp_path: Path) -> None:
     repo, base = f._seeded(tmp_path)
     f._commit(repo, "undeclared runner edit", **{f.BUDGET: json.dumps(f._budget(
-        {"w.pub": 100, "w.list": 200}, chain={**f.CHAIN_A, "runner_image": "new"}))})
+        {"w.pub": 100, "w.list": 200}, chain={**f.CHAIN_A, "image": "new"}))})
     f._commit(repo, "feature", **{f.CODE: "print(2)\n"})
     measurement = repo / "measurement.json"
     measurement.write_text(json.dumps({"counts": {"w.pub": 300, "w.list": 600},
@@ -91,9 +91,9 @@ def test_trailing_declaration_junk_is_a_parse_error(tmp_path: Path, kind: str) -
         line = f._decl('workloads["w.pub"]', 100, 300)
         document = f._budget({"w.pub": 300, "w.list": 200})
     else:
-        line = _line("runner_image", f.CHAIN_A["runner_image"], "new")
+        line = _line("image", f.CHAIN_A["image"], "new")
         document = f._budget({"w.pub": 100, "w.list": 200},
-                             chain={**f.CHAIN_A, "runner_image": "new"})
+                             chain={**f.CHAIN_A, "image": "new"})
     f._commit(repo, "raise\n\n" + line + " trailing junk", **{f.BUDGET: json.dumps(document)})
     result = _event(repo, base, "pull_request")
     assert result.returncode == 1, result.stdout + result.stderr
@@ -103,8 +103,8 @@ def test_trailing_declaration_junk_is_a_parse_error(tmp_path: Path, kind: str) -
 def test_one_toolchain_line_does_not_declare_another_field(tmp_path: Path) -> None:
     repo, base = f._seeded(tmp_path)
     document = f._budget({"w.pub": 100, "w.list": 200},
-                         chain={**f.CHAIN_A, "runner_image": "new", "lock_sha256": "cd" * 32})
-    f._commit(repo, "rebaseline\n\n" + _line("runner_image", f.CHAIN_A["runner_image"], "new"),
+                         chain={**f.CHAIN_A, "image": "new", "lock_sha256": "cd" * 32})
+    f._commit(repo, "rebaseline\n\n" + _line("image", f.CHAIN_A["image"], "new"),
               **{f.BUDGET: json.dumps(document)})
     result = _event(repo, base, "pull_request")
     assert result.returncode == 1, result.stdout + result.stderr
@@ -120,7 +120,7 @@ def test_generated_rebaseline_needs_numeric_and_toolchain_lines(
         f._budget(dict.fromkeys(names, 100)))})
     measurement = tmp_path / "measurement.json"
     measurement.write_text(json.dumps({"counts": dict.fromkeys(names, 300),
-                                       "toolchain": {**f.CHAIN_A, "runner_image": "new"}}),
+                                       "toolchain": {**f.CHAIN_A, "image": "new"}}),
                            encoding="utf-8")
     generated = subprocess.run([sys.executable, str(f._REPO / "scripts/ci/speed.py"),
                                 "rebaseline", "--measurements", str(measurement),
@@ -129,7 +129,7 @@ def test_generated_rebaseline_needs_numeric_and_toolchain_lines(
     assert generated.returncode == 0, generated.stdout + generated.stderr
     lines = [f._decl(f"workloads[{json.dumps(name)}]", 100, 300) for name in names]
     if declare_toolchain:
-        lines.append(_line("runner_image", f.CHAIN_A["runner_image"], "new"))
+        lines.append(_line("image", f.CHAIN_A["image"], "new"))
     f._git(repo, "add", f.BUDGET)
     f._git(repo, "commit", "-m", "reviewed rebaseline\n\n" + "\n".join(lines))
     result = _event(repo, base, "pull_request")

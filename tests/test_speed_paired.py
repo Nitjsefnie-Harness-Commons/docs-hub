@@ -102,7 +102,7 @@ def test_a_base_on_another_lock_is_judged(paired: ModuleType) -> None:
     assert f._rows(result)["service.publish"] == "FAIL"
 
 
-@pytest.mark.parametrize("field", ["python", "valgrind", "runner_image"])
+@pytest.mark.parametrize("field", ["python", "valgrind", "image"])
 def test_a_base_off_the_heads_toolchain_is_refused(speed: ModuleType, paired: ModuleType,
                                                    field: str) -> None:
     counts = {"service.publish": 1000, "service.list": 2000}
