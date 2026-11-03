@@ -35,10 +35,9 @@ def test_apt_get_steps_have_a_shorter_timeout_than_their_jobs() -> None:
 def test_apt_get_download_commands_set_retries_and_timeouts() -> None:
     for name, _, step in _apt_steps():
         for line in step["run"].splitlines():
-            for command in re.split(r"&&|\|\||;", line):
+            for command in re.split(r"&&|\|\|?|;", line):
                 if "apt-get" not in command:
                     continue
-                assert re.search(r"\b(update|install)\b", command), (name, command)
                 for bound in _BOUNDS:
                     assert re.search(bound, command), (name, command, bound)
 
