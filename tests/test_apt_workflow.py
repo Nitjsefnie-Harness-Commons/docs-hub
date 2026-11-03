@@ -1,13 +1,14 @@
 """Check the bounds on apt-get steps in the test workflow."""
-from itertools import groupby
 from pathlib import Path
-import shlex
+import re
 from typing import Any
 
-import pytest
 import yaml
 
 _WORKFLOW = Path(__file__).resolve().parent.parent / ".github/workflows/tests.yml"
+
+_BOUNDS = (r"Acquire::Retries=[1-9]", r"Acquire::http::Timeout=[1-9]",
+           r"Acquire::https::Timeout=[1-9]")
 
 
 def _apt_steps() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
@@ -18,35 +19,6 @@ def _apt_steps() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
              if "apt-get" in step.get("run", "")]
     assert steps, "No apt-get steps found"
     return steps
-
-
-def _options(args: list[str]) -> dict[str, str]:
-    options = {}
-    for index, word in enumerate(args):
-        if word in ("-o", "--option"):
-            option = args[index + 1] if index + 1 < len(args) else ""
-        elif word.startswith("--option="):
-            option = word[len("--option="):]
-        elif word.startswith("-o"):
-            option = word[2:].removeprefix("=")
-        else:
-            continue
-        key, equal, value = option.partition("=")
-        if equal:
-            options[key.lower()] = value
-    return options
-
-
-@pytest.mark.parametrize("args", [
-    ["-o", "Acquire::Retries=3"],
-    ["-oAcquire::Retries=3"],
-    ["-o=Acquire::Retries=3"],
-    ["--option", "Acquire::Retries=3"],
-    ["--option=Acquire::Retries=3"],
-])
-def test_apt_options_accept_equivalent_spellings(args: list[str]) -> None:
-    assert _options(args) == {"acquire::retries": "3"}
-    assert _options([*args, "-o", "ACQUIRE::RETRIES=1"]) == {"acquire::retries": "1"}
 
 
 def test_apt_get_steps_have_a_shorter_timeout_than_their_jobs() -> None:
@@ -61,22 +33,9 @@ def test_apt_get_steps_have_a_shorter_timeout_than_their_jobs() -> None:
 def test_apt_get_download_commands_set_retries_and_timeouts() -> None:
     for name, _, step in _apt_steps():
         for line in step["run"].splitlines():
-            if "apt-get" not in line:
-                continue
-            lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
-            lexer.whitespace_split = True
-            for separator, words in groupby(
-                    lexer, lambda word: word in {";", "&&", "||", "|", "&"}):
-                command = list(words)
-                executable = next((index for index, word in enumerate(command)
-                                   if word.rsplit("/", 1)[-1] == "apt-get"), None)
-                if separator or executable is None:
+            for command in re.split(r"&&|\|\||;", line):
+                if "apt-get" not in command:
                     continue
-                args = command[executable + 1:]
-                if not {"update", "install"}.intersection(args):
-                    continue
-                options = _options(args)
-                for key in ("Acquire::Retries", "Acquire::http::Timeout",
-                            "Acquire::https::Timeout"):
-                    value = options.get(key.lower(), "")
-                    assert value.isdecimal() and int(value) > 0, (name, line, key)
+                assert re.search(r"\b(update|install)\b", command), (name, command)
+                for bound in _BOUNDS:
+                    assert re.search(bound, command), (name, command, bound)
