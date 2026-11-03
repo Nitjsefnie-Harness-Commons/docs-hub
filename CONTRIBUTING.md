@@ -218,10 +218,15 @@ between two same-code, same-toolchain GitHub-hosted runs, taken before the
 job moved into this image (at most 0.06%); how closely a run on another
 host agrees with CI is not measured. Valgrind refuses
 to start under Docker's near-unlimited open-file limit, hence `--ulimit`. A
-digest bump of that image is a toolchain change like any other, and its
-commit also moves the snapshot timestamp to the new image's own (its
+digest bump of that image is a toolchain change like any other, and it
+needs the snapshot timestamp moved to the new image's own (its
 `/etc/apt/sources.list.d/debian.sources` names it) and the valgrind and
-`libc6-dbg` pins to that snapshot's versions.
+`libc6-dbg` pins moved to that snapshot's versions. Dependabot's pull
+requests for that image (the `/.github/speed` directory of the docker
+entry in `.github/dependabot.yml`) move none of those. `libc6-dbg` depends
+on the exact `libc6` version, so once the new image's `libc6` differs from
+the pinned one, such a pull request's install step fails until a
+maintainer commit moves the snapshot timestamp and both pins.
 
 `pip install -r requirements-dev.txt -r requirements-test.txt` gets the
 Python toolchain. `package.json` exists only to pin eslint and jsdom (the
