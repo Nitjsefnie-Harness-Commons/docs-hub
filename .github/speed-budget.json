@@ -3,16 +3,16 @@
   "schema_version": 1,
   "tolerance_pct": 0.5,
   "toolchain": {
+    "image": "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51",
     "lock_sha256": "8ab6677622e0a43e4819586d0b6bb0da1a7695362a85b2cb8c36a0d8fb158cee",
-    "python": "3.15.1 (main, Oct 21 2026, 14:53:25) [GCC 13.3.0]",
-    "runner_image": "ubuntu24 20261023.334.3",
-    "valgrind": "valgrind-3.22.0"
+    "python": "3.15.1 (main, Oct 21 2026, 22:24:45) [GCC 14.2.0]",
+    "valgrind": "valgrind-3.24.0"
   },
   "workloads": {
-    "cli.text": 17657328241,
-    "cli.transfer": 19813362010,
-    "service.list": 8295609270,
-    "service.publish": 8206578265,
-    "service.versions": 8272774371
+    "cli.text": 14492111101,
+    "cli.transfer": 16053092022,
+    "service.list": 6953922279,
+    "service.publish": 6867144608,
+    "service.versions": 6931943957
   }
 }
