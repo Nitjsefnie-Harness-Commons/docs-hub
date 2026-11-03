@@ -185,6 +185,14 @@ def test_timeout_reports_the_last_poll(tmp_path: Path):
     assert "\n    in_progress\tnull\taggregate\tnull\n" in result.stderr
 
 
+def test_timeout_after_a_poll_with_no_checks_says_a_poll_ran(tmp_path: Path):
+    # Two seconds, so that a poll runs: SECONDS can end a 1-second loop before its first.
+    result = _run_waiter(tmp_path, [], deadline=2)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "Checks reported by the last poll:" in result.stderr
+    assert "No poll ran before the deadline." not in result.stderr
+
+
 def test_timeout_before_any_poll_says_none_ran(tmp_path: Path):
     # An inherited runs variable must not pass for a poll's output.
     result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED], deadline=0,
