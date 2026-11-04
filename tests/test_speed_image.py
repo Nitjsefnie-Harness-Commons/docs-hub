@@ -100,9 +100,11 @@ def _install_args(job: dict) -> list[str]:
 def test_git_is_installed_before_the_checkout_that_needs_it() -> None:
     steps = _speed_jobs()["speed"]["steps"]
     install = next(i for i, step in enumerate(steps) if "apt-get" in step.get("run", ""))
+    assert steps[0].get("uses", "").partition("@")[0] == "actions/checkout"
     checkout = next(i for i, step in enumerate(steps)
-                    if step.get("uses", "").partition("@")[0] == "actions/checkout")
-    assert install < checkout
+                    if step.get("uses", "").partition("@")[0] == "actions/checkout"
+                    and step.get("with", {}).get("fetch-depth") == 0)
+    assert 0 < install < checkout
     assert "git" in _install_args(_speed_jobs()["speed"])
 
 
