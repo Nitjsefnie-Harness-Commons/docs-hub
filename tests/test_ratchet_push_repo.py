@@ -19,6 +19,17 @@ _REPO_CASES = [
                  id="empty-prefixed-falls-back"),
 ]
 
+# Distinct per case, so a hardcoded repository fails.
+_LIST_CASES = [
+    pytest.param({"DOCS_HUB_REPO": "example/prefixed"}, "example/prefixed",
+                 id="prefixed-only"),
+    pytest.param({"REPO": "example/old"}, "example/old", id="old-only"),
+    pytest.param({"DOCS_HUB_REPO": "example/prefixed", "REPO": "example/old"},
+                 "example/prefixed", id="prefixed-wins"),
+    pytest.param({"DOCS_HUB_REPO": "", "REPO": "example/old"}, "example/old",
+                 id="empty-prefixed-falls-back"),
+]
+
 
 @pytest.mark.parametrize("name", ["List the triggering run's artifacts",
                                   "Push the raise commit to master"])
@@ -28,13 +39,13 @@ def test_each_step_sets_only_the_prefixed_repository_variable(name: str) -> None
     assert "REPO" not in env
 
 
-@pytest.mark.parametrize("repo_env", _REPO_CASES)
+@pytest.mark.parametrize("repo_env, expected", _LIST_CASES)
 def test_the_repository_reaches_the_artifacts_url(
-        tmp_path: Path, repo_env: dict[str, str]) -> None:
+        tmp_path: Path, repo_env: dict[str, str], expected: str) -> None:
     result = f._run_list_step(tmp_path, {"DOCS_HUB_RUN_ID": "1" * 10, **repo_env})
     assert result.returncode == 0, result.stdout + result.stderr
     log = (tmp_path / "gh-calls.log").read_text(encoding="utf-8").splitlines()
-    assert log == ["repos/example/repository/actions/runs/" + "1" * 10 + "/artifacts"]
+    assert log == [f"repos/{expected}/actions/runs/" + "1" * 10 + "/artifacts"]
 
 
 @pytest.mark.parametrize("repo_env", _REPO_CASES)
