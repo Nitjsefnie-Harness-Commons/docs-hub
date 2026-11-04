@@ -444,6 +444,25 @@ def test_failure_summary_contains_the_last_ten_and_three_most_repeated_lines(
     assert repeated.splitlines() == ["5: alpha", "3: bravo", "2: charlie"]
 
 
+def test_failure_summary_truncates_each_line_it_prints(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    bounded = _bounded()
+    _limits(bounded, monkeypatch)
+    monkeypatch.setattr(bounded, "time", _Clock())
+    _finish_on_spawn(bounded, monkeypatch)
+    program = "import sys; print(('x' * 5000 + '\\n') * 2 + 'short'); sys.exit(9)"
+    assert bounded.main(["--budget", "0.3", "--evidence", str(tmp_path / "evidence"), "--",
+                         sys.executable, "-c", program]) == 9
+    output = capsys.readouterr().err
+    clipped = "x" * 500 + " ...[4500 more bytes]"
+    last = output.split("last 10 lines:\n", 1)[1].split("most repeated lines:\n", 1)[0]
+    repeated = output.split("most repeated lines:\n", 1)[1]
+    assert last.splitlines() == [clipped, clipped, "short"]
+    assert repeated.splitlines() == [f"2: {clipped}", "1: short"]
+    assert len(output) < 2000
+
+
 def test_an_oversized_log_summary_contains_its_actual_last_lines(
         tmp_path: Path, capsys: pytest.CaptureFixture[str],
         monkeypatch: pytest.MonkeyPatch) -> None:
