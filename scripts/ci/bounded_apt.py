@@ -21,6 +21,7 @@ from pathlib import Path
 
 LOG_CAP = 8 * 1024 * 1024
 RSS_CAP = 1024 ** 3
+LINE_CAP = 500
 POLL_INTERVAL = 0.5
 KILL_GRACE = 5.0
 BACKOFF_INITIAL = 1.0
@@ -222,15 +223,21 @@ def _compact_log(path: Path) -> None:
                 target.unlink()
 
 
+def _clip(line: str) -> str:
+    if len(line) <= LINE_CAP:
+        return line
+    return f"{line[:LINE_CAP]} ...[{len(line[LINE_CAP:].encode())} more bytes]"
+
+
 def _report(command: list[str], attempt: int, result: str, log: str) -> None:
     lines = log.splitlines()
     print(f"{shlex.join(command)}: attempt {attempt}: {result}", file=sys.stderr)
     print("last 10 lines:", file=sys.stderr)
     for line in lines[-10:]:
-        print(line, file=sys.stderr)
+        print(_clip(line), file=sys.stderr)
     print("most repeated lines:", file=sys.stderr)
     for line, count in Counter(lines).most_common(3):
-        print(f"{count}: {line}", file=sys.stderr)
+        print(f"{count}: {_clip(line)}", file=sys.stderr)
 
 
 def _run(command: list[str], evidence: Path, started: float, deadline: float) -> int:
