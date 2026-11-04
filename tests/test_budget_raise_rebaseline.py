@@ -1,5 +1,6 @@
 """A toolchain mismatch is exempt only after a declared, reviewed rebaseline."""
 # pylint: disable=protected-access  # Share the real Git fixture and CLI boundary.
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -157,6 +158,44 @@ def test_the_printed_declarations_are_the_commit_body_the_gate_accepts(
     f._git(repo, "commit", "-m", "reviewed rebaseline\n\n" + body)
     result = _event(repo, base, event)
     assert result.returncode == int(not keep_toolchain_lines), result.stdout + result.stderr
+
+
+@pytest.mark.parametrize("event", ["pull_request", "push"])
+def test_replacing_a_rebaseline_after_a_second_lock_update(
+        tmp_path: Path, event: str) -> None:
+    repo = f._repo(tmp_path)
+    locks = ("base lock\n", "first lock\n", "second lock\n")
+    chains = [{**f.CHAIN_A, "lock_sha256": hashlib.sha256(lock.encode()).hexdigest()}
+              for lock in locks]
+    counts = dict.fromkeys(_NAMES, 100)
+    base = f._commit(repo, "seed", **{f.BUDGET: json.dumps(f._budget(counts, chain=chains[0])),
+                                      "requirements-speed.txt": locks[0]})
+    f._commit(repo, "first lock update", **{"requirements-speed.txt": locks[1]})
+    first = _rebaseline(repo, tmp_path, {**counts, "service.publish": 120}, chains[1])
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert f._decl('workloads["service.publish"]', 100, 120) in first.stdout.splitlines()
+    f._git(repo, "add", f.BUDGET)
+    f._git(repo, "commit", "-m", "first rebaseline\n\n" + first.stdout)
+    first_sha = f._git(repo, "rev-parse", "HEAD")
+    first_gate = _event(repo, base, event)
+    assert first_gate.returncode == 0, first_gate.stdout + first_gate.stderr
+
+    f._commit(repo, "second lock update", **{"requirements-speed.txt": locks[2]})
+    f._git(repo, "rebase", "--onto", f"{first_sha}^", first_sha)
+    second = _rebaseline(repo, tmp_path, {**counts, "service.publish": 140}, chains[2])
+    assert second.returncode == 0, second.stdout + second.stderr
+    f._git(repo, "add", f.BUDGET)
+    f._git(repo, "commit", "-m", "second rebaseline\n\n" + second.stdout)
+    result = _event(repo, base, event)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f._decl('workloads["service.publish"]', 100, 140) in second.stdout.splitlines()
+    assert f._git(repo, "log", "--format=%s", f"{base}..HEAD").splitlines() == [
+        "second rebaseline", "second lock update", "first lock update"]
+    check = subprocess.run([sys.executable, str(f._REPO / "scripts/ci/speed.py"),
+                            "check", "--refuse-mismatch", "--measurements",
+                            str(tmp_path / "measurement.json"), "--budget", str(repo / f.BUDGET)],
+                           capture_output=True, text=True, check=False, timeout=20)
+    assert check.returncode == 0, check.stdout + check.stderr
 
 
 @pytest.mark.parametrize("event", ["pull_request", "push"])
