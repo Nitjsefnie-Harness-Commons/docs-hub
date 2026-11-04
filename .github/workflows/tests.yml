@@ -125,7 +125,7 @@ jobs:
         run: |
           EVIDENCE="$RUNNER_TEMP/apt-evidence"
           echo "evidence=$EVIDENCE" >> "$GITHUB_OUTPUT"
-          sudo python3 scripts/ci/bounded_apt.py --budget 90 --evidence "$EVIDENCE/update" -- apt-get update -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo python3 scripts/ci/bounded_apt.py --budget 90 --evidence "$EVIDENCE/update" -- apt-get update --error-on=any -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
           sudo python3 scripts/ci/bounded_apt.py --budget 180 --evidence "$EVIDENCE/install" -- apt-get install -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends postgresql-client
           psql --version
 
@@ -228,7 +228,7 @@ jobs:
         run: |
           EVIDENCE="$RUNNER_TEMP/apt-evidence"
           echo "evidence=$EVIDENCE" >> "$GITHUB_OUTPUT"
-          sudo python3 scripts/ci/bounded_apt.py --budget 90 --evidence "$EVIDENCE/update" -- apt-get update -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo python3 scripts/ci/bounded_apt.py --budget 90 --evidence "$EVIDENCE/update" -- apt-get update --error-on=any -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
           sudo python3 scripts/ci/bounded_apt.py --budget 180 --evidence "$EVIDENCE/install" -- apt-get install -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends postgresql-client
 
       - name: Upload apt evidence
