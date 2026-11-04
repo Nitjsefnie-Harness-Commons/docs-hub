@@ -49,8 +49,8 @@ def _apt_options(command: str) -> dict[str, str]:
 def _backoff_windows(command: str) -> tuple[int, int]:
     """Shortest and worst-case seconds apt sleeps across one download's retries.
 
-    Retry i waits min(2**i, maximum); Retry-After jitter lengthens it to at most
-    min(2**(i+1) - 1, maximum).
+    Per apt-pkg/acquire-worker.cc (HandleFailure), retry i waits min(2**i, maximum); Retry-After
+    jitter lengthens it to at most min(2**(i+1) - 1, maximum).
     """
     options = _apt_options(command)
     if options.get("acquire::retries::delay", "").lower() in _APT_FALSE:
