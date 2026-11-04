@@ -156,6 +156,16 @@ def test_dependabot_docker_ignore_uses_update_types():
                          "update-types": ["version-update:semver-major"]}]
 
 
+def test_dependabot_groups_every_pip_version_update_into_one_pull_request():
+    # One group over every name, so a week's speed-lock bumps need one rebaseline;
+    # no applies-to keeps it to version updates and leaves security updates ungrouped.
+    updates = yaml.safe_load(
+        (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
+    pip = [entry for entry in updates if entry["package-ecosystem"] == "pip"]
+    assert [entry["directory"] for entry in pip] == ["/"]
+    assert pip[0]["groups"] == {"version-updates": {"patterns": ["*"]}}
+
+
 @pytest.mark.parametrize("major", [16, 17])
 def test_postgres_dockerfile_holds_one_from_line_of_its_major(major: int):
     # Major only: the digest is data Dependabot rewrites, never a value to pin.
