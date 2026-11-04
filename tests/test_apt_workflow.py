@@ -48,8 +48,7 @@ def _apt_options(command: str) -> dict[str, str]:
 
 
 def _apt_bool(text: str, default: bool) -> bool:
-    """Read a boolean option the way apt's StringToBool does: a fully consumed strtol (base 0)
-    of 0 or 1 first, then the case-insensitive words, else the default."""
+    """apt's StringToBool: a whole-string strtol (base 0) of 0 or 1, then the words."""
     number = re.fullmatch(r"\s*([+-]?)(0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*)", text)
     if number:
         digits = number[2]
@@ -60,12 +59,10 @@ def _apt_bool(text: str, default: bool) -> bool:
 
 
 def _backoff_windows(command: str) -> tuple[int, int]:
-    """Shortest and jittered-longest seconds apt sleeps across one download's retries.
+    """Shortest and jittered-longest backoff, per apt-pkg/acquire-worker.cc (HandleFailure).
 
-    Per apt-pkg/acquire-worker.cc (HandleFailure), retry i waits min(2**i, maximum), and
-    Retry-After jitter stretches it to at most min(2**(i+1) - 1, maximum). The longest figure
-    assumes no future Retry-After offset (the schedule the failed run shows); an offset can
-    stretch every wait to maximum, and the step timeout then cuts the retries off.
+    Retry i waits min(2**i, maximum), jitter up to min(2**(i+1) - 1, maximum); a future
+    Retry-After offset is not modelled, the step timeout cuts that case off.
     """
     options = _apt_options(command)
     delay = options.get("acquire::retries::delay")
