@@ -32,14 +32,31 @@ def test_apt_get_steps_have_a_shorter_timeout_than_their_jobs() -> None:
         assert 0 < step_limit < job_limit, (name, step_limit, job_limit)
 
 
+def _apt_commands(step: dict[str, Any]) -> list[str]:
+    return [command for line in step["run"].splitlines()
+            for command in re.split(r"&&|\|\|?|;", line) if "apt-get" in command]
+
+
+def _backoff_window(command: str) -> int:
+    """Seconds apt sleeps across one download's retries: retry i waits min(2**i, maximum)."""
+    retries = re.search(r"Acquire::Retries=(\d+)", command)
+    cap = re.search(r"Acquire::Retries::Delay::Maximum=(\d+)", command)
+    maximum = int(cap[1]) if cap else 30
+    return sum(min(2 ** i, maximum) for i in range(int(retries[1]) if retries else 3))
+
+
 def test_apt_get_download_commands_set_retries_and_timeouts() -> None:
     for name, _, step in _apt_steps():
-        for line in step["run"].splitlines():
-            for command in re.split(r"&&|\|\|?|;", line):
-                if "apt-get" not in command:
-                    continue
-                for bound in _BOUNDS:
-                    assert re.search(bound, command), (name, command, bound)
+        for command in _apt_commands(step):
+            for bound in _BOUNDS:
+                assert re.search(bound, command), (name, command, bound)
+
+
+def test_apt_get_retry_backoff_outlasts_a_short_mirror_outage_inside_the_step_timeout() -> None:
+    for name, _, step in _apt_steps():
+        windows = [_backoff_window(command) for command in _apt_commands(step)]
+        assert all(window >= 60 for window in windows), (name, windows)
+        assert sum(windows) < step["timeout-minutes"] * 60, (name, windows)
 
 
 def test_every_apt_get_line_in_the_workflows_is_in_a_step_that_was_checked() -> None:
