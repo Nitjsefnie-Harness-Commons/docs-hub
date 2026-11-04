@@ -1,23 +1,25 @@
 """Check the bounds on apt-get steps in every workflow."""
 from pathlib import Path
 import re
+import shlex
 from typing import Any
 
 import yaml
 
-_WORKFLOWS = sorted((Path(__file__).resolve().parent.parent / ".github/workflows").glob("*.y*ml"))
+_DIR = Path(__file__).resolve().parent.parent / ".github/workflows"
+_WORKFLOWS = sorted(_DIR.glob("*.y*ml"))
+_MIN_BUDGET = 60
+_STEP_MARGIN = 30
 
-_BOUNDS = (r"Acquire::Retries=[1-9]", r"Acquire::http::Timeout=[1-9]",
-           r"Acquire::https::Timeout=[1-9]")
 
-_MIN_OUTAGE_WINDOW = 60  # seconds the step's longest download must keep retrying
-_TRANSFER_MARGIN = 30  # seconds of package transfer and index work the backoff leaves room for
+def _workflow(path: Path) -> dict[str, Any]:
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 def _apt_steps() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
     steps = []
     for path in _WORKFLOWS:
-        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        workflow = _workflow(path)
         steps += [(f"{path.name}:{name}", job, step)
                   for name, job in workflow["jobs"].items()
                   for step in job.get("steps", [])
@@ -35,64 +37,81 @@ def test_apt_get_steps_have_a_shorter_timeout_than_their_jobs() -> None:
         assert 0 < step_limit < job_limit, (name, step_limit, job_limit)
 
 
-def _apt_commands(step: dict[str, Any]) -> list[str]:
-    return [command for line in step["run"].splitlines()
+def _apt_commands(step: dict[str, Any]) -> list[list[str]]:
+    return [shlex.split(command) for line in step["run"].replace("\\\n", " ").splitlines()
             for command in re.split(r"&&|\|\|?|;", line) if "apt-get" in command]
 
 
-def _apt_options(command: str) -> dict[str, str]:
-    """Read -o options case-insensitively; the last value wins."""
-    return {key.lower(): value for key, value in re.findall(r"-o\s*([\w:]+)=(\S*)", command)}
+def _runner(command: list[str]) -> tuple[int, str, list[str]]:
+    if command[0] == "sudo":
+        command = command[1:]
+    assert command[:2] == ["python3", "scripts/ci/bounded_apt.py"], command
+    assert command[2:3] == ["--budget"] and command[3].isdigit(), command
+    assert command[4:5] == ["--evidence"] and command[6:8] == ["--", "apt-get"], command
+    return int(command[3]), command[5], command[8:]
 
 
-def _ignores_retry_after(command: str) -> bool:
-    return _apt_options(command).get("acquire::retries::handleretryafter", "").lower() == "false"
+def _apt_options(args: list[str]) -> dict[str, str]:
+    return {option.split("=", 1)[0].lower(): option.split("=", 1)[1]
+            for flag, option in zip(args, args[1:]) if flag == "-o" and "=" in option}
 
 
-def _backoff_windows(command: str) -> tuple[int, int]:
-    """Shortest and longest backoff, per apt-pkg/acquire-worker.cc (HandleFailure).
-
-    HandleRetryAfter=false: retry i waits exactly min(2**i, maximum).
-    Otherwise up to min(2**(i+1) - 1, maximum): a jitter margin; apt 2.7 ignores Retry-After.
-    """
-    options = _apt_options(command)
-    retries = options.get("acquire::retries", "3")
-    maximum = int(options.get("acquire::retries::delay::maximum", "30"))
-    count = int(retries) if retries.isdigit() else 0
-    shortest = sum(min(2 ** i, maximum) for i in range(count))
-    if _ignores_retry_after(command):
-        return shortest, shortest
-    return shortest, sum(min(2 ** (i + 1) - 1, maximum) for i in range(count))
+def test_each_apt_command_is_bounded_and_has_its_own_evidence() -> None:
+    for name, _, step in _apt_steps():
+        commands = [_runner(command) for command in _apt_commands(step)]
+        for _, evidence, args in commands:
+            assert args and args[0] in {"update", "install"}, (name, args)
+            assert evidence == f"$EVIDENCE/{args[0]}", (name, evidence)
+        assert len({evidence for _, evidence, _ in commands}) == len(commands), name
 
 
-def test_no_workflow_turns_off_the_apt_retry_delay() -> None:
-    assert _WORKFLOWS
-    for path in _WORKFLOWS:
-        text = path.read_text(encoding="utf-8")
-        assert not re.search(r"acquire::retries::delay(?!::maximum)", text, re.I), path.name
-
-
-def test_apt_get_in_container_jobs_ignores_retry_after() -> None:
-    # Container jobs run Debian trixie's apt 3.0, whose Retry-After handling stretches each wait.
-    for name, job, step in _apt_steps():
-        if "container" in job:
-            for command in _apt_commands(step):
-                assert _ignores_retry_after(command), (name, command)
-
-
-def test_apt_get_download_commands_set_retries_and_timeouts() -> None:
+def test_each_apt_command_disables_apt_retries_and_sets_both_timeouts() -> None:
     for name, _, step in _apt_steps():
         for command in _apt_commands(step):
-            for bound in _BOUNDS:
-                assert re.search(bound, command), (name, command, bound)
+            _, _, args = _runner(command)
+            options = _apt_options(args)
+            for key, value in (("acquire::retries", "0"), ("acquire::http::timeout", "30"),
+                               ("acquire::https::timeout", "30")):
+                assert options.get(key) == value, (name, command, key)
+            assert "acquire::retries::handleretryafter" not in options, name
 
 
-def test_apt_get_retry_backoff_outlasts_a_short_mirror_outage_inside_the_step_timeout() -> None:
+def test_budgets_outlast_a_short_outage_and_fit_inside_the_step_timeout() -> None:
     for name, _, step in _apt_steps():
-        windows = [_backoff_windows(command) for command in _apt_commands(step)]
-        assert max(shortest for shortest, _ in windows) >= _MIN_OUTAGE_WINDOW, (name, windows)
-        longest_total = sum(longest for _, longest in windows)
-        assert longest_total + _TRANSFER_MARGIN <= step["timeout-minutes"] * 60, (name, windows)
+        budgets = [_runner(command)[0] for command in _apt_commands(step)]
+        assert all(budget >= _MIN_BUDGET for budget in budgets), (name, budgets)
+        assert sum(budgets) + _STEP_MARGIN <= step["timeout-minutes"] * 60, (name, budgets)
+
+
+def test_failure_upload_reads_the_install_steps_evidence_output() -> None:
+    for name, job, step in _apt_steps():
+        assert step.get("id"), name
+        following = job["steps"][job["steps"].index(step) + 1]
+        assert following.get("if") == "failure()", name
+        assert following.get("uses", "").partition("@")[0] == "actions/upload-artifact", name
+        assert following["with"]["path"] == f"${{{{ steps.{step['id']}.outputs.evidence }}}}", name
+
+
+def test_artifact_names_are_unique_across_the_ci_gate_run() -> None:
+    gate = _workflow(_DIR / "ci-gate.yml")
+    callees = [_DIR / Path(job["uses"]).name for job in gate["jobs"].values() if "uses" in job]
+    names = []
+    for workflow in [gate, *(_workflow(path) for path in callees)]:
+        for job in workflow["jobs"].values():
+            uploads = [step for step in job.get("steps", [])
+                       if step.get("uses", "").partition("@")[0] == "actions/upload-artifact"]
+            if not uploads:
+                continue
+            matrix = job.get("strategy", {}).get("matrix", {})
+            assert not matrix or set(matrix) == {"include"}, matrix
+            for row in matrix.get("include", [{}]):
+                for step in uploads:
+                    name = step["with"]["name"]
+                    for key, value in row.items():
+                        name = name.replace(f"${{{{ matrix.{key} }}}}", str(value))
+                    assert "${{" not in name, name
+                    names.append(name)
+    assert names and len(names) == len(set(names)), names
 
 
 def test_every_apt_get_line_in_the_workflows_is_in_a_step_that_was_checked() -> None:

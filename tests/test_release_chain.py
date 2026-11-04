@@ -59,8 +59,8 @@ def test_release_build_is_read_only_and_hands_off_artifact():
     assert "postgres" in build["services"]
     assert set(build["env"]) >= {"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD"}
     assert "services" not in workflow and "env" not in workflow
-    upload = _action(build, "actions/upload-artifact")
-    assert build["steps"][-1] == upload
+    upload = build["steps"][-1]
+    assert upload.get("uses", "").partition("@")[0] == "actions/upload-artifact"
     publish = workflow["jobs"]["publish"]
     download = _action(publish, "actions/download-artifact")
     artifact_name = upload["with"]["name"]
