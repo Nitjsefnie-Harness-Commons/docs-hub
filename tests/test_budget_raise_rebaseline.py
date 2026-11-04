@@ -180,8 +180,14 @@ def test_replacing_a_rebaseline_after_a_second_lock_update(
     first_gate = _event(repo, base, event)
     assert first_gate.returncode == 0, first_gate.stdout + first_gate.stderr
 
+    branch = f._git(repo, "branch", "--show-current")
+    f._git(repo, "checkout", "-b", "side", base)
+    side = f._commit(repo, "master code change", **{"other.py": "pass\n"})
+    f._git(repo, "checkout", branch)
+    f._git(repo, "merge", "--no-ff", "side", "-m", "merge master")
     f._commit(repo, "second lock update", **{"requirements-speed.txt": locks[2]})
-    f._git(repo, "rebase", "--onto", f"{first_sha}^", first_sha)
+    f._git(repo, "rebase", "--rebase-merges", "--onto", f"{first_sha}^", first_sha)
+    assert side in f._git(repo, "rev-list", "HEAD").splitlines()
     second = _rebaseline(repo, tmp_path, {**counts, "service.publish": 140}, chains[2])
     assert second.returncode == 0, second.stdout + second.stderr
     f._git(repo, "add", f.BUDGET)
@@ -189,8 +195,8 @@ def test_replacing_a_rebaseline_after_a_second_lock_update(
     result = _event(repo, base, event)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f._decl('workloads["service.publish"]', 100, 140) in second.stdout.splitlines()
-    assert f._git(repo, "log", "--format=%s", f"{base}..HEAD").splitlines() == [
-        "second rebaseline", "second lock update", "first lock update"]
+    assert f._git(repo, "log", "--first-parent", "--format=%s", f"{base}..HEAD").splitlines() == [
+        "second rebaseline", "second lock update", "merge master", "first lock update"]
     check = subprocess.run([sys.executable, str(f._REPO / "scripts/ci/speed.py"),
                             "check", "--refuse-mismatch", "--measurements",
                             str(tmp_path / "measurement.json"), "--budget", str(repo / f.BUDGET)],

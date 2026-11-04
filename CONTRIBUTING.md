@@ -223,15 +223,19 @@ maintainer must keep the branch current with `master` for the
 again needs a fresh rebaseline. Keep exactly one rebaseline commit in
 the pull request window: from the pull request branch checkout, replace
 `<R1>` with the existing rebaseline commit's SHA and run
-`git rebase --onto <R1>^ <R1>` to drop it. Later commits must not touch
+`git rebase --rebase-merges --onto <R1>^ <R1>` to drop it (`--rebase-merges`
+keeps a merge commit that kept the branch current with `master`; without it
+the rebase flattens the merge and copies `master`'s commits onto the branch,
+which turns `base-freshness` red). Later commits must not touch
 the budget, and R1 must be the window's only budget edit; dropping it
 restores the budget to the branch base's. Then run the procedure above
 once using the new run's measurement, so the printed from-values match
 the window's base. Updating the already-pushed branch after this rewrite
 requires a force-with-lease push against the fetched pull request head.
-If both rebaseline commits are kept instead, add any missing window net
-declarations by hand to a budget-only commit; the gate names each
-missing one. `@dependabot recreate`, or a superseding
+If both rebaseline commits are kept instead, put any missing window net
+declaration lines into the message of the second rebaseline commit (a
+commit that changes the budget; the line in an empty commit does not
+count); the gate names each missing one. `@dependabot recreate`, or a superseding
 Dependabot pull request, drops the commit, and it is redone from the new
 run's artifact.
 
