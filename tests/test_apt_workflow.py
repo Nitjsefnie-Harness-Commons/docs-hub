@@ -76,6 +76,14 @@ def test_each_apt_command_disables_apt_retries_and_sets_both_timeouts() -> None:
             assert "acquire::retries::handleretryafter" not in options, name
 
 
+def test_each_apt_update_fails_on_any_fetch_error() -> None:
+    updates = [(name, command) for name, _, step in _apt_steps()
+               for command in _apt_commands(step) if _runner(command)[2][0] == "update"]
+    assert updates, "No apt-get update commands found"
+    for name, command in updates:
+        assert _runner(command)[2].count("--error-on=any") == 1, (name, command)
+
+
 def test_budgets_outlast_a_short_outage_and_fit_inside_the_step_timeout() -> None:
     for name, _, step in _apt_steps():
         budgets = [_runner(command)[0] for command in _apt_commands(step)]
