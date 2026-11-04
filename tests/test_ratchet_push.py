@@ -123,6 +123,8 @@ def _run_list_step(tmp_path: Path,
     script = tmp_path / "step.sh"
     # LF: bash rejects the CRLF write_text emits on Windows.
     script.write_text(step["run"], encoding="utf-8", newline="\n")
+    if not {"REPO", "DOCS_HUB_REPO"} & workflow_env.keys():
+        workflow_env = {"DOCS_HUB_REPO": "example/repository", **workflow_env}
     gh = tmp_path / "gh"
     gh.write_text("""#!/usr/bin/env bash
 for arg in "$@"; do
@@ -143,8 +145,6 @@ cat "${GH_ARTIFACTS:-/dev/null}"
         [_bash(), "-e", str(script)], check=False, capture_output=True,
         text=True, timeout=5,
         env={**env, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-             **({"DOCS_HUB_REPO": "example/repository"}
-                if not {"REPO", "DOCS_HUB_REPO"} & workflow_env.keys() else {}),
              **workflow_env,
              "GITHUB_OUTPUT": str(tmp_path / "output.txt"),
              "GH_LOG": str(tmp_path / "gh-calls.log")},
@@ -314,6 +314,8 @@ def _raise_data(tmp_path: Path, base: str, measured: str) -> None:
 def _run_push_step(tmp_path: Path, staged: str, staged_speed: str,
                    repo_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     step = _step("Push the raise commit to master")
+    if repo_env is None:
+        repo_env = {"DOCS_HUB_REPO": "example/repository"}
     script = tmp_path / "push-step.sh"
     script.write_text(step["run"], encoding="utf-8", newline="\n")
     bin_dir = tmp_path / "bin"
@@ -352,7 +354,7 @@ def _run_push_step(tmp_path: Path, staged: str, staged_speed: str,
         capture_output=True, text=True, timeout=120,
         env={**env, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
              "HOME": str(home), "RUNNER_TEMP": str(tmp_path),
-             **(repo_env or {"DOCS_HUB_REPO": "example/repository"}),
+             **repo_env,
              "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
              "DOCS_HUB_MASTER_PUSH_DEPLOY_KEY": "test-key",
              "DOCS_HUB_STAGED": staged, "DOCS_HUB_STAGED_SPEED": staged_speed,
