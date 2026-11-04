@@ -8,32 +8,28 @@
     1944
   ],
   ".github/workflows/actionlint.yml": [
-    2083,
-    3436
+    2078,
+    3431
   ],
   ".github/workflows/audit.yml": [
-    2863,
-    4987
+    2851,
+    5026
   ],
   ".github/workflows/ci-gate.yml": [
-    1082,
-    4094
+    1075,
+    4421
   ],
   ".github/workflows/codeql.yml": [
-    1596,
-    2505
-  ],
-  ".github/workflows/comment-share.yml": [
-    528,
-    1095
+    1528,
+    2437
   ],
   ".github/workflows/eslint.yml": [
-    765,
-    1274
+    753,
+    1267
   ],
   ".github/workflows/lint.yml": [
-    687,
-    1761
+    685,
+    1759
   ],
   ".github/workflows/release.yml": [
     2737,
@@ -44,8 +40,8 @@
     2294
   ],
   ".github/workflows/tag.yml": [
-    3162,
-    7815
+    3148,
+    8445
   ],
   ".github/workflows/tests.yml": [
     2832,
@@ -120,8 +116,8 @@
     12657
   ],
   "eslint.config.mjs": [
-    894,
-    1300
+    885,
+    1384
   ],
   "public/app.js": [
     3597,
@@ -152,8 +148,8 @@
     1665
   ],
   "tests/test_cli_unit.py": [
-    6119,
-    33135
+    6113,
+    33160
   ],
   "tests/test_db.py": [
     2751,
