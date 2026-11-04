@@ -8,8 +8,10 @@ import math
 import os
 import shlex
 import signal
+import stat as stat_module
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from collections.abc import Iterator
@@ -156,14 +158,12 @@ def _state(path: Path, reason: str, threshold: str, measured: str,
 def _watch(child: subprocess.Popen, log: Path, state: Path, started: float,
            deadline: float) -> tuple[int, str]:
     while True:
-        status = child.poll()
-        if status is not None:
-            return status, f"exit status {status}"
+        _reap_group(child, deadline)
         size = log.stat().st_size
         processes = _group(child.pid)
         rss = sum(process.rss for process in processes)
         status = child.poll()
-        if status is not None:
+        if status is not None and not _signal(child.pid, 0):
             return status, f"exit status {status}"
         now = time.monotonic()
         if now >= deadline:
@@ -175,10 +175,14 @@ def _watch(child: subprocess.Popen, log: Path, state: Path, started: float,
         elif rss > RSS_CAP:
             reason, threshold, measured = "memory", f"{RSS_CAP} B", f"{rss} B"
         else:
-            try:
-                child.wait(timeout=max(0, min(POLL_INTERVAL, deadline - time.monotonic())))
-            except subprocess.TimeoutExpired:
-                pass
+            delay = max(0, min(POLL_INTERVAL, deadline - time.monotonic()))
+            if status is None:
+                try:
+                    child.wait(timeout=delay)
+                except subprocess.TimeoutExpired:
+                    pass
+            else:
+                time.sleep(delay)
             continue
         _state(state, reason, threshold, measured, now - started, size, processes)
         _stop(child)
@@ -191,6 +195,31 @@ def _read_log(path: Path, *, tail: bool = False) -> str:
             output.seek(0, os.SEEK_END)
             output.seek(max(0, output.tell() - LOG_CAP))
         return output.read(LOG_CAP).decode("utf-8", errors="replace")
+
+
+def _compact_log(path: Path) -> None:
+    with path.open("rb") as source:
+        info = os.fstat(source.fileno())
+        if info.st_size <= LOG_CAP:
+            return
+        half = LOG_CAP // 2
+        head = source.read(half)
+        source.seek(info.st_size - half)
+        tail = source.read(half)
+        separator = b"" if not head or head.endswith(b"\n") else b"\n"
+        removed = info.st_size - len(head) - len(tail)
+        marker = separator + f"... {removed} bytes elided ...\n".encode()
+        temporary = tempfile.NamedTemporaryFile(dir=path.parent, prefix=f".{path.name}.",
+                                                suffix=".tmp", delete=False)
+        target = Path(temporary.name)
+        try:
+            with temporary:
+                os.fchmod(temporary.fileno(), stat_module.S_IMODE(info.st_mode))
+                temporary.write(head + marker + tail)
+            os.replace(target, path)
+        finally:
+            if target.exists():
+                target.unlink()
 
 
 def _report(command: list[str], attempt: int, result: str, log: str) -> None:
@@ -225,11 +254,15 @@ def _run(command: list[str], evidence: Path, started: float, deadline: float) ->
             except BaseException:
                 _stop(child)
                 raise
+            finally:
+                _compact_log(log)
         content = _read_log(log, tail=status != 0)
         if status == 0:
             print(content, end="")
             return 0
         _report(command, attempt, result, content)
+        if _signal(child.pid, 0):
+            return status
         remaining = deadline - time.monotonic()
         if remaining > 0:
             time.sleep(min(backoff, remaining))
