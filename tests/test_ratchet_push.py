@@ -134,7 +134,7 @@ cat "${GH_ARTIFACTS:-/dev/null}"
 """, encoding="utf-8", newline="\n")
     gh.chmod(0o755)
     env = {key: value for key, value in os.environ.items()
-           if key not in {"REPO", "RUN_ID", "DOCS_HUB_RUN_ID"}}
+           if key not in {"REPO", "DOCS_HUB_REPO", "RUN_ID", "DOCS_HUB_RUN_ID"}}
     if artifacts is not None:
         (tmp_path / "artifacts.txt").write_text(
             "".join(f"{name}\n" for name in artifacts), encoding="utf-8")
@@ -142,8 +142,10 @@ cat "${GH_ARTIFACTS:-/dev/null}"
     return subprocess.run(
         [_bash(), "-e", str(script)], check=False, capture_output=True,
         text=True, timeout=5,
-        env={**env, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}", **workflow_env,
-             "REPO": "example/repository",
+        env={**env, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
+             **({"DOCS_HUB_REPO": "example/repository"}
+                if not {"REPO", "DOCS_HUB_REPO"} & workflow_env.keys() else {}),
+             **workflow_env,
              "GITHUB_OUTPUT": str(tmp_path / "output.txt"),
              "GH_LOG": str(tmp_path / "gh-calls.log")},
     )
@@ -309,8 +311,8 @@ def _raise_data(tmp_path: Path, base: str, measured: str) -> None:
     (data / "measured.txt").write_text(measured + "\n", encoding="utf-8")
 
 
-def _run_push_step(tmp_path: Path, staged: str,
-                   staged_speed: str) -> subprocess.CompletedProcess[str]:
+def _run_push_step(tmp_path: Path, staged: str, staged_speed: str,
+                   repo_env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     step = _step("Push the raise commit to master")
     script = tmp_path / "push-step.sh"
     script.write_text(step["run"], encoding="utf-8", newline="\n")
@@ -342,7 +344,7 @@ def _run_push_step(tmp_path: Path, staged: str,
         f'[url "{tmp_path / "origin"}/"]\n\tinsteadOf = git@github.com:\n',
         encoding="utf-8")
     env = {key: value for key, value in os.environ.items()
-           if key not in {"DOCS_HUB_MASTER_PUSH_DEPLOY_KEY", "GIT_DIR",
+           if key not in {"DOCS_HUB_MASTER_PUSH_DEPLOY_KEY", "REPO", "DOCS_HUB_REPO", "GIT_DIR",
                           "GIT_WORK_TREE", "GIT_INDEX_FILE", "XDG_CONFIG_HOME",
                           "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM"}}
     return subprocess.run(
@@ -350,7 +352,7 @@ def _run_push_step(tmp_path: Path, staged: str,
         capture_output=True, text=True, timeout=120,
         env={**env, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
              "HOME": str(home), "RUNNER_TEMP": str(tmp_path),
-             "REPO": "example/repository",
+             **(repo_env or {"DOCS_HUB_REPO": "example/repository"}),
              "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
              "DOCS_HUB_MASTER_PUSH_DEPLOY_KEY": "test-key",
              "DOCS_HUB_STAGED": staged, "DOCS_HUB_STAGED_SPEED": staged_speed,
