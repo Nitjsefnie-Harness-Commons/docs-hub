@@ -87,8 +87,8 @@ jobs:
           Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
           Check-Valid-Until: no
           EOF
-          apt-get update -o Acquire::Retries=5 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
-          apt-get install -o Acquire::Retries=10 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends git postgresql-client valgrind=1:3.24.0-3 libc6-dbg=2.41-12+deb13u4
+          apt-get update -o Acquire::Retries=5 -o Acquire::Retries::HandleRetryAfter=false -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          apt-get install -o Acquire::Retries=10 -o Acquire::Retries::HandleRetryAfter=false -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends git postgresql-client valgrind=1:3.24.0-3 libc6-dbg=2.41-12+deb13u4
           # The runner owns the workspace; git runs as root.
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
