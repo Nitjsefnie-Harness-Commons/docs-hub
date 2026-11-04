@@ -38,12 +38,12 @@ jobs:
         id: list
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+          DOCS_HUB_REPO: ${{ github.repository }}
           DOCS_HUB_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           set -o pipefail
           names="$(gh api -H 'Cache-Control: no-cache' --paginate \
-            "repos/$REPO/actions/runs/${DOCS_HUB_RUN_ID:-$RUN_ID}/artifacts" \
+            "repos/${DOCS_HUB_REPO:-${REPO}}/actions/runs/${DOCS_HUB_RUN_ID:-$RUN_ID}/artifacts" \
             --jq '.artifacts[] | select(.expired != true) | .name' \
             | sort -u)"
           staged=false
@@ -81,7 +81,7 @@ jobs:
           # The prefixed secret wins when both are set; the old name stays
           # readable as a fallback for environments not yet renamed.
           DOCS_HUB_MASTER_PUSH_DEPLOY_KEY: ${{ secrets.DOCS_HUB_MASTER_PUSH_DEPLOY_KEY || secrets.MASTER_PUSH_DEPLOY_KEY }}
-          REPO: ${{ github.repository }}
+          DOCS_HUB_REPO: ${{ github.repository }}
           DOCS_HUB_STAGED: ${{ steps.list.outputs.staged }}
           DOCS_HUB_STAGED_SPEED: ${{ steps.list.outputs.staged_speed }}
         run: |
@@ -102,7 +102,7 @@ jobs:
             >> ~/.ssh/known_hosts
           export GIT_SSH_COMMAND='ssh -o StrictHostKeyChecking=yes'
           git init -q "$RUNNER_TEMP/raise-repo"
-          git -C "$RUNNER_TEMP/raise-repo" remote add origin "git@github.com:${REPO}.git"
+          git -C "$RUNNER_TEMP/raise-repo" remote add origin "git@github.com:${DOCS_HUB_REPO:-${REPO}}.git"
           git -C "$RUNNER_TEMP/raise-repo" fetch --quiet origin master
           git -C "$RUNNER_TEMP/raise-repo" checkout -B push FETCH_HEAD
           fetched="$(git -C "$RUNNER_TEMP/raise-repo" rev-parse HEAD)"
