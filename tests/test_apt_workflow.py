@@ -3,7 +3,6 @@ from pathlib import Path
 import re
 from typing import Any
 
-import pytest
 import yaml
 
 _WORKFLOWS = sorted((Path(__file__).resolve().parent.parent / ".github/workflows").glob("*.y*ml"))
@@ -13,7 +12,6 @@ _BOUNDS = (r"Acquire::Retries=[1-9]", r"Acquire::http::Timeout=[1-9]",
 
 _MIN_OUTAGE_WINDOW = 60  # seconds the step's longest download must keep retrying
 _TRANSFER_MARGIN = 30  # seconds of package transfer and index work the backoff leaves room for
-_APT_TRUE = {"1", "yes", "true", "with", "on", "enable"}
 
 
 def _apt_steps() -> list[tuple[str, dict[str, Any], dict[str, Any]]]:
@@ -47,46 +45,39 @@ def _apt_options(command: str) -> dict[str, str]:
     return {key.lower(): value for key, value in re.findall(r"-o\s*([\w:]+)=(\S*)", command)}
 
 
-def _apt_bool(text: str) -> bool:
-    """Fail safe: only apt's explicit true spellings count as enabled."""
-    return text.lower() in _APT_TRUE
+def _ignores_retry_after(command: str) -> bool:
+    return _apt_options(command).get("acquire::retries::handleretryafter", "").lower() == "false"
 
 
 def _backoff_windows(command: str) -> tuple[int, int]:
-    """Shortest and jittered-longest backoff, per apt-pkg/acquire-worker.cc (HandleFailure).
+    """Shortest and longest backoff, per apt-pkg/acquire-worker.cc (HandleFailure).
 
-    Retry i waits min(2**i, maximum), jitter up to min(2**(i+1) - 1, maximum).
-    Future Retry-After offsets can stretch each wait up to maximum; not modelled, timeout cuts off.
+    HandleRetryAfter=false: retry i waits exactly min(2**i, maximum).
+    Otherwise up to min(2**(i+1) - 1, maximum): a jitter margin; apt 2.7 ignores Retry-After.
     """
     options = _apt_options(command)
-    delay = options.get("acquire::retries::delay")
-    if delay is not None and not _apt_bool(delay):
-        return 0, 0
     retries = options.get("acquire::retries", "3")
     maximum = int(options.get("acquire::retries::delay::maximum", "30"))
     count = int(retries) if retries.isdigit() else 0
-    return (sum(min(2 ** i, maximum) for i in range(count)),
-            sum(min(2 ** (i + 1) - 1, maximum) for i in range(count)))
+    shortest = sum(min(2 ** i, maximum) for i in range(count))
+    if _ignores_retry_after(command):
+        return shortest, shortest
+    return shortest, sum(min(2 ** (i + 1) - 1, maximum) for i in range(count))
 
 
-@pytest.mark.parametrize("delay,enabled", [
-    (None, True), ("1", True), ("YES", True), ("true", True), ("WiTh", True),
-    ("ON", True), ("enable", True), ("0x0", False), ("0b0", False),
-    ("4294967296", False), ('"0"', False), ('"1"', False), ("junk", False),
-    ("0x1", False), ("", False),
-])
-def test_apt_delay_requires_an_explicit_true_value(delay: str | None, enabled: bool) -> None:
-    option = "" if delay is None else f" -o Acquire::Retries::Delay={delay}"
-    assert _backoff_windows("apt-get install -o Acquire::Retries=10" + option) == (
-        (181, 206) if enabled else (0, 0))
+def test_no_workflow_turns_off_the_apt_retry_delay() -> None:
+    assert _WORKFLOWS
+    for path in _WORKFLOWS:
+        text = path.read_text(encoding="utf-8")
+        assert not re.search(r"acquire::retries::delay(?!::maximum)", text, re.I), path.name
 
 
-@pytest.mark.parametrize("options,expected", [
-    (" -o Acquire::Retries::Delay=0 -o acquire::retries::delay=TRUE", (181, 206)),
-    (" -o Acquire::Retries::Delay=1 -o acquire::retries::delay=", (0, 0)),
-])
-def test_apt_delay_uses_the_last_option(options: str, expected: tuple[int, int]) -> None:
-    assert _backoff_windows("apt-get install -o Acquire::Retries=10" + options) == expected
+def test_apt_get_in_container_jobs_ignores_retry_after() -> None:
+    # Container jobs run Debian trixie's apt 3.0, whose Retry-After handling stretches each wait.
+    for name, job, step in _apt_steps():
+        if "container" in job:
+            for command in _apt_commands(step):
+                assert _ignores_retry_after(command), (name, command)
 
 
 def test_apt_get_download_commands_set_retries_and_timeouts() -> None:
@@ -100,8 +91,8 @@ def test_apt_get_retry_backoff_outlasts_a_short_mirror_outage_inside_the_step_ti
     for name, _, step in _apt_steps():
         windows = [_backoff_windows(command) for command in _apt_commands(step)]
         assert max(shortest for shortest, _ in windows) >= _MIN_OUTAGE_WINDOW, (name, windows)
-        jittered_total = sum(jittered for _, jittered in windows)
-        assert jittered_total + _TRANSFER_MARGIN <= step["timeout-minutes"] * 60, (name, windows)
+        longest_total = sum(longest for _, longest in windows)
+        assert longest_total + _TRANSFER_MARGIN <= step["timeout-minutes"] * 60, (name, windows)
 
 
 def test_every_apt_get_line_in_the_workflows_is_in_a_step_that_was_checked() -> None:
