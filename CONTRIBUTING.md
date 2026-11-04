@@ -179,14 +179,13 @@ fields staying in the report: it must carry its declared rebaseline
 commit, taken from its own CI run's measurement. A pull request that
 moves a toolchain field (the `requirements-speed.txt` lock, the image,
 Python or valgrind) therefore stays red until that commit lands, and on a
-Dependabot pull request a maintainer adds it. Likewise a `master` whose
-toolchain moved without a rebaseline turns every pull request that does
-not itself rebaseline red until one lands on `master`. After that commit
-the toolchains match and the ordinary budget check applies. Until then
-every run whose toolchain differs from the budget's takes the paired
-path, refusals included: its counts are compared only with its own base
-commit's, the budget's counts are not consulted, and `tighten` lowers
-nothing.
+Dependabot pull request a maintainer adds it. Likewise, if `master`'s
+toolchain moved without a rebaseline, pull requests whose measured
+toolchain still differs from their own budget fail. Once the toolchains
+match, the ordinary budget check applies. Until then every run whose
+toolchain differs from the budget's takes the paired path, refusals
+included: its counts are compared only with its own base commit's, the
+budget's counts are not consulted, and `tighten` lowers nothing.
 
 To rebaseline a Dependabot (or any other toolchain-bump) pull request,
 work from a checkout of that pull request's branch:
@@ -200,13 +199,17 @@ work from a checkout of that pull request's branch:
    and review the resulting counts. It rewrites the budget, prints its
    status line on stderr, and prints on stdout the `Budget-Raise:` lines
    the change needs: one per changed `toolchain` leaf (`lock_sha256`
-   included; endpoints are JSON strings or `null`, and `absent` marks an
-   added or removed key, for example `Budget-Raise: .github/speed-budget.json toolchain.image "old image" -> "new image"`)
-   and one per recorded count that rose. It prints nothing for a lowered,
-   unchanged or added workload count, a removed workload, or for
-   `tolerance_pct`, which a rebaseline carries over; an added workload
-   needs no declaration, and raising the tolerance by hand needs its own
-   line. A first seed, with no prior budget, prints nothing.
+   included; endpoints are JSON strings or `null`, for example
+   `Budget-Raise: .github/speed-budget.json toolchain.image "old image" -> "new image"`)
+   and one per recorded count that rose. The declaration grammar also
+   uses `absent` for an added or removed toolchain key, but the CLI's
+   budget schema requires all four toolchain fields and the current
+   measurement producer supplies all four, so this procedure does not
+   need `absent`. It prints nothing for a lowered, unchanged or added
+   workload count, a removed workload, or for `tolerance_pct`, which a
+   rebaseline carries over; an added workload needs no declaration, and
+   raising the tolerance by hand needs its own line. A first seed, with
+   no prior budget, prints nothing.
 3. Commit only `.github/speed-budget.json`, with the printed lines as the
    commit message body, and push to the pull request branch. Leave
    `[dependabot skip]` out of the message.
@@ -216,9 +219,21 @@ image. Dependabot stops rebasing a branch once another author has pushed
 to it, unless a commit message carries `[dependabot skip]`, which lets it
 force-push over that commit. Once Dependabot stops rebasing, the
 maintainer must keep the branch current with `master` for the
-`base-freshness` leg. A branch update that moves the lock again needs a
-fresh rebaseline. `@dependabot recreate`, or a superseding Dependabot pull
-request, drops the commit, and it is redone from the new run's artifact.
+`base-freshness` leg. A later branch update that moves the lock or image
+again needs a fresh rebaseline. Keep exactly one rebaseline commit in
+the pull request window: from the pull request branch checkout, replace
+`<R1>` with the existing rebaseline commit's SHA and run
+`git rebase --onto <R1>^ <R1>` to drop it. Later commits must not touch
+the budget, and R1 must be the window's only budget edit; dropping it
+restores the budget to the branch base's. Then run the procedure above
+once using the new run's measurement, so the printed from-values match
+the window's base. Updating the already-pushed branch after this rewrite
+requires a force-with-lease push against the fetched pull request head.
+If both rebaseline commits are kept instead, add any missing window net
+declarations by hand to a budget-only commit; the gate names each
+missing one. `@dependabot recreate`, or a superseding
+Dependabot pull request, drops the commit, and it is redone from the new
+run's artifact.
 
 The speed job runs in a container from the image `.github/speed/Dockerfile`
 pins by digest, and installs valgrind and `libc6-dbg` at exact versions from
