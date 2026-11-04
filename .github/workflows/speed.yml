@@ -68,7 +68,7 @@ jobs:
       DOCS_HUB_SPEED_IMAGE: ${{ needs.images.outputs.speed }}
 
     steps:
-      # Without git checkout uses the REST API, so this first checkout has no .git.
+      # Without git, checkout uses the REST API and has no .git.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
