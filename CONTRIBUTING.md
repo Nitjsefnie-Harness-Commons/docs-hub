@@ -334,17 +334,18 @@ and `/release` comments on issues and blocks nothing.
 
 The `pr gate` workflow is not a gate leg either. On a non-draft pull
 request whose author is not a bot, it checks the description against the
-pull request template, the referenced issues against their assignees and
-the commits' attribution; a pull request that fails is commented on and
-closed unless the failing check is the reference one and its failure is
-one of the comment-only shapes the pull requests section lists, and one
-the gate closed is reopened once it passes. `aggregate` remains the only required check, and the workflow
-always runs from `master`'s definition of it rather than the pull
-request's. The `pull_request_target` trigger is load-bearing: a fork's
-token on a `pull_request` run cannot close a pull request, so the base
-repository's token does the closing. The template is read at the pull
-request's base SHA, no pull-request code is run, and a pull request it
-reopens has its CI runs held until its author pushes once more.
+pull request template, the referenced issues against their assignees, the
+commits' attribution and, merge commits aside, their subject lines. A pull
+request that fails stays open: the gate writes the reasons into one
+comment and fails its own job check, and each edit of or push to the pull
+request runs it again; once every check passes it rewrites that comment to
+say so and its check passes. A failing gate check blocks the merge only
+while a ruleset requires it. The workflow always runs from `master`'s
+definition of it rather than the pull request's. The
+`pull_request_target` trigger is load-bearing: a fork's token on a
+`pull_request` run is read-only, so the gate's comment would silently do
+nothing; the base repository's token writes it. The template is read at
+the pull request's base SHA and no pull-request code is run.
 
 ## Pull requests
 
@@ -368,15 +369,15 @@ unassigned issue and the claim workflow assigns it to you; `/unclaim` or
 
 Once open, a non-draft pull request is admitted by the `pr gate`
 workflow: its description is checked against the pull request template,
-it must reference an issue assigned to its author, and its commits must
+it must reference an issue assigned to its author, its commits must
 be its author's, a push-access account's or web-flow's, or carry a
 `Co-Authored-By` trailer for the author — model trailers at a noreply@
-address are outside this check. A pull request that does not conform is
-commented on and closed, and reopened once corrected; the reference
-check is the only one with a comment-only outcome — with more than
-twenty references, or with no checked reference but reference-like text,
-it only comments and leaves the pull request open, and a pull request
-that also fails the template check still closes. Assigning an
+address are outside this check — and every commit subject but a merge
+commit's must follow the format under Commit messages. A pull request
+that does not conform stays open with a comment naming each defect and a
+failing gate check; edit the description or push a fix and the gate runs
+again, passing once every check does. While a ruleset requires the
+gate's check, that failure blocks the merge. Assigning an
 issue does not re-trigger the gate, so after an issue is assigned or
 reassigned, edit the pull request body to have the pull request
 rechecked.
