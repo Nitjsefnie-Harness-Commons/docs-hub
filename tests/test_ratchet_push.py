@@ -368,17 +368,17 @@ def _git(origin: Path, *args: str) -> str:
 
 _LANDING = [
     pytest.param("true", "false", "97.4", False,
-                 ["Raise the recorded coverage calibration (automated)"],
+                 ["chore(ratchet): Raise the recorded coverage calibration (automated)"],
                  {".github/ci-thresholds.json"}, id="coverage"),
     pytest.param("false", "true", None, True,
-                 ["Tighten the speed budget (automated)"],
+                 ["chore(ratchet): Tighten the speed budget (automated)"],
                  {".github/speed-budget.json"}, id="speed"),
     pytest.param("true", "true", "97.4", True,
-                 ["Tighten the speed budget (automated)",
-                  "Raise the recorded coverage calibration (automated)"],
+                 ["chore(ratchet): Tighten the speed budget (automated)",
+                  "chore(ratchet): Raise the recorded coverage calibration (automated)"],
                  {".github/ci-thresholds.json", ".github/speed-budget.json"}, id="both"),
     pytest.param("true", "true", "96.9", True,
-                 ["Tighten the speed budget (automated)"],
+                 ["chore(ratchet): Tighten the speed budget (automated)"],
                  {".github/speed-budget.json"}, id="speed-after-a-coverage-no-op"),
 ]
 
@@ -491,5 +491,5 @@ def test_landing_survives_a_legitimate_automated_raise(
     result = _run_push_step(tmp_path, "true", "true")
     assert result.returncode == 0, result.stdout + result.stderr
     assert _git(origin, "log", "--format=%s", "refs/heads/master").splitlines() == [
-        "Tighten the speed budget (automated)",
-        "Raise the recorded coverage calibration (automated)", "seed"]
+        "chore(ratchet): Tighten the speed budget (automated)",
+        "chore(ratchet): Raise the recorded coverage calibration (automated)", "seed"]
