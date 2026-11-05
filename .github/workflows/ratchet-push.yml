@@ -138,10 +138,10 @@ jobs:
           git -C "$RUNNER_TEMP/raise-repo" config user.name 'github-actions[bot]'
           git -C "$RUNNER_TEMP/raise-repo" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           if [ -n "$(git -C "$RUNNER_TEMP/raise-repo" status --porcelain .github/ci-thresholds.json)" ]; then
-            git -C "$RUNNER_TEMP/raise-repo" commit -m 'Raise the recorded coverage calibration (automated)' -- .github/ci-thresholds.json
+            git -C "$RUNNER_TEMP/raise-repo" commit -m 'chore(ratchet): Raise the recorded coverage calibration (automated)' -- .github/ci-thresholds.json
           fi
           if [ -n "$(git -C "$RUNNER_TEMP/raise-repo" status --porcelain .github/speed-budget.json)" ]; then
-            git -C "$RUNNER_TEMP/raise-repo" commit -m 'Tighten the speed budget (automated)' -- .github/speed-budget.json
+            git -C "$RUNNER_TEMP/raise-repo" commit -m 'chore(ratchet): Tighten the speed budget (automated)' -- .github/speed-budget.json
           fi
           if [ "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse HEAD)" = "$fetched" ]; then
             echo "No raise is justified by this run: nothing to commit."
