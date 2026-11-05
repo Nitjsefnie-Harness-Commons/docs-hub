@@ -55,10 +55,10 @@ def test_the_toolchain_image_is_the_speed_jobs_image_variable_alone(
 ])
 def test_the_images_job_resolves_only_a_digest_pinned_python_image(
         tmp_path: Path, pin: str, ok: bool) -> None:
-    directory = tmp_path / ".github" / "speed"
+    directory = tmp_path / "docker" / "speed"
     directory.mkdir(parents=True)
     (directory / "Dockerfile").write_text(f"FROM {pin}\r\n", encoding="utf-8")
-    postgres = tmp_path / ".github" / "postgres" / "17"
+    postgres = tmp_path / "docker" / "postgres" / "17"
     postgres.mkdir(parents=True)
     (postgres / "Dockerfile").write_text("FROM postgres:17.1@sha256:" + "7" * 64 + "\n",
                                          encoding="utf-8")
@@ -67,7 +67,7 @@ def test_the_images_job_resolves_only_a_digest_pinned_python_image(
     result = rc._run_script(tmp_path, reading["run"], {"GITHUB_OUTPUT": str(output)})
     if not ok:
         assert result.returncode != 0, result.stdout + result.stderr
-        assert ".github/speed/Dockerfile" in result.stderr
+        assert "docker/speed/Dockerfile" in result.stderr
         return
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"speed={_IMAGE}" in output.read_text(encoding="utf-8").splitlines()
@@ -83,7 +83,7 @@ def test_the_speed_job_runs_in_and_records_the_images_jobs_image() -> None:
 
 
 def test_the_speed_dockerfile_holds_one_from_line_of_a_python_image() -> None:
-    lines = (rc._REPO / ".github/speed/Dockerfile").read_text(encoding="utf-8").splitlines()
+    lines = (rc._REPO / "docker/speed/Dockerfile").read_text(encoding="utf-8").splitlines()
     froms = [line for line in lines if line.startswith("FROM ")]
     assert len(froms) == 1 and froms[0].startswith("FROM python:3.")
 
@@ -117,7 +117,7 @@ def test_the_counted_packages_install_at_exact_versions() -> None:
 def test_dependabot_updates_the_speed_image_within_its_minor() -> None:
     updates = yaml.safe_load(
         (rc._REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
-    entries = [entry for entry in updates if "/.github/speed" in entry.get("directories", [])]
+    entries = [entry for entry in updates if "/docker/speed" in entry.get("directories", [])]
     assert [entry["package-ecosystem"] for entry in entries] == ["docker"]
     # Every ignore in the entry applies to each of its directories, the speed image's too.
     assert sorted(entries[0]["ignore"], key=lambda condition: condition["dependency-name"]) == [

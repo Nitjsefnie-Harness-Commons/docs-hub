@@ -85,7 +85,7 @@ def test_images_job_reads_both_postgres_dockerfiles():
         job = _workflow(filename)["jobs"]["images"]
         assert {"image16", "image17"} <= set(job["outputs"]), filename
         reading = next(step for step in job["steps"] if step.get("id") == "pins")
-        for path in (".github/postgres/16/Dockerfile", ".github/postgres/17/Dockerfile"):
+        for path in ("docker/postgres/16/Dockerfile", "docker/postgres/17/Dockerfile"):
             assert path in reading["run"], (filename, path)
 
 
@@ -94,7 +94,7 @@ def test_images_job_resolves_both_postgres_dockerfiles(tmp_path: Path, filename:
     job = _workflow(filename)["jobs"]["images"]
     assert {"image16", "image17"} <= set(job["outputs"])
     for major in (16, 17):
-        directory = tmp_path / ".github" / "postgres" / str(major)
+        directory = tmp_path / "docker" / "postgres" / str(major)
         directory.mkdir(parents=True)
         (directory / "Dockerfile").write_text(
             f"FROM postgres:{major}.1@sha256:{str(major)[-1] * 64}\n", encoding="utf-8")
@@ -122,7 +122,7 @@ def test_postgres_services_need_images_and_read_its_outputs():
 
 
 def test_workflows_hold_no_postgres_digest_literal():
-    # The Dockerfiles under .github/postgres/ are the only home of the digest,
+    # The Dockerfiles under docker/postgres/ are the only home of the digest,
     # whether spelled with a floating tag (postgres:16@sha256:...) or a full
     # version (postgres:16.15@sha256:...).
     for filename in ("tests.yml", "release.yml"):
@@ -135,8 +135,25 @@ def test_dependabot_docker_directories_are_the_ones_the_images_jobs_read():
     updates = yaml.safe_load(
         (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
     docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")
-    assert docker["directories"] == ["/.github/postgres/16", "/.github/postgres/17",
-                                     "/.github/speed"]
+    assert docker["directories"] == ["/docker/postgres/16", "/docker/postgres/17",
+                                     "/docker/speed"]
+
+
+def test_only_github_actions_updates_name_a_directory_under_dot_github():
+    # GitHub grants the `workflows` scope to the github-actions ecosystem alone,
+    # so any other ecosystem whose directory is under /.github/ gets its pull
+    # request refused with HTTP 400 (dependabot/dependabot-core#15237).
+    updates = yaml.safe_load(
+        (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
+    for entry in updates:
+        if entry["package-ecosystem"] == "github-actions":
+            continue
+        directories = [*entry.get("directories", []), *([entry["directory"]]
+                                                        if "directory" in entry else [])]
+        assert directories, entry["package-ecosystem"]
+        for directory in directories:
+            assert directory.rstrip("/") != "/.github", (entry["package-ecosystem"], directory)
+            assert not directory.startswith("/.github/"), (entry["package-ecosystem"], directory)
 
 
 def test_dependabot_docker_ignore_uses_update_types():
@@ -169,7 +186,7 @@ def test_dependabot_groups_every_pip_version_update_into_one_pull_request():
 @pytest.mark.parametrize("major", [16, 17])
 def test_postgres_dockerfile_holds_one_from_line_of_its_major(major: int):
     # Major only: the digest is data Dependabot rewrites, never a value to pin.
-    dockerfile = _REPO / f".github/postgres/{major}/Dockerfile"
+    dockerfile = _REPO / f"docker/postgres/{major}/Dockerfile"
     froms = [line for line in dockerfile.read_text(encoding="utf-8").splitlines()
              if line.startswith("FROM ")]
     assert len(froms) == 1

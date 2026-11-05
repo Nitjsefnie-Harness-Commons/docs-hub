@@ -141,7 +141,7 @@ are listed below; CodeQL runs on GitHub:
 | `size-baseline` | the tracked-file line-count ratchet over `.github/size-baseline.json` | — (GitHub-hosted action) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
-| `speed` | inside the digest-pinned image `.github/speed/Dockerfile` names, this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain (Python, valgrind, that image, the `requirements-speed.txt` hash); fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is a full SHA of an ancestor, else, for an all-zero `before` (a new branch) or one that is not a fetched ancestor (a rewritten history), the checkout's first parent; on any other event, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; a pull request also fails whenever its measured toolchain differs from the budget's on any field, so its paired verdict is reported but a toolchain change must carry its rebaseline; the job also fails when the event name is missing, the history is shallow, a pull request's base is missing, unknown or not an ancestor of the checkout, a push's `before` is missing or not a full lowercase SHA, the rule falls back to the checkout's first parent and the checkout has none (a commit without a parent has nothing to pair with), the base measurement names no commit, or the base and head toolchains differ on any field but `lock_sha256` | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind and a Postgres you can `createdb` on; only inside the same image do the counts compare with CI's (the docker command is below the speed paragraphs); `docs_speed` is a disposable database, reset by `measure` |
+| `speed` | inside the digest-pinned image `docker/speed/Dockerfile` names, this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain (Python, valgrind, that image, the `requirements-speed.txt` hash); fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is a full SHA of an ancestor, else, for an all-zero `before` (a new branch) or one that is not a fetched ancestor (a rewritten history), the checkout's first parent; on any other event, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; a pull request also fails whenever its measured toolchain differs from the budget's on any field, so its paired verdict is reported but a toolchain change must carry its rebaseline; the job also fails when the event name is missing, the history is shallow, a pull request's base is missing, unknown or not an ancestor of the checkout, a push's `before` is missing or not a full lowercase SHA, the rule falls back to the checkout's first parent and the checkout has none (a commit without a parent has nothing to pair with), the base measurement names no commit, or the base and head toolchains differ on any field but `lock_sha256` | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind and a Postgres you can `createdb` on; only inside the same image do the counts compare with CI's (the docker command is below the speed paragraphs); `docs_speed` is a disposable database, reset by `measure` |
 
 The `aggregate` job folds every leg and fails closed, with two local legs
 of its own: `conflict-markers` on every push and PR, and `base-freshness`
@@ -255,7 +255,7 @@ count); the gate names each missing one. `@dependabot recreate`, or a supersedin
 Dependabot pull request, drops the commit, and it is redone from the new
 run's artifact.
 
-The speed job runs in a container from the image `.github/speed/Dockerfile`
+The speed job runs in a container from the image `docker/speed/Dockerfile`
 pins by digest, and installs valgrind and `libc6-dbg` at exact versions from
 a snapshot.debian.org source fixed to that image's build timestamp; the
 counts depend on that image, so a count taken outside it does not compare
@@ -264,10 +264,10 @@ install, virtualenv and measure steps into `steps.sh` in an empty directory
 `out/`, and run them in the image beside a Postgres reachable as `postgres`:
 
 ```bash
-image="$(sed -n 's/\r$//; s/^FROM //p' .github/speed/Dockerfile)"
+image="$(sed -n 's/\r$//; s/^FROM //p' docker/speed/Dockerfile)"
 docker network create speed
 docker run -d --name speed-pg --network speed --network-alias postgres \
-  -e POSTGRES_PASSWORD=postgres "$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
+  -e POSTGRES_PASSWORD=postgres "$(sed -n 's/\r$//; s/^FROM //p' docker/postgres/17/Dockerfile)"
 # TCP, because the image's first-start init server listens on the socket only;
 # 60 tries, so a container that exited ends the wait instead of spinning on it.
 for try in $(seq 60); do
@@ -296,7 +296,7 @@ digest bump of that image is a toolchain change like any other, and it
 needs the snapshot timestamp moved to the new image's own (its
 `/etc/apt/sources.list.d/debian.sources` names it) and the valgrind and
 `libc6-dbg` pins moved to that snapshot's versions. Dependabot's pull
-requests for that image (the `/.github/speed` directory of the docker
+requests for that image (the `/docker/speed` directory of the docker
 entry in `.github/dependabot.yml`) move none of those. `libc6-dbg` depends
 on the exact `libc6` version, so once the new image's `libc6` differs from
 the pinned one, such a pull request's install step fails until a

@@ -50,17 +50,22 @@
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/*.yml
-!.github/postgres/
-.github/postgres/*
-!.github/postgres/16/
-.github/postgres/16/*
-!.github/postgres/16/Dockerfile
-!.github/postgres/17/
-.github/postgres/17/*
-!.github/postgres/17/Dockerfile
-!.github/speed/
-.github/speed/*
-!.github/speed/Dockerfile
+
+# --- docker: digest-pinned images CI reads and Dependabot updates ------
+# Outside .github/, where Dependabot's docker ecosystem can open pull requests.
+!docker/
+docker/*
+!docker/postgres/
+docker/postgres/*
+!docker/postgres/16/
+docker/postgres/16/*
+!docker/postgres/16/Dockerfile
+!docker/postgres/17/
+docker/postgres/17/*
+!docker/postgres/17/Dockerfile
+!docker/speed/
+docker/speed/*
+!docker/speed/Dockerfile
 
 # --- application ------------------------------------------------------
 !backend/

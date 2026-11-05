@@ -29,7 +29,7 @@ concurrency:
 jobs:
   images:
     # Single source of the Postgres service images: the one-line Dockerfiles
-    # under .github/postgres/<major>/, updated by Dependabot's docker
+    # under docker/postgres/<major>/, updated by Dependabot's docker
     # ecosystem. The run step names both paths literally so
     # gate_base_freshness.py watches them.
     runs-on: ubuntu-latest
@@ -44,13 +44,13 @@ jobs:
       - id: pins
         name: Read the Postgres image pins
         run: |
-          image16="$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/16/Dockerfile)"
-          image17="$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
+          image16="$(sed -n 's/\r$//; s/^FROM //p' docker/postgres/16/Dockerfile)"
+          image17="$(sed -n 's/\r$//; s/^FROM //p' docker/postgres/17/Dockerfile)"
           case "$image16" in postgres:16.*@sha256:*) ;;
-            *) echo ".github/postgres/16/Dockerfile does not pin a postgres 16 image: $image16" >&2; exit 1 ;;
+            *) echo "docker/postgres/16/Dockerfile does not pin a postgres 16 image: $image16" >&2; exit 1 ;;
           esac
           case "$image17" in postgres:17.*@sha256:*) ;;
-            *) echo ".github/postgres/17/Dockerfile does not pin a postgres 17 image: $image17" >&2; exit 1 ;;
+            *) echo "docker/postgres/17/Dockerfile does not pin a postgres 17 image: $image17" >&2; exit 1 ;;
           esac
           {
             echo "image16=$image16"
@@ -67,7 +67,7 @@ jobs:
         # runs. Each explicit entry pairs that Python with a Postgres major;
         # the majors are quoted so the service image ternary compares strings.
         # The image is not stated here: the images job reads it from the
-        # digest-pinned Dockerfiles under .github/postgres/<major>/, which
+        # digest-pinned Dockerfiles under docker/postgres/<major>/, which
         # Dependabot's docker ecosystem updates weekly.
         include:
           - postgres: "16"
