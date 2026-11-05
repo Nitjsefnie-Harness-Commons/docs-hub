@@ -89,7 +89,7 @@ coverage floor, plus the `public/app.js` test in jsdom),
 (pip-audit, npm audit), `codeql`, `size-baseline` (the tracked-file
 line-count ratchet), `actionlint` (actionlint + zizmor),
 `secrets` (gitleaks), and `speed` (this head's Cachegrind instruction
-counts, taken inside the digest-pinned image `.github/speed/Dockerfile`
+counts, taken inside the digest-pinned image `docker/speed/Dockerfile`
 names, against `.github/speed-budget.json` with a recorded toolchain,
 or, on a toolchain mismatch, against the base commit measured in the
 same job with its own lock (that verdict decides every run but a pull

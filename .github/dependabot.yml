@@ -4,7 +4,7 @@
 # stays exploitable. Dependabot pays that cost back — it is the counterpart to
 # audit.yml, which detects the problem but cannot fix it.
 # The Postgres service images live as one-line digest-pinned Dockerfiles under
-# .github/postgres/<major>/ — each full-version tag there resolves to the same
+# docker/postgres/<major>/ — each full-version tag there resolves to the same
 # Docker Hub multi-arch index digest `docker buildx imagetools inspect` shows
 # for postgres:<major> — and the docker entry below is their update route: a
 # weekly pull request moves the tag and digest within the major, or the digest
@@ -83,9 +83,9 @@ updates:
   # the same reviewed-upgrade flow as every other pin here.
   - package-ecosystem: docker
     directories:
-      - "/.github/postgres/16"
-      - "/.github/postgres/17"
-      - "/.github/speed"
+      - "/docker/postgres/16"
+      - "/docker/postgres/17"
+      - "/docker/speed"
     schedule:
       interval: weekly
       day: wednesday

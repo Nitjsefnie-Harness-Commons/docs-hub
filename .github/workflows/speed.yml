@@ -28,13 +28,13 @@ jobs:
       - id: pins
         name: Read the Postgres and speed image pins
         run: |
-          image17="$(sed -n 's/\r$//; s/^FROM //p' .github/postgres/17/Dockerfile)"
+          image17="$(sed -n 's/\r$//; s/^FROM //p' docker/postgres/17/Dockerfile)"
           case "$image17" in postgres:17.*@sha256:*) ;;
-            *) echo ".github/postgres/17/Dockerfile does not pin a postgres 17 image: $image17" >&2; exit 1 ;;
+            *) echo "docker/postgres/17/Dockerfile does not pin a postgres 17 image: $image17" >&2; exit 1 ;;
           esac
-          speed="$(sed -n 's/\r$//; s/^FROM //p' .github/speed/Dockerfile)"
+          speed="$(sed -n 's/\r$//; s/^FROM //p' docker/speed/Dockerfile)"
           case "$speed" in python:3.*@sha256:*) ;;
-            *) echo ".github/speed/Dockerfile does not pin a python 3 image: $speed" >&2; exit 1 ;;
+            *) echo "docker/speed/Dockerfile does not pin a python 3 image: $speed" >&2; exit 1 ;;
           esac
           echo "image17=$image17" >> "$GITHUB_OUTPUT"
           echo "speed=$speed" >> "$GITHUB_OUTPUT"
