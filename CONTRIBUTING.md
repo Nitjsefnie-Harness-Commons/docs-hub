@@ -104,6 +104,22 @@ at startup and is what upgrades a deployed instance.
   those files names the pattern it is there for; add one the same way
   rather than raising a threshold.
 
+## Commit messages
+
+Every commit message follows [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+type(scope)!: subject
+```
+
+The `type` is one of `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`,
+`refactor`, `revert`, `style` or `test`; the `(scope)` and the `!` (a
+breaking change) are optional, and this repository requires no particular
+scopes. Messages an automation writes follow it too: the `ratchet push`
+workflow commits as `chore(ratchet): …`, and Dependabot's `commit-message`
+prefixes are `build` for package ecosystems and `ci` for GitHub Actions and
+Docker images, each with the scope included.
+
 ## CI
 
 One `ci gate` workflow owns the gate set's `push` and `pull_request`
@@ -153,7 +169,7 @@ count, only with a matching toolchain and
 no failed workloads; a smaller drop keeps the recorded count, so
 run-to-run spread under that margin commits nothing. It keeps the
 toolchain and tolerance; when the budget changes and `master` has not
-moved, the speed arm commits "Tighten the speed budget (automated)". A
+moved, the speed arm commits "chore(ratchet): Tighten the speed budget (automated)". A
 raise is never automatic: each raised workload count or `tolerance_pct`
 needs exactly one matching line in a commit message:
 
