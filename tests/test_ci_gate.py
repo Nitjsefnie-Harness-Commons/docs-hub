@@ -102,7 +102,7 @@ def test_size_baseline_runs_standalone_in_a_group_no_called_run_shares() -> None
         "pull_request": None, "push": {"branches": ["main", "master"]}, "workflow_call": None,
     }
     # A called run's `github.workflow` is the caller's name, so it takes the
-    # run_id arm and never shares the standalone run's ref-keyed group.
+    # run_id arm and never shares the standalone run's group.
     assert workflow["name"] == "size baseline"
     assert _workflow()["name"].casefold() != workflow["name"]
     assert workflow["concurrency"] == {"group": _SIZE_BASELINE_GROUP, "cancel-in-progress": True}
