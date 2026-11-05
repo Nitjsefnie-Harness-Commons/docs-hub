@@ -4,15 +4,15 @@
   "tolerance_pct": 0.5,
   "toolchain": {
     "image": "python:3.15.1-slim-trixie@sha256:533b0b2f9b5d46fd097091cf826f27902f1d6c3bca714b6dc74551356aa97a51",
-    "lock_sha256": "86ea2f64c0c7330943010df4c17aa514b5c71489f08bcb1cadc4d81d23d70e0b",
+    "lock_sha256": "131802ff1d409251a27429305929d3e31353cf4bac1574795d1a4542069478fc",
     "python": "3.15.1 (main, Oct 21 2026, 22:24:45) [GCC 14.2.0]",
     "valgrind": "valgrind-3.24.0"
   },
   "workloads": {
-    "cli.text": 14490765478,
-    "cli.transfer": 16051225338,
-    "service.list": 6952372883,
-    "service.publish": 6865840998,
-    "service.versions": 6929544440
+    "cli.text": 14491719180,
+    "cli.transfer": 16051859152,
+    "service.list": 6954732747,
+    "service.publish": 6867390182,
+    "service.versions": 6931701650
   }
 }
