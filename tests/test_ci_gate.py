@@ -15,7 +15,8 @@ _SCHEDULED = {"audit", "codeql", "secrets"}
 # The size-ratchet install block keeps its own pull_request and push triggers.
 _STANDALONE = "size-baseline"
 _SIZE_BASELINE_GROUP = (
-    "${{ github.workflow == 'size baseline' && format('size-baseline-{0}', github.ref)"
+    "${{ github.workflow == 'size baseline' && format('size-baseline-{0}',"
+    " github.event_name == 'push' && format('{0}-{1}', github.ref, github.sha) || github.ref)"
     " || format('size-baseline-called-{0}', github.run_id) }}")
 
 
