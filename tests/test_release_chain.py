@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import subprocess
 from typing import Any
@@ -152,8 +153,10 @@ def test_only_github_actions_updates_name_a_directory_under_dot_github():
                                                         if "directory" in entry else [])]
         assert directories, entry["package-ecosystem"]
         for directory in directories:
-            assert directory.rstrip("/") != "/.github", (entry["package-ecosystem"], directory)
-            assert not directory.startswith("/.github/"), (entry["package-ecosystem"], directory)
+            # Dependabot strips leading slashes and normalizes, so `.github/x`
+            # and `./.github/x` resolve under .github/ like `/.github/x`.
+            top = posixpath.normpath("/" + directory.lstrip("/")).split("/")[1]
+            assert top != ".github", (entry["package-ecosystem"], directory)
 
 
 def test_dependabot_docker_ignore_uses_update_types():
