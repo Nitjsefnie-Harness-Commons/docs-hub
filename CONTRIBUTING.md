@@ -122,11 +122,11 @@ Docker images, each with the scope included.
 
 ## CI
 
-One `ci gate` workflow owns the gate set's `push` and `pull_request`
-triggers, with no path filter — documentation-only pushes run it too;
-of its callees only `size-baseline` also has its own `pull_request`
-trigger and a `push` trigger on `main` and `master`. It
-folds ten gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
+One `ci gate` workflow owns the gate set's `push` (to `master` only) and
+`pull_request` triggers, with no path filter — documentation-only pull
+requests and `master` pushes run it too; of its callees only `size-baseline`
+also has its own `pull_request` trigger and a `push` trigger on `main` and
+`master`. It folds ten gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
 `size-baseline`, `actionlint`, `secrets`, and `speed`. Their local commands
 are listed below; CodeQL runs on GitHub:
 
@@ -144,9 +144,9 @@ are listed below; CodeQL runs on GitHub:
 | `speed` | inside the digest-pinned image `docker/speed/Dockerfile` names, this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain (Python, valgrind, that image, the `requirements-speed.txt` hash); fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is a full SHA of an ancestor, else, for an all-zero `before` (a new branch) or one that is not a fetched ancestor (a rewritten history), the checkout's first parent; on any other event, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; a pull request also fails whenever its measured toolchain differs from the budget's on any field, so its paired verdict is reported but a toolchain change must carry its rebaseline; the job also fails when the event name is missing, the history is shallow, a pull request's base is missing, unknown or not an ancestor of the checkout, a push's `before` is missing or not a full lowercase SHA, the rule falls back to the checkout's first parent and the checkout has none (a commit without a parent has nothing to pair with), the base measurement names no commit, or the base and head toolchains differ on any field but `lock_sha256` | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind and a Postgres you can `createdb` on; only inside the same image do the counts compare with CI's (the docker command is below the speed paragraphs); `docs_speed` is a disposable database, reset by `measure` |
 
 The `aggregate` job folds every leg and fails closed, with two local legs
-of its own: `conflict-markers` on every push and PR, and `base-freshness`
-on PRs, which fails when `master` holds a gate-input commit the head lacks,
-naming the commit and file.
+of its own: `conflict-markers` on every pull request and every push to
+`master`, and `base-freshness` on PRs, which fails when `master` holds a
+gate-input commit the head lacks, naming the commit and file.
 
 The coverage floor is a ratchet, not a fixed number.
 `.github/ci-thresholds.json` records a measurement and a floor exactly 1.5

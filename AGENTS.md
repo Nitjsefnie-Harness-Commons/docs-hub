@@ -77,10 +77,11 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 Tests build an isolated `docs_test` database from `backend/schema.sql`
 and a temp blob store — see `tests/conftest.py`. No live network.
 
-One `ci gate` workflow owns the gate set's `push` and `pull_request`
-triggers without a path filter, so documentation-only pushes run it too;
-of its callees only `size-baseline` also has its own `pull_request`
-trigger and a `push` trigger on `main` and `master`.
+One `ci gate` workflow owns the gate set's `push` (to `master` only) and
+`pull_request` triggers without a path filter, so documentation-only pull
+requests and `master` pushes run it too; of its callees only `size-baseline`
+also has its own `pull_request` trigger and a `push` trigger on `main` and
+`master`.
 It folds ten gates: `tests` (Postgres 16 and 17, plus the `portable`
 tests on Windows, macOS and Linux with 3.14 and 3.15, plus the recorded
 coverage floor, plus the `public/app.js` test in jsdom),
@@ -96,9 +97,10 @@ same job with its own lock (that verdict decides every run but a pull
 request's; a pull request whose toolchain differs from its own budget's
 fails until it carries its rebaseline), `scripts/ci/speed.py`; counts
 taken outside that image do not compare with CI's). Its `aggregate` job
-folds every leg and fails closed, with `conflict-markers` on every push
-and PR and PR-only `base-freshness`, which fails when `master` holds a
-gate-input commit the head lacks, naming the commit and file.
+folds every leg and fails closed, with `conflict-markers` on every pull
+request and every push to `master` and PR-only `base-freshness`, which fails
+when `master` holds a gate-input commit the head lacks, naming the commit and
+file.
 CONTRIBUTING.md's table gives the local commands; CodeQL runs on GitHub.
 Run the applicable local checks before pushing rather than using CI as
 the first check.
