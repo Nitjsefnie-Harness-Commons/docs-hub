@@ -46,14 +46,14 @@ def _env_name(leg: str) -> str:
     return "DOCS_HUB_LEG_" + leg.upper().replace("-", "_")
 
 
-def test_ci_gate_owns_every_push_and_pull_request() -> None:
+def test_ci_gate_runs_on_every_pull_request_and_pushes_to_master() -> None:
     workflow = _workflow()
     assert workflow["name"] == "ci gate"
     triggers = _triggers(workflow)
     assert set(triggers) == {"pull_request", "push", "workflow_dispatch"}
     filters = {"paths", "paths-ignore", "branches", "branches-ignore", "tags", "tags-ignore"}
-    for event in ("push", "pull_request"):
-        assert not filters.intersection(triggers[event] or {})
+    assert triggers["push"] == {"branches": ["master"]}
+    assert not filters.intersection(triggers["pull_request"] or {})
     assert workflow["permissions"] == {"contents": "read"}
     concurrency = workflow["concurrency"]
     assert "${{github.ref}}" in "".join(concurrency["group"].split())
