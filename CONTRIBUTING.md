@@ -126,9 +126,9 @@ One `ci gate` workflow owns the gate set's `push` (to `master` only) and
 `pull_request` triggers, with no path filter — documentation-only pull
 requests and `master` pushes run it too; of its callees only `size-baseline`
 also has its own `pull_request` trigger and a `push` trigger on `main` and
-`master`. It folds ten gates: `tests`, `lint`, `types`, `eslint`, `audit`, `codeql`,
-`size-baseline`, `actionlint`, `secrets`, and `speed`. Their local commands
-are listed below; CodeQL runs on GitHub:
+`master`. It folds ten gates: `tests`, `lint`, `types`, `eslint`, `audit`,
+`codeql`, `size-baseline`, `actionlint`, `secrets`, and `speed`. Their local
+commands are listed below; CodeQL runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
