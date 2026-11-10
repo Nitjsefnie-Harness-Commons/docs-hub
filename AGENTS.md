@@ -98,7 +98,7 @@ request's; a pull request whose toolchain differs from its own budget's
 fails until it carries its rebaseline), `scripts/ci/speed.py`; counts
 taken outside that image do not compare with CI's). Its `aggregate` job
 folds every leg and fails closed, with `conflict-markers` on every pull
-request and every push to `master` and PR-only `base-freshness`, which fails
+request and every push to `master`, and PR-only `base-freshness`, which fails
 when `master` holds a gate-input commit the head lacks, naming the commit and
 file.
 CONTRIBUTING.md's table gives the local commands; CodeQL runs on GitHub.
