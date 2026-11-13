@@ -1,4 +1,7 @@
 {
+  "trees": {
+    "tests/": 11630
+  },
   "schema_version": 1,
   "baseline": {
     "public/app.js": 728,
