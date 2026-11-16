@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """Require this head to carry master's commits touching named CI gate inputs.
 
-Adapted from claim's tests/gate_base_freshness.py: its fail-closed stdlib block
-parser, tracked-path resolution, anonymous fetch and commit comparison form the
-starting point. Here ci-gate.yml's aggregate.needs defines the required jobs;
-local reusable workflows contribute every job they execute. Definitions sharing
-a required job name across workflows are unioned. Only ci-gate.yml's own
-aggregate is excluded from the walk. Every workflow file is watched.
+ci-gate.yml's aggregate.needs defines the required jobs; local reusable
+workflows contribute every job they execute. Definitions sharing a required
+job name across workflows are unioned. Only ci-gate.yml's own aggregate is
+excluded from the walk. Every workflow file is watched.
 
 Reach limits: `.` resolves to nothing; implicit tool configuration, expression-
 computed paths and files read from inside scripts are invisible unless a run:

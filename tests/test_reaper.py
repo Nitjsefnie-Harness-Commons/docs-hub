@@ -130,7 +130,7 @@ def test_lifespan_waits_for_purge_before_closing_pools(
         assert started.wait(10), "purge never started"
         releaser = asyncio.run_coroutine_threadsafe(release_purge(), tasks[0].get_loop())
         assert observing.wait(10), "cancellation observer never started"
-        # Hold the lifecycle past the old timed release to exercise late shutdown.
+        # Hold the lifecycle open before shutdown to exercise late shutdown.
         assert not release.wait(0.6), "purge released before shutdown"
         shutdown_go.set()
         try:
@@ -438,7 +438,7 @@ def test_start_reads_the_interval_from_the_environment(monkeypatch):
 @pytest.mark.parametrize("raw", ["0", "-5", "soon"])
 def test_start_rejects_a_non_positive_or_unparseable_interval(monkeypatch, raw):
     """Zero or a negative interval turns asyncio.sleep into a bare yield, so
-    the reaper would spin on the DB forever; an unparseable one used to blow
+    the reaper would spin on the DB forever; an unparseable one would blow
     up deep inside the lifespan. Both fail loudly at start()."""
     monkeypatch.setenv("DOCS_HUB_PURGE_INTERVAL_SECONDS", raw)
 

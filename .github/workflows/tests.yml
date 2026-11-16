@@ -118,9 +118,9 @@ jobs:
 
       - name: Install the Postgres client
         id: apt
-        # The suite calls dropdb/createdb/psql directly. The runner image does
-        # ship a client, but which major version is an image detail that has
-        # changed before — installing it makes the dependency explicit.
+        # The suite calls dropdb/createdb/psql directly. The runner image ships
+        # a client, but which major version it carries is an image detail that
+        # can change, so installing it makes the dependency explicit.
         timeout-minutes: 5
         run: |
           EVIDENCE="$RUNNER_TEMP/apt-evidence"
@@ -142,7 +142,7 @@ jobs:
       - name: Run the suite
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-          # An intermittent shutdown segfault leaves no stack without this (issue 75).
+          # An intermittent shutdown segfault leaves no stack without this.
           PYTHONFAULTHANDLER: "1"
         run: python -m pytest -v -ra
 
@@ -334,7 +334,7 @@ jobs:
         # the automated ratchet (ratchet-push.yml) raises it on green master
         # pushes. Never lower it to make a red build green, and never widen
         # the source list to let new code in under a floor it did not earn:
-        # docs_hub_cli reaches 98.4% on its own before it was added here.
+        # docs_hub_cli joined the list already at 98.4% on its own.
         # An assignment's exit status is its command substitution's, so a
         # corrupt thresholds file fails the step instead of gating on "".
         run: |

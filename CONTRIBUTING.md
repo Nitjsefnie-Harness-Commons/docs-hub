@@ -10,7 +10,7 @@ most valuable reports you can send.
 
 You may use an LLM or a coding agent to write your contribution. There is
 no penalty, no separate review queue, and no expectation that you rewrite
-its output by hand. Much of this repo was built that way — and the primary
+its output by hand. Much of this repo is written that way — and the primary
 API client is itself an agent.
 
 Two conditions, and they are about honesty rather than provenance:
@@ -288,8 +288,8 @@ whether or not the measurement succeeded.
 `out/measurement.json` is then a head measurement taken the way the job
 takes it. Counts are expected to agree with a CI measurement of the same
 commit only inside this same pinned image. The one spread measured is
-between two same-code, same-toolchain GitHub-hosted runs, taken before the
-job moved into this image (at most 0.06%); how closely a run on another
+between two same-code, same-toolchain GitHub-hosted runs outside this
+image (at most 0.06%); how closely a run on another
 host agrees with CI is not measured. Valgrind refuses
 to start under Docker's near-unlimited open-file limit, hence `--ulimit`. A
 digest bump of that image is a toolchain change like any other, and it
@@ -307,7 +307,7 @@ Python toolchain. `package.json` exists only to pin eslint and jsdom (the
 `app.js` test's DOM) — **it is not a build step**, and `public/` is still
 served byte-for-byte.
 
-`tests/test_cli.py` no longer skips anywhere: the client lives in this
+`tests/test_cli.py` skips nowhere: the client lives in this
 repository as `docs_hub_cli/` and the file drives it as
 `python -m docs_hub_cli.cli`. Its end-to-end tests run in a subprocess and
 so measure no coverage — the in-process cover for the client, including the

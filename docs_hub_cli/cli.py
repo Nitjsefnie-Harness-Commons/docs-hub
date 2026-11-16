@@ -23,9 +23,9 @@ from html.parser import HTMLParser
 from ._settings import setting
 
 # The hub host is deployment identity, not a property of this CLI, so it lives
-# in the `env` block of ~/.agent-bundle/settings.json. DOCS_HUB_URL was already the
-# documented override; this makes the same key the SOURCE rather than an
-# exception to a literal baked into a script that ships to every machine.
+# in the `env` block of ~/.agent-bundle/settings.json. DOCS_HUB_URL is the
+# documented override, and that same key is the source: no literal is baked
+# into a script that ships to every machine.
 _DEFAULT_URL = setting("DOCS_HUB_URL", "")
 
 # Tags whose text content is layout/markup noise, not document prose.
@@ -117,9 +117,9 @@ def _base_url() -> str:
 
 
 def _api_key() -> str:
-    # env -> settings.json, via the shared reader. This used to be a private
-    # copy of that fallback living here; one reader means one precedence order
-    # for every deployment value, and no second place to fix when it changes.
+    # env -> settings.json, via the shared reader. One reader means one
+    # precedence order for every deployment value, and no second place to fix
+    # when it changes.
     key = setting("DOCS_HUB_API_KEY", "")
     if not key:
         print("ERROR: DOCS_HUB_API_KEY not set (env or ~/.agent-bundle/settings.json)",
