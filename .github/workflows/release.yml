@@ -105,9 +105,9 @@ jobs:
 
       - name: Install the Postgres client
         id: apt
-        # The suite calls dropdb/createdb/psql directly. The runner image does
-        # ship a client, but which major version is an image detail that has
-        # changed before — installing it makes the dependency explicit.
+        # The suite calls dropdb/createdb/psql directly. The runner image ships
+        # a client, but which major version it carries is an image detail that
+        # can change, so installing it makes the dependency explicit.
         timeout-minutes: 5
         run: |
           EVIDENCE="$RUNNER_TEMP/apt-evidence"

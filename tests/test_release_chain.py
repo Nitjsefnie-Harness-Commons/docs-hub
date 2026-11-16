@@ -39,7 +39,7 @@ def _assert_minimal_writer(job: dict[str, Any]) -> None:
 
 
 def test_every_checkout_disables_persisted_credentials():
-    # Guard issue #63's boundary: no job leaves the Actions token in .git/config.
+    # Guard the boundary: no job leaves the Actions token in .git/config.
     checkouts = [
         (path.name, job_name, step)
         for path in sorted((_REPO / ".github/workflows").glob("*"))
@@ -162,8 +162,8 @@ def test_only_github_actions_updates_name_a_directory_under_dot_github():
 def test_dependabot_docker_ignore_uses_update_types():
     # Dependabot's docker ecosystem rejects `versions` in an ignore condition
     # (invalid version requirements there); the semantic-versioning levels go
-    # in `update-types`, and the ruling pins exactly the major level for
-    # postgres — any other list would silently change which updates are suppressed.
+    # in `update-types`, and exactly the major level is pinned for postgres —
+    # any other list would silently change which updates are suppressed.
     updates = yaml.safe_load(
         (_REPO / ".github/dependabot.yml").read_text(encoding="utf-8"))["updates"]
     docker = next(entry for entry in updates if entry["package-ecosystem"] == "docker")

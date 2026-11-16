@@ -6,8 +6,7 @@ Two pools, never joined:
 
 Both pools check a connection's liveness before handing it out. Without that,
 a Postgres restart leaves every idle pooled connection dead and the next
-request raises OperationalError instead of reconnecting — publishes returned
-HTTP 500 for hours after the 2026-08-06 restart.
+request raises OperationalError instead of reconnecting.
 """
 from __future__ import annotations
 

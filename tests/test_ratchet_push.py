@@ -95,9 +95,9 @@ def test_the_push_never_cancels_a_run_mid_push() -> None:
 
 
 def test_the_listing_step_sets_only_the_prefixed_run_id_variable() -> None:
-    # Issue #92: workflow-set variables carry the DOCS_HUB_ prefix. The
-    # old name is never set; the script below still reads it as a
-    # fallback so anything still exporting it keeps working.
+    # Workflow-set variables carry the DOCS_HUB_ prefix. The old name is never
+    # set; the script below still reads it as a fallback so anything still
+    # exporting it keeps working.
     env = _step("List the triggering run's artifacts")["env"]
     assert "DOCS_HUB_RUN_ID" in env
     assert "RUN_ID" not in env

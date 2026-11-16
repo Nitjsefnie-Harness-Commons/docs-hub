@@ -165,8 +165,8 @@ def test_the_staging_step_runs_only_on_green_master_pushes() -> None:
 
 
 def test_no_run_step_carries_a_floor_literal() -> None:
-    # The floor is only ever read from the recorded file; a literal here is
-    # the old gate's interim value sneaking back in.
+    # The floor is only ever read from the recorded file, never from a literal
+    # here: a hard-coded floor would bypass the recorded one.
     text = (_REPO / ".github/workflows/tests.yml").read_text(encoding="utf-8")
     assert re.search(r"--fail-under=\d", text) is None
 

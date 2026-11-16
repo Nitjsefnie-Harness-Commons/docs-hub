@@ -1,9 +1,8 @@
 """End-to-end: the real CLI, as a subprocess, against a real server.
 
-The client lives in this repository now (`docs_hub_cli/`), so this file drives
-it directly instead of the copy the fleet bundle installs. It runs everywhere
-the rest of the suite runs -- a test that only passed on a machine with the
-bundle installed was the thing this replaced.
+The client lives in this repository (`docs_hub_cli/`), so this file drives
+it directly instead of the copy the fleet bundle installs. It runs wherever
+the rest of the suite runs, without the bundle installed.
 
 The CLI is invoked as `python -m docs_hub_cli.cli`, not through the `docs-hub`
 console script: the console script only exists once the wheel is installed, and

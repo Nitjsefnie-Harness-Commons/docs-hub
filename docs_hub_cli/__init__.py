@@ -6,7 +6,7 @@ repository is what lets a single test run prove both halves still agree.
 
 The fleet setup bundle installs this as a wheel and keeps a thin wrapper at
 `~/.agent-bundle/scripts/docs_hub.py`, so the documented absolute-path
-invocation keeps working unchanged.
+invocation works.
 """
 
 __version__ = "0.3.3.dev0"

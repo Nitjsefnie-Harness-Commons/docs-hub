@@ -26,10 +26,10 @@ def test_parse_ttl_rejects_bad_input(text):
 
 
 def test_parse_ttl_rejects_a_long_trailing_space_run_without_backtracking():
-    # A digit followed by a huge run of spaces is the shape CodeQL flagged:
-    # the old pattern's two ambiguous `\s*` runs backtracked quadratically
-    # over it, and the value arrives straight from a publish form field. The
-    # length guard rejects it before the regex ever sees it.
+    # A digit followed by a huge run of spaces is the shape that backtracks
+    # quadratically in a regex with two ambiguous whitespace runs, and the value
+    # arrives straight from a publish form field. The length guard rejects it
+    # before the regex ever sees it.
     with pytest.raises(ValueError, match="^invalid ttl"):
         parse_ttl("9" + " " * 20000)
 
