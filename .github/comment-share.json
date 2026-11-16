@@ -8,8 +8,8 @@
     1944
   ],
   ".github/workflows/actionlint.yml": [
-    2078,
-    3431
+    2058,
+    3411
   ],
   ".github/workflows/audit.yml": [
     2851,
@@ -64,8 +64,8 @@
     1113
   ],
   "backend/db.py": [
-    879,
-    2878
+    819,
+    2818
   ],
   "backend/docs_repo.py": [
     3863,
@@ -104,16 +104,16 @@
     489
   ],
   "docs_hub_cli/__init__.py": [
-    391,
-    415
+    375,
+    399
   ],
   "docs_hub_cli/_settings.py": [
     2002,
     2881
   ],
   "docs_hub_cli/cli.py": [
-    3348,
-    12657
+    3269,
+    12578
   ],
   "eslint.config.mjs": [
     885,
@@ -140,8 +140,8 @@
     1492
   ],
   "tests/test_cli.py": [
-    2093,
-    5826
+    2038,
+    5771
   ],
   "tests/test_cli_filters.py": [
     268,
@@ -156,11 +156,11 @@
     6995
   ],
   "tests/test_reaper.py": [
-    2008,
-    12790
+    2003,
+    12785
   ],
   "tests/test_ttl.py": [
-    565,
-    1373
+    550,
+    1358
   ]
 }
