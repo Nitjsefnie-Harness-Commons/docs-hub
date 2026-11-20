@@ -10,7 +10,8 @@ import yaml
 _REPO = Path(__file__).resolve().parent.parent
 _CALLEES = ("tests", "lint", "types", "eslint", "audit", "actionlint", "codeql", "secrets",
             "speed", "size-baseline")
-_LEGS = (*_CALLEES, "conflict-markers", "base-freshness")
+# base-freshness stays last: _LEGS[:-1] are the legs with no designed skip.
+_LEGS = (*_CALLEES, "report", "conflict-markers", "base-freshness")
 _SCHEDULED = {"audit", "codeql", "secrets"}
 # The size-ratchet install block keeps its own pull_request and push triggers.
 _STANDALONE = "size-baseline"
@@ -128,7 +129,7 @@ def _assert_read_only_permissions(name: str, workflow: dict[str, Any]) -> None:
             assert permissions in (None, "read-all")
 
 
-def test_aggregate_always_folds_exactly_twelve_legs_without_checkout() -> None:
+def test_aggregate_always_folds_exactly_its_legs_without_checkout() -> None:
     job = _workflow()["jobs"]["aggregate"]
     assert set(job["needs"]) == set(_LEGS)
     assert len(job["needs"]) == len(_LEGS)
@@ -192,7 +193,7 @@ def _success_env() -> dict[str, str]:
     return dict.fromkeys(_fold_step()["env"], "success")
 
 
-def test_fold_accepts_all_twelve_successes(tmp_path: Path) -> None:
+def test_fold_accepts_every_leg_succeeding(tmp_path: Path) -> None:
     result = _run_fold(tmp_path, _success_env())
     assert result.returncode == 0, result.stdout + result.stderr
 
