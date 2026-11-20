@@ -83,8 +83,9 @@ requests and `master` pushes run it too; of its callees only `size-baseline`
 also has its own `pull_request` trigger and a `push` trigger on `main` and
 `master`.
 It folds ten gates: `tests` (Postgres 16 and 17, plus the `portable`
-tests on Windows, macOS and Linux with 3.14 and 3.15, plus the recorded
-coverage floor, plus the `public/app.js` test in jsdom),
+tests on Windows, macOS and Linux with 3.14 and 3.15, both through
+`Nitjsefnie-Actions/test-ratchet` with coverage measured, plus the
+`public/app.js` test in jsdom),
 `lint` (pycodestyle, pylint), `types` (pyright over `backend/`), `eslint`
 (over `public/` and the JavaScript tests in `tests/`), `audit`
 (pip-audit, npm audit), `codeql`, `size-baseline` (the tracked-file
@@ -97,7 +98,8 @@ same job with its own lock (that verdict decides every run but a pull
 request's; a pull request whose toolchain differs from its own budget's
 fails until it carries its rebaseline), `scripts/ci/speed.py`; counts
 taken outside that image do not compare with CI's). Its `aggregate` job
-folds every leg and fails closed, with `conflict-markers` on every pull
+folds every leg and fails closed, with test-ratchet's `report` (the
+coverage floor), `conflict-markers` on every pull
 request and every push to `master`, and PR-only `base-freshness`, which fails
 when `master` holds a gate-input commit the head lacks, naming the commit and
 file.
@@ -106,17 +108,14 @@ Run the applicable local checks before pushing rather than using CI as
 the first check.
 
 The coverage floor is recorded, not fixed: `.github/ci-thresholds.json`
-holds a measurement and a floor exactly 1.5 points below it, and the
-`coverage` job fails under that floor. After a green `ci gate` run for a
-push to `master`, `ratchet push` commits a raise when that run measured
-above the recorded measurement and `master` has not moved since; nothing
-lowers it automatically. On a pull request the
-coverage of changed lines is reported in the job summary with no
-threshold of its own. The speed arm uses `tighten` after a green `master`
-push to lower each workload in `.github/speed-budget.json` that fell by
-more than half of `tolerance_pct` (a percentage of that workload's
-budget), only with a matching toolchain, no
-failed workloads and `master` still at the measured commit; it keeps the
+holds a measurement and a floor, and the `report` job in `ci-gate.yml`
+fails below the floor at the pull request's base, comments the totals and
+diff coverage on the pull request, and on a `master` push whose artifacts
+all passed commits a raised record and `.github/test-times.json`;
+nothing lowers it automatically. `ratchet push` uses `tighten` after a
+green `master` push to lower each workload in `.github/speed-budget.json`
+that fell by more than half of `tolerance_pct` (a percentage of that
+workload's budget), only with a matching toolchain, no failed workloads and `master` still at the measured commit; it keeps the
 toolchain and tolerance. Raising a workload count or tolerance needs a
 matching Budget-Raise declaration per raised key on a commit touching
 only the budget file (CONTRIBUTING.md gives the format); raises are never

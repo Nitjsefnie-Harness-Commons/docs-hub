@@ -2,11 +2,16 @@ name: tests
 
 # conftest.py drops and recreates a real `docs_test` database from
 # backend/schema.sql and runs every test not marked `portable` against it. So
-# the suites and coverage jobs need a Postgres, and the matrix is over POSTGRES
-# versions rather than platforms: the service only runs on Linux behind nginx,
-# and the deployed Postgres (17) is not the only one it should work on. The
-# portable job runs the client's database-free tests on Windows, macOS and
-# Linux.
+# the suites job needs a Postgres, and its matrix is over POSTGRES versions
+# rather than platforms: the service only runs on Linux behind nginx, and the
+# deployed Postgres (17) is not the only one it should work on. The portable
+# job runs the client's database-free tests on Windows, macOS and Linux.
+#
+# Both run through Nitjsefnie-Actions/test-ratchet: `plan` splits the files
+# into shards, `run` runs one shard with coverage measured and uploads it, and
+# the `report` job in ci-gate.yml merges the 17 cell's shards, gates its floor
+# in .github/ci-thresholds.json, comments on the pull request and, on a master
+# push, commits the raised records.
 #
 # tests/test_cli.py runs wherever the whole suite does: the agent-facing CLI
 # lives in this repository as docs_hub_cli/ and is driven as
@@ -57,23 +62,37 @@ jobs:
             echo "image17=$image17"
           } >> "$GITHUB_OUTPUT"
 
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
+        uses: Nitjsefnie-Actions/test-ratchet/plan@c87f555f727ead2c7c4db57d4467830d18cd94b7 # v1.2.0
+        with:
+          tests: tests/**/test_*.py
+          times: .github/test-times.json
+          shards: 2
+
   suites:
-    needs: images
-    name: suites (${{ matrix.python }}, ${{ matrix.postgres }})
+    needs: [images, plan]
+    name: suites (${{ matrix.python }}, ${{ matrix.postgres }}, ${{ matrix.shard }})
     strategy:
       fail-fast: false
       matrix:
         # 3.15 is the floor CONTRIBUTING.md states and what the deployment
-        # runs. Each explicit entry pairs that Python with a Postgres major;
-        # the majors are quoted so the service image ternary compares strings.
-        # The image is not stated here: the images job reads it from the
-        # digest-pinned Dockerfiles under docker/postgres/<major>/, which
-        # Dependabot's docker ecosystem updates weekly.
-        include:
-          - postgres: "16"
-            python: "3.15"
-          - postgres: "17"
-            python: "3.15"
+        # runs, and the majors are quoted so the service image ternary
+        # compares strings. The image is not stated here: the images job
+        # reads it from the digest-pinned Dockerfiles under
+        # docker/postgres/<major>/, which Dependabot's docker ecosystem
+        # updates weekly.
+        python: ["3.15"]
+        postgres: ["16", "17"]
+        shard: ${{ fromJSON(needs.plan.outputs.matrix).shard }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -133,7 +152,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: apt-evidence-suites-${{ matrix.python }}-${{ matrix.postgres }}
+          name: apt-evidence-suites-${{ matrix.python }}-${{ matrix.postgres }}-${{ strategy.job-index }}
           path: ${{ steps.apt.outputs.evidence }}
 
       - name: Install dependencies
@@ -144,7 +163,18 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
           # An intermittent shutdown segfault leaves no stack without this.
           PYTHONFAULTHANDLER: "1"
-        run: python -m pytest -v -ra
+        uses: Nitjsefnie-Actions/test-ratchet/run@c87f555f727ead2c7c4db57d4467830d18cd94b7 # v1.2.0
+        with:
+          runner: pytest
+          tests: tests/**/test_*.py
+          times: .github/test-times.json
+          # The postgres major is in the cell: the two legs are distinct cells.
+          cell: ubuntu-latest-py${{ matrix.python }}-pg${{ matrix.postgres }}
+          shard: ${{ matrix.shard }}
+          source: backend,docs_hub_cli
+          # One worker: conftest.py's session fixture recreates the one
+          # shared docs_test database, which parallel workers would race.
+          args: -n 0 -v -ra
 
   portable:
     name: portable (${{ matrix.os }}, ${{ matrix.python }})
@@ -173,173 +203,15 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Run the portable tests
-        # No test selected exits 5, so an emptied marker fails the job.
-        run: python -m pytest -m portable -v -ra
-
-  coverage:
-    # A JOB of its own rather than steps in the matrix: coverage of the same
-    # code against two Postgres majors reports the same number twice. One run,
-    # on the version the deployment actually uses.
-    needs: images
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    services:
-      postgres:
-        # Same digest-pinned Dockerfile as the matrix's 17 leg, updated by
-        # Dependabot's docker ecosystem.
-        image: ${{ needs.images.outputs.image17 }} # zizmor: ignore[unpinned-images] — resolved at runtime from the digest-pinned Dockerfile this workflow's images job reads
-        env:
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-        ports:
-          - 5432:5432
-
-    env:
-      PGHOST: localhost
-      PGPORT: "5432"
-      PGUSER: postgres
-      PGPASSWORD: postgres
-
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # Unsharded: no test selected exits 5, so an emptied marker fails the job.
+        uses: Nitjsefnie-Actions/test-ratchet/run@c87f555f727ead2c7c4db57d4467830d18cd94b7 # v1.2.0
         with:
-          # The default depth-1 clone gives the changed-lines report no merge
-          # base between origin/master and this head, so diff-cover's
-          # three-dot diff dies before it can compare anything.
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.15"
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-test.txt
-
-      - name: Install the Postgres client
-        id: apt
-        timeout-minutes: 5
-        run: |
-          EVIDENCE="$RUNNER_TEMP/apt-evidence"
-          echo "evidence=$EVIDENCE" >> "$GITHUB_OUTPUT"
-          sudo python3 scripts/ci/bounded_apt.py --budget 90 --evidence "$EVIDENCE/update" -- apt-get update --error-on=any -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
-          sudo python3 scripts/ci/bounded_apt.py --budget 180 --evidence "$EVIDENCE/install" -- apt-get install -o Acquire::Retries=0 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -y --no-install-recommends postgresql-client
-
-      - name: Upload apt evidence
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: apt-evidence-coverage
-          path: ${{ steps.apt.outputs.evidence }}
-
-      - name: Install dependencies and the coverage toolchain
-        run: |
-          python -m pip install -r requirements.txt
-          python -m pip install --require-hashes -r requirements-test.txt
-
-      - name: Measure
-        id: measure
-        env:
-          PYTHONDONTWRITEBYTECODE: "1"
-          PYTHONFAULTHANDLER: "1"
-        # A FAILING test does not fail this step: the suites job above owns
-        # that verdict, and a failing test still executed the lines it reached.
-        # What must fail is pytest not running at all — a collection error or
-        # an unreachable database would otherwise be reported as a coverage
-        # number for a program that never ran. Exit code 5 (no tests
-        # collected) and anything above 2 is that case; 1 is "tests failed".
-        run: |
-          set +e
-          python -m coverage run --source=backend,docs_hub_cli -m pytest -q -ra
-          rc=$?
-          set -e
-          if [ "$rc" -gt 1 ]; then
-            echo "pytest exited $rc (not a test failure) — refusing to report" >&2
-            echo "a coverage number for a run that did not happen." >&2
-            exit "$rc"
-          fi
-
-      - name: Coverage summary
-        # Renders whether or not the gate below passes: a coverage regression
-        # is only actionable if you can see WHICH file lost lines, and
-        # re-reading a scrolled CI log to find that is exactly the friction
-        # that gets a gate disabled.
-        if: ${{ !cancelled() && steps.measure.conclusion == 'success' }}
-        run: |
-          {
-            echo '### Coverage'
-            echo
-            python -m coverage report --format=markdown --precision=1
-          } >> "$GITHUB_STEP_SUMMARY"
-          python -m coverage xml -o coverage.xml
-
-      - name: Upload coverage.xml
-        if: ${{ !cancelled() && steps.measure.conclusion == 'success' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-xml
-          path: coverage.xml
-          if-no-files-found: error
-
-      - name: Coverage of changed lines (informational)
-        if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'pull_request' }}
-        # Information only: the report goes to the job summary, with no
-        # --fail-under. A broken tool run shows this step as failed, but
-        # continue-on-error stops that failing the job, and so aggregate.
-        continue-on-error: true
-        run: |
-          git fetch --no-tags origin master
-          pip install --require-hashes -r requirements-diff-cover.txt
-          {
-            echo '### Coverage of changed lines (informational)'
-            echo
-            diff-cover coverage.xml --compare-branch=origin/master
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Stage the coverage raise artifact
-        if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-        # The push workflow (ratchet-push.yml) consumes this artifact: the
-        # 1-dp overall line coverage and the commit it was measured at.
-        run: |
-          mkdir coverage-raise
-          python3 - <<'PY'
-          import os
-          import xml.etree.ElementTree as ET
-          from pathlib import Path
-
-          out = Path("coverage-raise")
-          rate = ET.parse("coverage.xml").getroot().attrib["line-rate"]
-          (out / "measured.txt").write_text(f"{100 * float(rate):.1f}\n", encoding="utf-8")
-          (out / "base.txt").write_text(os.environ["GITHUB_SHA"] + "\n", encoding="utf-8")
-          PY
-
-      - name: Upload the coverage raise artifact
-        if: ${{ !cancelled() && steps.measure.conclusion == 'success' && github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-raise
-          path: coverage-raise
-          if-no-files-found: error
-
-      - name: Coverage gate
-        if: ${{ !cancelled() && steps.measure.conclusion == 'success' }}
-        # A RATCHET, not a target. The floor is read from the recorded file
-        # (.github/ci-thresholds.json) through scripts/ci/thresholds.py, and
-        # the automated ratchet (ratchet-push.yml) raises it on green master
-        # pushes. Never lower it to make a red build green, and never widen
-        # the source list to let new code in under a floor it did not earn:
-        # docs_hub_cli joined the list already at 98.4% on its own.
-        # An assignment's exit status is its command substitution's, so a
-        # corrupt thresholds file fails the step instead of gating on "".
-        run: |
-          floor="$(python3 scripts/ci/thresholds.py --coverage-floor python)"
-          python -m coverage report --fail-under="$floor" --precision=1
+          runner: pytest
+          tests: tests/**/test_*.py
+          times: .github/test-times.json
+          cell: ${{ matrix.os }}-py${{ matrix.python }}-portable
+          source: backend,docs_hub_cli
+          args: -n 0 -m portable -v -ra
 
   app-js:
     runs-on: ubuntu-latest

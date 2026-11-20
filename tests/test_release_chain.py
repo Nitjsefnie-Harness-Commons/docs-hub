@@ -112,7 +112,7 @@ def test_postgres_services_need_images_and_read_its_outputs():
     # The service image is the images job's output expression, never a literal:
     # a digest stated anywhere else would be a second copy Dependabot's docker
     # ecosystem cannot update.
-    for filename, job_names in (("tests.yml", ("suites", "coverage")),
+    for filename, job_names in (("tests.yml", ("suites",)),
                                 ("release.yml", ("build",))):
         jobs = _workflow(filename)["jobs"]
         for job_name in job_names:

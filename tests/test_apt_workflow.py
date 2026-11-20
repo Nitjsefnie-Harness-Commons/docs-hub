@@ -1,4 +1,5 @@
 """Check the bounds on apt-get steps in every workflow."""
+from itertools import product
 from pathlib import Path
 import re
 import shlex
@@ -111,12 +112,22 @@ def test_artifact_names_are_unique_across_the_ci_gate_run() -> None:
             if not uploads:
                 continue
             matrix = job.get("strategy", {}).get("matrix", {})
-            assert not matrix or set(matrix) == {"include"}, matrix
-            for row in matrix.get("include", [{}]):
+            crossed = {key: value for key, value in matrix.items()
+                       if key != "include" and isinstance(value, list)}
+            # An axis read from another job's output (plan's shards) is unknown
+            # here: the leg's index, unique within the job, must name it apart.
+            dynamic = set(matrix) - set(crossed) - {"include"}
+            assert not (crossed and "include" in matrix), matrix
+            rows = ([dict(zip(crossed, combo)) for combo in product(*crossed.values())]
+                    if crossed else matrix.get("include", [{}]))
+            for row in rows:
                 for step in uploads:
                     name = step["with"]["name"]
                     for key, value in row.items():
                         name = name.replace(f"${{{{ matrix.{key} }}}}", str(value))
+                    if dynamic:
+                        assert "${{ strategy.job-index }}" in name, name
+                        name = name.replace("${{ strategy.job-index }}", "<leg>")
                     assert "${{" not in name, name
                     names.append(name)
     assert names and len(names) == len(set(names)), names
