@@ -116,7 +116,7 @@ The `type` is one of `build`, `chore`, `ci`, `docs`, `feat`, `fix`, `perf`,
 `refactor`, `revert`, `style` or `test`; the `(scope)` and the `!` (a
 breaking change) are optional, and this repository requires no particular
 scopes. Messages an automation writes follow it too: the `ratchet push`
-workflow commits as `chore(ratchet): …`, and Dependabot's `commit-message`
+workflow and test-ratchet's `report` job commit as `chore(ratchet): …`, and Dependabot's `commit-message`
 prefixes are `build` for package ecosystems and `ci` for GitHub Actions and
 Docker images, each with the scope included.
 
@@ -132,36 +132,40 @@ commands are listed below; CodeQL runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
-| `tests` | the suite against Postgres 16 and 17, plus the tests marked `portable` (no database) on Windows, macOS and Linux with Python 3.14 and 3.15, plus a coverage job gated on the floor recorded in `.github/ci-thresholds.json` (below), plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom and reports `app.js` line coverage with no threshold | `.venv/bin/pytest -v` / `.venv/bin/pytest -m portable -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
+| `tests` | the suite against Postgres 16 and 17 in two shards each, plus the tests marked `portable` (no database) on Windows, macOS and Linux with Python 3.14 and 3.15, all through `Nitjsefnie-Actions/test-ratchet` with the coverage of `backend` and `docs_hub_cli` measured in every cell, plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom and reports `app.js` line coverage with no threshold | `.venv/bin/pytest -v` / `.venv/bin/pytest -m portable -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
 | `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
 | `types` | pyright over `backend/` | `pyright` |
 | `eslint` | eslint over `public/` and the JavaScript tests in `tests/` | `npm ci && npx eslint public tests` |
-| `audit` | pip-audit over each of the eight requirements manifests separately (a joint `--require-hashes` run fails), plus `npm audit`; also on a daily cron | `pip-audit -r requirements.txt` and the same again for each of the other seven: `requirements-dev.txt`, `requirements-test.txt`, `requirements-diff-cover.txt`, `requirements-audit.txt`, `requirements-zizmor.txt`, `requirements-build.txt`, `requirements-speed.txt` |
+| `audit` | pip-audit over each of the six requirements manifests separately (a joint `--require-hashes` run fails), plus `npm audit`; also on a daily cron | `pip-audit -r requirements.txt` and the same again for each of the other five: `requirements-dev.txt`, `requirements-audit.txt`, `requirements-zizmor.txt`, `requirements-build.txt`, `requirements-speed.txt` |
 | `codeql` | security analysis of the Python, JavaScript and Actions (the workflows language), weekly cron | — (GitHub-hosted) |
 | `size-baseline` | the tracked-file line-count ratchet over `.github/size-baseline.json` | — (GitHub-hosted action) |
 | `actionlint` | actionlint + zizmor over the workflows themselves | `actionlint .github/workflows/*.yml && zizmor .github/workflows/` |
 | `secrets` | gitleaks over the full history and working tree; also on a daily cron | `gitleaks git --no-banner --verbose --redact=100 . && gitleaks dir --no-banner --verbose --redact=100 .` |
 | `speed` | inside the digest-pinned image `docker/speed/Dockerfile` names, this head's workload instruction counts under `valgrind --tool=cachegrind --cache-sim=no` against `.github/speed-budget.json`, with a recorded toolchain (Python, valgrind, that image, the `requirements-speed.txt` hash); fails on a missing declared workload, a measured-but-undeclared workload, or a count over `budget * (1 + tolerance_pct / 100)`; on a toolchain mismatch the same job also measures a base commit paired with the checked-out one (on a pull request, the base tip its merge commit was built on; on a push, the push's `before` when that is a full SHA of an ancestor, else, for an all-zero `before` (a new branch) or one that is not a fetched ancestor (a rewritten history), the checkout's first parent; on any other event, the checkout's first parent) with a venv built from that commit's own `requirements-speed.txt`, then fails on a declared workload missing from either measurement, a workload either measured but the budget does not declare, or a head count over `base * (1 + tolerance_pct / 100)`; a pull request also fails whenever its measured toolchain differs from the budget's on any field, so its paired verdict is reported but a toolchain change must carry its rebaseline; the job also fails when the event name is missing, the history is shallow, a pull request's base is missing, unknown or not an ancestor of the checkout, a push's `before` is missing or not a full lowercase SHA, the rule falls back to the checkout's first parent and the checkout has none (a commit without a parent has nothing to pair with), the base measurement names no commit, or the base and head toolchains differ on any field but `lock_sha256` | `.venv/bin/python scripts/ci/speed.py measure --database docs_speed --out measurement.json && .venv/bin/python scripts/ci/speed.py check --measurements measurement.json --budget .github/speed-budget.json`, with valgrind and a Postgres you can `createdb` on; only inside the same image do the counts compare with CI's (the docker command is below the speed paragraphs); `docs_speed` is a disposable database, reset by `measure` |
 
-The `aggregate` job folds every leg and fails closed, with two local legs
-of its own: `conflict-markers` on every pull request and every push to
-`master`, and `base-freshness` on PRs, which fails when `master` holds a
+The `aggregate` job folds every leg and fails closed, with three local legs
+of its own: `report` (below), `conflict-markers` on every pull request and
+every push to `master`, and `base-freshness` on PRs, which fails when `master` holds a
 gate-input commit the head lacks, naming the commit and file.
 
 The coverage floor is a ratchet, not a fixed number.
-`.github/ci-thresholds.json` records a measurement and a floor exactly 1.5
-points below it; the `coverage` job reads the floor through
-`python3 scripts/ci/thresholds.py --coverage-floor python` and fails under
-it. After a green `ci gate` run for a push to `master`, the `ratchet push`
-workflow (`.github/workflows/ratchet-push.yml`) commits a raise to
-`master` when that run measured above the recorded measurement and
-`master` has not moved since; nothing lowers the floor
-automatically, and lowering it by hand to turn a red build green is not a
-fix. On a pull request the coverage of changed lines (diff-cover against
-`origin/master`) is reported in the job summary with no threshold of its
-own.
+`.github/ci-thresholds.json` records a measurement and a floor;
+test-ratchet's `report` job in `ci-gate.yml` merges the Postgres 17 cell's
+shards and fails below the floor committed at the pull request's base. On a
+`pull_request` it writes one comment on the pull request with each
+language's total, floor and diff coverage (a fork's pull request gets it
+from `.github/workflows/test-ratchet-comment.yml`). On a push to `master`
+whose gate passed and whose artifacts all passed and cover every shard of
+every cell, it raises a record when
+the figure exceeds the recorded `measured` by more than 1.5 points, to that
+figure with the floor 1.5 below it, rewrites `.github/test-times.json` when
+the test times moved, and commits both as
+`chore(ratchet): update the test-ratchet records`. Nothing lowers the
+floor automatically, and lowering it by hand to turn a red build green is
+not a fix.
 
-The speed budget ratchets down in the same workflow: after a green
+The speed budget ratchets down in the `ratchet push` workflow
+(`.github/workflows/ratchet-push.yml`): after a green
 `master` push, `tighten` uses the `speed-measurement` artifact to lower
 each workload whose count fell below its budget by more than half of
 `tolerance_pct` (a percentage of that workload's budget) to its measured
@@ -302,7 +306,7 @@ on the exact `libc6` version, so once the new image's `libc6` differs from
 the pinned one, such a pull request's install step fails until a
 maintainer commit moves the snapshot timestamp and both pins.
 
-`pip install -r requirements-dev.txt -r requirements-test.txt` gets the
+`pip install -r requirements-dev.txt` gets the
 Python toolchain. `package.json` exists only to pin eslint and jsdom (the
 `app.js` test's DOM) — **it is not a build step**, and `public/` is still
 served byte-for-byte.

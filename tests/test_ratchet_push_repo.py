@@ -32,7 +32,7 @@ _LIST_CASES = [
 
 
 @pytest.mark.parametrize("name", ["List the triggering run's artifacts",
-                                  "Push the raise commit to master"])
+                                  "Push the tighten commit to master"])
 def test_each_step_sets_only_the_prefixed_repository_variable(name: str) -> None:
     env = f._step(name)["env"]
     assert env["DOCS_HUB_REPO"] == "${{ github.repository }}"
@@ -52,8 +52,8 @@ def test_the_repository_reaches_the_artifacts_url(
 def test_the_repository_reaches_the_push_remote(
         tmp_path: Path, repo_env: dict[str, str]) -> None:
     origin, seed = f._seed_remote(tmp_path)
-    f._raise_data(tmp_path, seed, "97.4")
-    result = f._run_push_step(tmp_path, "true", "false", repo_env)
+    f._measurement(tmp_path, seed)
+    result = f._run_push_step(tmp_path, repo_env)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f._git(origin, "log", "--format=%s", "refs/heads/master").splitlines() == [
-        "chore(ratchet): Raise the recorded coverage calibration (automated)", "seed"]
+        "chore(ratchet): Tighten the speed budget (automated)", "seed"]

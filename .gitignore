@@ -19,8 +19,6 @@
 !pyproject.toml
 !requirements.txt
 !requirements-dev.txt
-!requirements-test.txt
-!requirements-diff-cover.txt
 !requirements-audit.txt
 !requirements-zizmor.txt
 !requirements-build.txt
@@ -41,6 +39,8 @@
 !.github/dependabot.yml
 !.github/comment-share.json
 !.github/ci-thresholds.json
+# test-ratchet's per-file test times, written by its report on master.
+!.github/test-times.json
 !.github/size-baseline.json
 !.github/speed-budget.json
 !.github/ISSUE_TEMPLATE/

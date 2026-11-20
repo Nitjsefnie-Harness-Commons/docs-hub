@@ -97,7 +97,7 @@ def test_print_paths_covers_this_repos_named_gate_inputs(gate: ModuleType) -> No
     workflows = set(_git(_REPO, "ls-files", ".github/workflows").splitlines())
     assert workflows <= paths
     assert {".pylintrc", "pyrightconfig.json", "requirements.txt", "requirements-dev.txt",
-            "requirements-test.txt", "requirements-audit.txt", "requirements-zizmor.txt",
+            "requirements-audit.txt", "requirements-zizmor.txt",
             "requirements-build.txt"} <= paths
     assert paths.intersection({"package.json", "package-lock.json"})
     assert not any("tarball" in path or path.endswith(".tar.gz") for path in paths)
