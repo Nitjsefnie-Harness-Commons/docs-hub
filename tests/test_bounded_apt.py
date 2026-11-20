@@ -128,6 +128,8 @@ def _limits(bounded: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bounded, "POLL_INTERVAL", 0.03, raising=False)
     monkeypatch.setattr(bounded, "KILL_GRACE", 0.12, raising=False)
     monkeypatch.setattr(bounded, "BACKOFF_INITIAL", 2.0, raising=False)
+    # A measured child carries coverage's memory and start-up cost into the caps.
+    monkeypatch.delenv("COVERAGE_PROCESS_CONFIG", raising=False)
 
 
 def _assert_gone(pid: int) -> None:
