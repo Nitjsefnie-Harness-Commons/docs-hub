@@ -233,27 +233,12 @@ jobs:
           npm ci
 
       - name: Run the app.js test
-        run: |
-          node --test --experimental-test-coverage \
-            --test-coverage-include=public/app.js \
-            --test-reporter=spec --test-reporter-destination=stdout \
-            --test-reporter=lcov --test-reporter-destination=lcov.info \
-            tests/app_js.test.mjs
-
-      - name: Coverage summary (informational)
-        if: ${{ !cancelled() && hashFiles('lcov.info') != '' }}
-        run: |
-          {
-            echo '### Coverage of public/app.js (informational)'
-            echo
-            awk -F: '/^LF:/ { found += $2 } /^LH:/ { hit += $2 }
-              END { printf "public/app.js: %d of %d lines (%.1f%%)\n", hit, found, found ? 100 * hit / found : 0 }' lcov.info
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Upload lcov.info
-        if: ${{ !cancelled() && hashFiles('lcov.info') != '' }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: Nitjsefnie-Actions/test-ratchet/run@474b984eea45d7029e8aaa659441e68174bad3d4 # v1.3.0
         with:
-          name: app-js-lcov
-          path: lcov.info
-          if-no-files-found: error
+          runner: node
+          tests: tests/app_js.test.mjs
+          times: .github/test-times.json
+          # The gated cell, so report gates app.js beside the Python suite.
+          cell: ubuntu-latest-py3.15-pg17
+          name: ubuntu-latest-py3.15-pg17-app-js
+          javascript: public/app.js

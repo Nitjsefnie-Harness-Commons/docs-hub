@@ -132,7 +132,7 @@ commands are listed below; CodeQL runs on GitHub:
 
 | Gate | What it runs | Locally |
 |---|---|---|
-| `tests` | the suite against Postgres 16 and 17 in two shards each, plus the tests marked `portable` (no database) on Windows, macOS and Linux with Python 3.14 and 3.15, all through `Nitjsefnie-Actions/test-ratchet` with the coverage of `backend` and `docs_hub_cli` measured in every cell, plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom and reports `app.js` line coverage with no threshold | `.venv/bin/pytest -v` / `.venv/bin/pytest -m portable -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
+| `tests` | the suite against Postgres 16 and 17 in two shards each, plus the tests marked `portable` (no database) on Windows, macOS and Linux with Python 3.14 and 3.15, all through `Nitjsefnie-Actions/test-ratchet` with the coverage of `backend` and `docs_hub_cli` measured in every cell, plus `tests/app_js.test.mjs`, which loads the real `public/index.html` and `public/app.js` in jsdom, run through the action's `node` runner in the gated `ubuntu-latest-py3.15-pg17` cell with the coverage of `public/app.js` measured | `.venv/bin/pytest -v` / `.venv/bin/pytest -m portable -v` / `npm ci && node --test --experimental-test-coverage --test-coverage-include=public/app.js tests/app_js.test.mjs` |
 | `lint` | pycodestyle, pylint | `git ls-files '*.py' \| xargs pycodestyle` / `... \| xargs pylint --rcfile=.pylintrc` |
 | `types` | pyright over `backend/` | `pyright` |
 | `eslint` | eslint over `public/` and the JavaScript tests in `tests/` | `npm ci && npx eslint public tests` |
@@ -151,7 +151,7 @@ gate-input commit the head lacks, naming the commit and file.
 The coverage floor is a ratchet, not a fixed number.
 `.github/ci-thresholds.json` records a measurement and a floor;
 test-ratchet's `report` job in `ci-gate.yml` merges the Postgres 17 cell's
-shards and fails below the floor committed at the pull request's base. On a
+shards and its `app.js` test and fails below the floor committed at the pull request's base. On a
 `pull_request` it writes one comment on the pull request with each
 language's total, floor and diff coverage (a fork's pull request gets it
 from `.github/workflows/test-ratchet-comment.yml`). On a push to `master`
