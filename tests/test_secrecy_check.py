@@ -67,10 +67,13 @@ def test_auth_database_name_prefers_prefix_and_accepts_legacy(tmp_path: Path, se
     ({"main/.env": "DOCS_HUB_DATABASE_URL_AUTH=\nDATABASE_URL_AUTH=postgresql:///legacy_fixture\n"},
      ["legacy_fixture"], ["the auth-DB name"]),
     ({"main/.env": "DOCS_HUB_DATABASE_URL_AUTH=postgresql:///main_auth_fixture\n",
+      "linked/.env": "DATABASE_URL_AUTH=postgresql:///own_auth_fixture\n",
       "linked/.secrecy-literals": "own_list_fixture\n"},
-     ["main_auth_fixture", "own_list_fixture"], ["the auth-DB name", "a listed literal"]),
-    ({"main/.secrecy-literals": "same_fixture\n", "linked/.secrecy-literals": "same_fixture\n"},
-     ["same_fixture"], ["a listed literal"]),
+     ["main_auth_fixture", "own_auth_fixture", "own_list_fixture"],
+     ["the auth-DB name", "the auth-DB name", "a listed literal"]),
+    ({"main/.secrecy-literals": "same_fixture\nmain_only_fixture\n",
+      "linked/.secrecy-literals": "same_fixture\n"},
+     ["same_fixture", "main_only_fixture"], ["a listed literal"] * 2),
 ])
 def test_a_linked_worktree_checks_the_main_worktrees_and_its_own_literals(
         tmp_path: Path, files: dict[str, str], literals: list[str], labels: list[str]):
