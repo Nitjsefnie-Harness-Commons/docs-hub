@@ -62,30 +62,31 @@ def test_auth_database_name_prefers_prefix_and_accepts_legacy(tmp_path: Path, se
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-@pytest.mark.parametrize("files,literals,label", [
-    ({"main/.secrecy-literals": "main_list_fixture\n"}, ["main_list_fixture"], "a listed literal"),
-    ({"main/.env": "DOCS_HUB_DATABASE_URL_AUTH=postgresql:///main_auth_fixture\n"},
-     ["main_auth_fixture"], "the auth-DB name"),
-    ({"main/.secrecy-literals": "main_list_fixture\n",
+@pytest.mark.parametrize("files,literals,labels", [
+    ({"main/.secrecy-literals": "main_fixture\n"}, ["main_fixture"], ["a listed literal"]),
+    ({"main/.env": "DOCS_HUB_DATABASE_URL_AUTH=\nDATABASE_URL_AUTH=postgresql:///legacy_fixture\n"},
+     ["legacy_fixture"], ["the auth-DB name"]),
+    ({"main/.env": "DOCS_HUB_DATABASE_URL_AUTH=postgresql:///main_auth_fixture\n",
       "linked/.secrecy-literals": "own_list_fixture\n"},
-     ["main_list_fixture", "own_list_fixture"], "a listed literal"),
+     ["main_auth_fixture", "own_list_fixture"], ["the auth-DB name", "a listed literal"]),
 ])
 def test_a_linked_worktree_checks_the_main_worktrees_and_its_own_literals(
-        tmp_path: Path, files: dict[str, str], literals: list[str], label: str):
+        tmp_path: Path, files: dict[str, str], literals: list[str], labels: list[str]):
     linked = _make_repos(tmp_path)
     for name, text in files.items():
         (tmp_path / name).write_text(text, encoding="utf-8")
-    assert _check(linked, "--tree").stdout.endswith(f" clean ({len(literals)} literal(s))\n")
-    for literal in literals:
+    out = _check(linked, "--tree")
+    assert out.stdout.endswith(f" clean ({len(literals)} literal(s))\n") and not out.stderr, out
+    for literal, label in zip(literals, labels, strict=True):
         _plant(linked, literal)
-        result = _check(linked, "--tree")
-        assert result.returncode == 1 and label in result.stderr and "candidate" in result.stderr
-        assert literal not in result.stderr
+        out = _check(linked, "--tree")
+        assert out.returncode == 1 and label in out.stderr and "candidate" in out.stderr, out.stderr
+        assert out.stderr.count("FAIL") == 1 and literal not in out.stderr, out.stderr
     _git(linked, "commit", "--quiet", "-m", "leak")
     _git(linked, "rm", "--quiet", "candidate")
-    result = _check(linked)
-    assert result.returncode == 1 and "is in committed history" in result.stderr
-    assert "working tree" not in result.stderr and literals[-1] not in result.stderr
+    out = _check(linked)
+    assert out.returncode == 1 and out.stderr.count("FAIL") == 1, out.stderr
+    assert "is in committed history" in out.stderr and literals[-1] not in out.stderr, out.stderr
 
 
 @pytest.mark.parametrize("bare,source,run_in,flags,expected", [
