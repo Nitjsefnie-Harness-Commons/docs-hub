@@ -17,6 +17,18 @@ FAIL=0
 declare -a NEEDLES=()
 declare -a LABELS=()
 
+# Skips a main-worktree duplicate.
+add() {
+  local n
+  if [ "$1" != . ]; then
+    for n in ${NEEDLES[@]+"${NEEDLES[@]}"}; do
+      [ "$n" = "$2" ] && return
+    done
+  fi
+  NEEDLES+=("$2")
+  LABELS+=("$3")
+}
+
 collect() {
   local dir="$1" line AUTH_DB
   if [ -f "$dir/.secrecy-literals" ]; then
@@ -24,8 +36,7 @@ collect() {
       line="${line%%#*}"
       line="$(printf '%s' "$line" | tr -d '[:space:]')"
       [ -n "$line" ] || continue
-      NEEDLES+=("$line")
-      LABELS+=("a listed literal (${#line} chars)")
+      add "$dir" "$line" "a listed literal (${#line} chars)"
     done < "$dir/.secrecy-literals"
   fi
 
@@ -38,8 +49,7 @@ collect() {
     fi
     AUTH_DB="$(printf '%s' "$AUTH_DB" | sed 's/?.*$//' | sed 's#.*/##')"
     if [ -n "${AUTH_DB:-}" ] && [ "${#AUTH_DB}" -ge 4 ]; then
-      NEEDLES+=("$AUTH_DB")
-      LABELS+=("the auth-DB name")
+      add "$dir" "$AUTH_DB" "the auth-DB name"
     fi
   fi
 }
