@@ -56,7 +56,7 @@ collect() {
 
 collect .
 MAIN="$(git worktree list --porcelain | awk '/^$/ { exit } /^worktree / { p = substr($0, 10) } /^bare$/ { p = "" } END { print p }')"
-if [ -n "$MAIN" ] && [ ! "$MAIN" -ef . ]; then
+if [ -n "$MAIN" ]; then
   collect "$MAIN"
 fi
 
