@@ -46,8 +46,7 @@ MEASURED_CHAIN = {**TOOLCHAIN, "lock_sha256": "cd" * 32}
 
 
 def _measurement(counts: dict[str, int], chain: dict | None = None) -> dict:
-    return {"toolchain": dict(chain if chain is not None else TOOLCHAIN),
-            "counts": counts}
+    return {"toolchain": dict(chain if chain is not None else TOOLCHAIN), "counts": counts}
 
 
 def _budget(counts: dict[str, int] | None = None, **fields: object) -> dict:
@@ -93,21 +92,18 @@ def test_budget_refuses_a_missing_field(policy: ModuleType, field: str) -> None:
 
 
 @pytest.mark.parametrize("count", ["900", 900.0, True])
-def test_budget_refuses_a_non_integer_count(policy: ModuleType,
-                                            count: object) -> None:
+def test_budget_refuses_a_non_integer_count(policy: ModuleType, count: object) -> None:
     with pytest.raises(policy.BudgetError, match="service.publish"):
         policy.validate(_budget({"service.publish": count}))
 
 
 @pytest.mark.parametrize("count", [0, -1])
-def test_budget_refuses_a_non_positive_count(policy: ModuleType,
-                                             count: int) -> None:
+def test_budget_refuses_a_non_positive_count(policy: ModuleType, count: int) -> None:
     with pytest.raises(policy.BudgetError, match="service.publish"):
         policy.validate(_budget({"service.publish": count}))
 
 
-def test_budget_refuses_a_tolerance_that_is_not_a_finite_number(
-        policy: ModuleType) -> None:
+def test_budget_refuses_a_tolerance_that_is_not_a_finite_number(policy: ModuleType) -> None:
     for literal in ("Infinity", "NaN", "-Infinity"):
         with pytest.raises(policy.BudgetError, match="tolerance_pct"):
             policy.validate(json.loads(
@@ -126,9 +122,7 @@ def test_budget_refuses_an_unknown_toolchain_field(policy: ModuleType) -> None:
 
 
 def test_check_passes_a_count_within_tolerance(policy: ModuleType) -> None:
-    result = policy.check(_budget(),
-                          _measurement({"service.publish": 1299,
-                                        "service.list": 2000}))
+    result = policy.check(_budget(), _measurement({"service.publish": 1299, "service.list": 2000}))
     assert result["failed"] is False
     rows = {row["name"]: row for row in result["rows"]}
     assert rows["service.publish"]["verdict"] == "ok"
@@ -147,15 +141,13 @@ def test_check_bounds_at_budget_plus_tolerance(policy: ModuleType, count: int,
     assert result["failed"] is (verdict == "FAIL")
 
 
-def test_check_fails_a_declared_workload_missing_from_the_measurement(
-        policy: ModuleType) -> None:
+def test_check_fails_a_declared_workload_missing_from_the_measurement(policy: ModuleType) -> None:
     result = policy.check(_budget(), _measurement({"service.list": 2000}))
     assert _rows(result)["service.publish"] == "missing"
     assert result["failed"] is True
 
 
-def test_check_fails_a_measured_workload_absent_from_the_budget(
-        policy: ModuleType) -> None:
+def test_check_fails_a_measured_workload_absent_from_the_budget(policy: ModuleType) -> None:
     result = policy.check(_budget(),
                           _measurement({"service.publish": 500,
                                         "service.list": 2000,
@@ -164,15 +156,13 @@ def test_check_fails_a_measured_workload_absent_from_the_budget(
     assert result["failed"] is True
 
 
-def test_check_on_a_toolchain_mismatch_compares_nothing(
-        policy: ModuleType) -> None:
+def test_check_on_a_toolchain_mismatch_compares_nothing(policy: ModuleType) -> None:
     measured = {**TOOLCHAIN, "valgrind": "valgrind-3.22.0"}
     result = policy.check(_budget(),
                           _measurement({"service.publish": 900000,
                                         "service.list": 2000}, measured))
     assert result["failed"] is False
-    assert result["toolchain_diff"] == {"valgrind": ("valgrind-3.24.0",
-                                                     "valgrind-3.22.0")}
+    assert result["toolchain_diff"] == {"valgrind": ("valgrind-3.24.0", "valgrind-3.22.0")}
     assert set(_rows(result).values()) == {"not compared"}
 
 
@@ -191,8 +181,7 @@ def test_check_reports_a_malformed_budget_with_exit_one(
     budget.write_text("{not json", encoding="utf-8")
     measurement.write_text(json.dumps(_measurement(
         {"service.publish": 1000, "service.list": 2000})), encoding="utf-8")
-    assert speed.main(["check", "--measurements", str(measurement),
-                       "--budget", str(budget)]) == 1
+    assert speed.main(["check", "--measurements", str(measurement), "--budget", str(budget)]) == 1
     assert "budget.json" in capsys.readouterr().err
 
 
@@ -204,8 +193,7 @@ def test_check_exits_zero_on_a_toolchain_mismatch(speed: ModuleType,
     measurement.write_text(json.dumps(_measurement(
         {"service.publish": 900000, "service.list": 900000},
         {**TOOLCHAIN, "valgrind": "valgrind-3.22.0"})), encoding="utf-8")
-    assert speed.main(["check", "--measurements", str(measurement),
-                       "--budget", str(budget)]) == 0
+    assert speed.main(["check", "--measurements", str(measurement), "--budget", str(budget)]) == 0
     assert ("toolchain: MISMATCH — counts not compared without a base measurement"
             in capsys.readouterr().out.splitlines())
 
@@ -216,8 +204,7 @@ def test_check_fails_a_count_past_the_budget_with_exit_one(
     budget.write_text(json.dumps(_budget()), encoding="utf-8")
     measurement.write_text(json.dumps(_measurement(
         {"service.publish": 1301, "service.list": 2000})), encoding="utf-8")
-    assert speed.main(["check", "--measurements", str(measurement),
-                       "--budget", str(budget)]) == 1
+    assert speed.main(["check", "--measurements", str(measurement), "--budget", str(budget)]) == 1
 
 
 def test_check_renders_the_wall_time_table(speed: ModuleType, tmp_path: Path,
@@ -240,8 +227,7 @@ def test_check_renders_the_wall_time_table(speed: ModuleType, tmp_path: Path,
 
 
 def test_tighten_lowers_only_the_workloads_that_fell(policy: ModuleType) -> None:
-    result = policy.tighten(_budget(), _measurement({"service.publish": 800,
-                                                     "service.list": 2500}))
+    result = policy.tighten(_budget(), _measurement({"service.publish": 800, "service.list": 2500}))
     assert result == {"service.publish": 800, "service.list": 2000}
 
 
@@ -254,10 +240,8 @@ def test_tighten_lowers_only_a_drop_past_half_the_tolerance(
         {"service.publish": count, "service.list": 2000})) == expected
 
 
-def test_tighten_keeps_a_drop_inside_the_margin_beside_one_past_it(
-        policy: ModuleType) -> None:
-    result = policy.tighten(_budget(), _measurement({"service.publish": 849,
-                                                     "service.list": 1800}))
+def test_tighten_keeps_a_drop_inside_the_margin_beside_one_past_it(policy: ModuleType) -> None:
+    result = policy.tighten(_budget(), _measurement({"service.publish": 849, "service.list": 1800}))
     assert result == {"service.publish": 849, "service.list": 2000}
 
 
@@ -297,19 +281,16 @@ def test_tighten_writes_the_budget_only_when_something_fell(
     budget.write_text(json.dumps(_budget()), encoding="utf-8")
     measurement.write_text(json.dumps(_measurement(
         {"service.publish": 800, "service.list": 2500})), encoding="utf-8")
-    assert speed.main(["tighten", "--measurements", str(measurement),
-                       "--budget", str(budget)]) == 0
+    assert speed.main(["tighten", "--measurements", str(measurement), "--budget", str(budget)]) == 0
     document = json.loads(budget.read_text(encoding="utf-8"))
-    assert document["workloads"] == {"service.publish": 800,
-                                     "service.list": 2000}
+    assert document["workloads"] == {"service.publish": 800, "service.list": 2000}
     assert document["toolchain"] == TOOLCHAIN
     assert document["tolerance_pct"] == 30
     before = budget.read_bytes()
     # A drop inside the margin (800 * 0.85 = 680) writes nothing either.
     measurement.write_text(json.dumps(_measurement(
         {"service.publish": 750, "service.list": 2000})), encoding="utf-8")
-    assert speed.main(["tighten", "--measurements", str(measurement),
-                       "--budget", str(budget)]) == 0
+    assert speed.main(["tighten", "--measurements", str(measurement), "--budget", str(budget)]) == 0
     assert budget.read_bytes() == before
     # A toolchain difference blocks the write even when counts fell: the
     # budget's recorded side survives the mismatch byte for byte. The count
@@ -318,8 +299,7 @@ def test_tighten_writes_the_budget_only_when_something_fell(
     measurement.write_text(json.dumps(_measurement(
         {"service.publish": 600, "service.list": 2500}, MEASURED_CHAIN)),
         encoding="utf-8")
-    assert speed.main(["tighten", "--measurements", str(measurement),
-                       "--budget", str(budget)]) == 0
+    assert speed.main(["tighten", "--measurements", str(measurement), "--budget", str(budget)]) == 0
     assert budget.read_bytes() == before
 
 
@@ -330,22 +310,19 @@ def test_rebaseline_rewrites_toolchain_and_workloads(policy: ModuleType) -> None
                      MEASURED_CHAIN),
         ("service.publish", "service.list"))
     assert document["toolchain"] == MEASURED_CHAIN
-    assert document["workloads"] == {"service.publish": 1500,
-                                     "service.list": 2600}
+    assert document["workloads"] == {"service.publish": 1500, "service.list": 2600}
     assert document["tolerance_pct"] == 30
     assert document["counter"] == "cachegrind-ir"
     assert document["schema_version"] == 1
 
 
-def test_rebaseline_refuses_a_measurement_that_misses_a_workload(
-        policy: ModuleType) -> None:
+def test_rebaseline_refuses_a_measurement_that_misses_a_workload(policy: ModuleType) -> None:
     with pytest.raises(policy.BudgetError, match="service.list"):
         policy.rebaseline(_budget(), _measurement({"service.publish": 1500}),
                           ("service.publish", "service.list"))
 
 
-def test_rebaseline_without_a_budget_seeds_the_default_tolerance(
-        policy: ModuleType) -> None:
+def test_rebaseline_without_a_budget_seeds_the_default_tolerance(policy: ModuleType) -> None:
     document = policy.rebaseline(
         None, _measurement({"service.publish": 1500, "service.list": 2600}),
         ("service.publish", "service.list"))
@@ -387,8 +364,7 @@ def test_workload_prints_the_counts_as_json(speed: ModuleType,
                                             monkeypatch: pytest.MonkeyPatch,
                                             capsys: pytest.CaptureFixture[str]) -> None:
     counts = dict.fromkeys(speed.WORKLOADS, 111)
-    monkeypatch.setattr(speed, "workload",
-                        lambda database, names=None, binary="valgrind": counts)
+    monkeypatch.setattr(speed, "workload", lambda database, names=None, binary="valgrind": counts)
     assert speed.main(["workload", "--database", "docs_speed_test",
                        "--valgrind", sys.executable]) == 0
     assert json.loads(capsys.readouterr().out) == counts
@@ -399,9 +375,7 @@ def test_workload_refuses_a_server_that_exits_at_startup(tmp_path: Path) -> None
     # POSIX: the stub IS the server, and exits at startup. The marker proves
     # the stub ran, so the flag was threaded: on a box with a real valgrind
     # the test would pass either way.
-    stub.write_text('#!/bin/sh\n'
-                    ': > "$STUB_MARKER"\n'
-                    'exit 3\n', encoding="utf-8")
+    stub.write_text('#!/bin/sh\n: > "$STUB_MARKER"\nexit 3\n', encoding="utf-8")
     stub.chmod(0o755)
     done = subprocess.run([sys.executable, str(_SCRIPT), "workload", "--database", "x",
                            "--valgrind", str(stub)],
@@ -415,8 +389,7 @@ def test_workload_refuses_a_server_that_exits_at_startup(tmp_path: Path) -> None
 def test_a_counted_run_refuses_a_missing_valgrind_binary(
         speed: ModuleType, tmp_path: Path,
         capsys: pytest.CaptureFixture[str]) -> None:
-    assert speed.main(["workload", "--database", "x",
-                       "--valgrind", "/nonexistent/valgrind"]) == 1
+    assert speed.main(["workload", "--database", "x", "--valgrind", "/nonexistent/valgrind"]) == 1
     error = capsys.readouterr().err
     assert "no valgrind binary at /nonexistent/valgrind" in error
     assert "Traceback" not in error
@@ -460,6 +433,5 @@ def test_tighten_refuses_zero_without_rewriting_the_budget(
     original = budget.read_bytes()
     measurement.write_text(json.dumps(_measurement(
         {"service.publish": 0, "service.list": 2000})), encoding="utf-8")
-    assert speed.main(["tighten", "--measurements", str(measurement),
-                       "--budget", str(budget)]) == 1
+    assert speed.main(["tighten", "--measurements", str(measurement), "--budget", str(budget)]) == 1
     assert budget.read_bytes() == original

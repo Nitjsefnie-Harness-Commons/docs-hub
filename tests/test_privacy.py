@@ -31,8 +31,7 @@ def _publish(c, slug, body=b"<h1>x</h1>"):
 
 
 def _set_public(c, slug, public, headers):
-    return c.post(f"/api/doc/{slug}/public",
-                  json={"public": public}, headers=headers)
+    return c.post(f"/api/doc/{slug}/public", json={"public": public}, headers=headers)
 
 
 def _anon_public_doc(slug="pub/notice", body=b"<h1>pub</h1>"):
@@ -129,19 +128,16 @@ def test_sign_in_form_links_the_notice(tmp_path, monkeypatch):
 def test_invalid_credentials_response_links_the_notice(tmp_path, monkeypatch):
     """The 401 body's form carries the link too."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
-    r = _client().post("/login",
-                       data={"user_id": "1", "password": "fixture-not-it"})
+    r = _client().post("/login", data={"user_id": "1", "password": "fixture-not-it"})
     assert r.status_code == 401
     assert LOGIN_LINK in _login_form(r.content)
 
 
-def test_anonymous_public_html_doc_gains_the_link_before_its_last_body_close(
-        tmp_path, monkeypatch):
+def test_anonymous_public_html_doc_gains_the_link_before_its_last_body_close(tmp_path, monkeypatch):
     """The link lands before the FINAL </body> (the fixture's first `</body>`
     is literal text inside the document) and appears exactly once."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
-    body = (b"<html><body><h1>pub</h1><p>about the </body> tag</p>"
-            b"</body></html>")
+    body = b"<html><body><h1>pub</h1><p>about the </body> tag</p></body></html>"
     r = _anon_public_doc(slug="pub/lastclose", body=body)
     assert r.status_code == 200
     assert r.content.endswith(LINK + b"</body></html>")
@@ -155,8 +151,7 @@ def test_link_injection_reads_a_uppercase_body_close(tmp_path, monkeypatch):
     assert r.content.endswith(LINK + b"</BODY>")
 
 
-def test_link_is_appended_when_the_document_has_no_body_close(
-        tmp_path, monkeypatch):
+def test_link_is_appended_when_the_document_has_no_body_close(tmp_path, monkeypatch):
     """Fragment HTML (no closing body tag) gets the link appended after the
     document's own bytes."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
@@ -165,8 +160,7 @@ def test_link_is_appended_when_the_document_has_no_body_close(
     assert r.content == b"<h1>fragment</h1>" + LINK
 
 
-def test_anonymous_public_markdown_doc_renders_with_the_link(
-        tmp_path, monkeypatch):
+def test_anonymous_public_markdown_doc_renders_with_the_link(tmp_path, monkeypatch):
     """The Markdown render path gets the same injection: the link sits after
     the rendered article, before the page's own closing body tag."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
@@ -219,13 +213,11 @@ def test_keyed_reader_gets_the_document_verbatim(tmp_path, monkeypatch):
     assert c.get("/d/pub/agentview", headers=KEY).content == body
 
 
-def test_anonymous_public_v_tail_slug_gets_the_injected_link(
-        tmp_path, monkeypatch):
+def test_anonymous_public_v_tail_slug_gets_the_injected_link(tmp_path, monkeypatch):
     """A public `a/vx` is a latest slug for the anonymous reader: rendered
     with the injected notice, exactly as on any anonymous public read."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
-    r = _anon_public_doc(slug="a/vx",
-                         body=b"<html><body><h1>vt</h1></body></html>")
+    r = _anon_public_doc(slug="a/vx", body=b"<html><body><h1>vt</h1></body></html>")
     assert r.status_code == 200
     assert r.content.endswith(LINK + b"</body></html>")
 
@@ -240,8 +232,7 @@ def test_signed_in_reader_gets_the_document_verbatim(tmp_path, monkeypatch):
     assert c.get("/d/pub/humanview").content == body
 
 
-def test_privacy_subpaths_stay_gated_even_when_configured(
-        tmp_path, monkeypatch):
+def test_privacy_subpaths_stay_gated_even_when_configured(tmp_path, monkeypatch):
     """The public-path entry is exact: /privacy/ and /privacy/x must not
     inherit /privacy's exemption."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
@@ -252,8 +243,7 @@ def test_privacy_subpaths_stay_gated_even_when_configured(
         assert r.headers["location"] == "/login"
 
 
-def test_version_route_stays_gated_while_the_notice_is_configured(
-        tmp_path, monkeypatch):
+def test_version_route_stays_gated_while_the_notice_is_configured(tmp_path, monkeypatch):
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
     c = _client()
     assert _publish(c, "pub/gatever").status_code == 200
@@ -263,16 +253,14 @@ def test_version_route_stays_gated_while_the_notice_is_configured(
     assert r.headers["location"] == "/login"
 
 
-def test_private_docs_and_the_toggle_stay_protected_while_configured(
-        tmp_path, monkeypatch):
+def test_private_docs_and_the_toggle_stay_protected_while_configured(tmp_path, monkeypatch):
     """Visibility negative: the notice widens nothing else — an anonymous
     visitor still cannot flip a doc public or read a private one."""
     monkeypatch.setenv(ENV, _notice_file(tmp_path, "# Notice fixture\n"))
     c = _client()
     assert _publish(c, "pub/gate").status_code == 200
     anon = _client()
-    assert anon.post("/api/doc/pub/gate/public",
-                     json={"public": True}).status_code == 401
+    assert anon.post("/api/doc/pub/gate/public", json={"public": True}).status_code == 401
     r = anon.get("/d/pub/gate", follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == "/login"
