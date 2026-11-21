@@ -83,8 +83,7 @@ def test_all_required_checks_succeed(tmp_path: Path):
 ])
 def test_workflow_env_prefers_prefix_and_accepts_legacy(tmp_path: Path,
                                                         workflow_env: dict[str, str]):
-    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED],
-                         workflow_env=workflow_env)
+    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED], workflow_env=workflow_env)
     assert result.returncode == 0, result.stdout + result.stderr
 
 

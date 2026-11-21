@@ -170,8 +170,7 @@ def test_the_run_id_reaches_the_artifacts_url(
     result = _run_list_step(tmp_path, workflow_env)
     assert result.returncode == 0, result.stdout + result.stderr
     log = (tmp_path / "gh-calls.log").read_text(encoding="utf-8").splitlines()
-    assert log == [
-        f"repos/example/repository/actions/runs/{expected_run_id}/artifacts"]
+    assert log == [f"repos/example/repository/actions/runs/{expected_run_id}/artifacts"]
 
 
 def test_the_deploy_key_is_prefixed_and_falls_back_to_the_old_secret() -> None:
