@@ -3,6 +3,11 @@
     "python": {
       "floor": 95.4,
       "measured": 96.9
+    },
+    "javascript": {
+      "floor": 45.9,
+      "measured": 47.4,
+      "cell": "ubuntu-latest-py3.15-pg17"
     }
   },
   "schema_version": 1
