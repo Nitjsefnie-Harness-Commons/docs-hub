@@ -32,8 +32,7 @@ def _budget(workloads: dict, tolerance: float = 1.0, chain: dict | None = None,
 
 
 def _git(repo: Path, *args: str) -> str:
-    done = subprocess.run(["git", *args], cwd=repo, check=True,
-                          capture_output=True, text=True)
+    done = subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
     return done.stdout.strip()
 
 
@@ -96,8 +95,7 @@ def _run(repo: Path, *flags: str, env: dict | None = None) -> subprocess.Complet
 
 
 def _pull(repo: Path, base: str, head: str) -> subprocess.CompletedProcess:
-    return _run(repo, "--base", base, "--head", head, "--event",
-                "pull_request")
+    return _run(repo, "--base", base, "--head", head, "--event", "pull_request")
 
 
 def test_a_declared_raise_on_a_budget_only_commit_passes(tmp_path: Path) -> None:
@@ -119,8 +117,7 @@ def test_a_raise_without_a_declaration_fails(tmp_path: Path) -> None:
     assert "raised; it may only fall" in done.stdout
 
 
-def test_a_declaration_on_an_impure_commit_is_not_consumable(
-        tmp_path: Path) -> None:
+def test_a_declaration_on_an_impure_commit_is_not_consumable(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 300),
                    **{CODE: "print(2)\n"},
@@ -135,8 +132,7 @@ def test_a_duplicate_declaration_fails(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     line = _decl('workloads["w.pub"]', 100, 300)
     message = f"raise\n\n{line}\n{line}\n"
-    head = _commit(repo, message,
-                   **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 200}))})
+    head = _commit(repo, message, **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 200}))})
     done = _pull(repo, base, head)
     assert done.returncode == 1
     assert "does not match a raise in this diff" in done.stdout
@@ -160,8 +156,7 @@ def test_a_malformed_declaration_line_fails(tmp_path: Path, line: str) -> None:
     assert "does not parse" in done.stdout
 
 
-def test_a_declaration_whose_value_mismatches_the_diff_fails(
-        tmp_path: Path) -> None:
+def test_a_declaration_whose_value_mismatches_the_diff_fails(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 250),
                    **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 200}))})
@@ -179,8 +174,7 @@ def test_a_declared_tolerance_raise_passes(tmp_path: Path) -> None:
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def test_an_undeclared_toolchain_change_on_a_budget_only_commit_fails(
-        tmp_path: Path) -> None:
+def test_an_undeclared_toolchain_change_on_a_budget_only_commit_fails(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, "relock",
                    **{BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 200},
@@ -219,8 +213,7 @@ def test_an_event_without_a_window_skips(tmp_path: Path, event: str) -> None:
 
 def test_an_all_zero_before_skips(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
-    done = _run(repo, "--base", base, "--head", "HEAD", "--event", "push",
-                "--before", ZERO)
+    done = _run(repo, "--base", base, "--head", "HEAD", "--event", "push", "--before", ZERO)
     assert done.returncode == 0
     assert "skipping" in done.stdout
 
@@ -231,14 +224,12 @@ def test_a_non_ancestor_before_fails(tmp_path: Path) -> None:
     other = _commit(repo, "unrelated branch work", **{CODE: "print(9)\n"})
     _git(repo, "checkout", "main")
     head = _commit(repo, "main work", **{CODE: "print(3)\n"})
-    done = _run(repo, "--base", base, "--head", head, "--event", "push",
-                "--before", other)
+    done = _run(repo, "--base", base, "--head", head, "--event", "push", "--before", other)
     assert done.returncode == 2
     assert "not an ancestor" in done.stderr
 
 
-def test_added_and_removed_workloads_on_a_budget_only_commit_pass(
-        tmp_path: Path) -> None:
+def test_added_and_removed_workloads_on_a_budget_only_commit_pass(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, "reshape the workloads",
                    **{BUDGET: json.dumps(_budget({"w.pub": 100, "w3": 300}))})
@@ -250,8 +241,7 @@ def test_a_push_window_judges_before_head(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 300),
                    **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 200}))})
-    done = _run(repo, "--base", base, "--head", head, "--event", "push",
-                "--before", base)
+    done = _run(repo, "--base", base, "--head", head, "--event", "push", "--before", base)
     assert done.returncode == 0, done.stdout + done.stderr
 
 
@@ -293,15 +283,13 @@ def test_a_schema_version_change_fails(tmp_path: Path) -> None:
 def test_a_declaration_naming_another_document_fails(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     message = "tighten\n\nBudget-Raise: .github/other.json k 1 -> 2\n"
-    head = _commit(repo, message,
-                   **{BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 150}))})
+    head = _commit(repo, message, **{BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 150}))})
     done = _pull(repo, base, head)
     assert done.returncode == 1
     assert "not declarable" in done.stdout
 
 
-def test_a_declaration_for_a_key_that_did_not_rise_is_a_leftover(
-        tmp_path: Path) -> None:
+def test_a_declaration_for_a_key_that_did_not_rise_is_a_leftover(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 300),
                    **{BUDGET: json.dumps(_budget({"w.pub": 50, "w.list": 200}))})
@@ -312,14 +300,12 @@ def test_a_declaration_for_a_key_that_did_not_rise_is_a_leftover(
 
 def test_a_lowered_count_needs_no_declaration(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
-    head = _commit(repo, "tighten",
-                   **{BUDGET: json.dumps(_budget({"w.pub": 50, "w.list": 200}))})
+    head = _commit(repo, "tighten", **{BUDGET: json.dumps(_budget({"w.pub": 50, "w.list": 200}))})
     done = _pull(repo, base, head)
     assert done.returncode == 0, done.stdout + done.stderr
 
 
-def test_a_pure_declaration_cannot_authorize_a_mixed_workload_raise(
-        tmp_path: Path) -> None:
+def test_a_pure_declaration_cannot_authorize_a_mixed_workload_raise(tmp_path: Path) -> None:
     repo, base = _seeded(tmp_path)
     _commit(repo, "raise while touching code", **{CODE: "print(2)\n"},
             **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 200}))})
@@ -331,8 +317,7 @@ def test_a_pure_declaration_cannot_authorize_a_mixed_workload_raise(
 
 
 @pytest.mark.parametrize("literal", ["true", "Infinity", "NaN"])
-def test_a_non_finite_or_boolean_budget_value_fails(tmp_path: Path,
-                                                    literal: str) -> None:
+def test_a_non_finite_or_boolean_budget_value_fails(tmp_path: Path, literal: str) -> None:
     repo, base = _seeded(tmp_path)
     poisoned = json.dumps(_budget({"w.pub": 100, "w.list": 200})).replace(
         '"w.pub": 100', f'"w.pub": {literal}')
@@ -377,8 +362,7 @@ def test_a_push_run_with_an_empty_base_judges_the_window(tmp_path: Path) -> None
     repo, base = _seeded(tmp_path)
     head = _commit(repo, _declared_raise_message('workloads["w.pub"]', 100, 300),
                    **{BUDGET: json.dumps(_budget({"w.pub": 300, "w.list": 200}))})
-    done = _run(repo, "--base", "", "--head", head, "--event", "push",
-                "--before", base)
+    done = _run(repo, "--base", "", "--head", head, "--event", "push", "--before", base)
     assert done.returncode == 0, done.stdout + done.stderr
     assert f"not relaxed against base {base}" in done.stdout
 
@@ -408,8 +392,7 @@ def test_a_dispatch_run_with_a_head_but_no_base_skips(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("declaration", [False, True],
                          ids=["mixed-toolchain", "impure-declaration"])
-def test_a_synthetic_merge_cannot_sanction_mixed_work(
-        tmp_path: Path, declaration: bool) -> None:
+def test_a_synthetic_merge_cannot_sanction_mixed_work(tmp_path: Path, declaration: bool) -> None:
     repo, base = _seeded(tmp_path)
     _git(repo, "checkout", "-b", "feature")
     tip = _commit(repo, "mixed branch work", **{CODE: "print(2)\n"},
@@ -439,8 +422,7 @@ def test_toolchain_authorization_follows_the_exact_transitions(
     previous = CHAIN_A
     for index, pure in enumerate(pure_steps, start=1):
         chain = {**CHAIN_A, "lock_sha256": ("cd" if index == 1 else "ef") * 32}
-        files = {BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 200},
-                                            chain=chain))}
+        files = {BUDGET: json.dumps(_budget({"w.pub": 100, "w.list": 200}, chain=chain))}
         if not pure:
             files[CODE] = f"print({index + 1})\n"
         _commit(repo, _toolchain_message(previous, chain) if pure else "mixed relock", **files)

@@ -54,8 +54,7 @@ def _conjuncts(expression: str) -> set[str]:
 
 
 def test_the_trigger_keys_on_the_gate_workflow_itself() -> None:
-    gate = yaml.safe_load(
-        (_REPO / ".github/workflows/ci-gate.yml").read_text(encoding="utf-8"))
+    gate = yaml.safe_load((_REPO / ".github/workflows/ci-gate.yml").read_text(encoding="utf-8"))
     run = _triggers(_workflow())["workflow_run"]
     assert run["workflows"] == [gate["name"]]
     assert run["types"] == ["completed"]
@@ -231,8 +230,7 @@ def _seed_remote(tmp_path: Path) -> tuple[Path, str]:
                     ["git", "-C", str(seed), "add", "."],
                     ["git", "-C", str(seed), "commit", "-m", "seed"],
                     ["git", "clone", "-q", "--bare", str(seed), str(origin)]):
-        subprocess.run(command, check=True, capture_output=True,
-                       env={**os.environ, **identity})
+        subprocess.run(command, check=True, capture_output=True, env={**os.environ, **identity})
     return origin, subprocess.run(
         ["git", "-C", str(origin), "rev-parse", "refs/heads/master"],
         check=True, capture_output=True, text=True).stdout.strip()
@@ -240,8 +238,7 @@ def _seed_remote(tmp_path: Path) -> tuple[Path, str]:
 
 def _measurement(tmp_path: Path, base: str) -> None:
     budget = _SPEED_BUDGET
-    counts = {name: value - 1_000_000
-              for name, value in budget["workloads"].items()}
+    counts = {name: value - 1_000_000 for name, value in budget["workloads"].items()}
     data = {"schema_version": 1, "base_sha": base, "toolchain": budget["toolchain"],
             "counts": counts, "wall_seconds": {}}
     path = tmp_path / "speed-data" / "measurement.json"
@@ -276,8 +273,7 @@ def _run_push_step(tmp_path: Path, repo_env: dict[str, str] | None = None
     python.chmod(0o755)
     poison = tmp_path / "poison"
     poison.mkdir()
-    (poison / "json.py").write_text('raise RuntimeError("poisoned json")\n',
-                                    encoding="utf-8")
+    (poison / "json.py").write_text('raise RuntimeError("poisoned json")\n', encoding="utf-8")
     home = tmp_path / "home"
     home.mkdir()
     (home / ".gitconfig").write_text(
@@ -330,8 +326,7 @@ def test_a_stale_measurement_drops_with_a_notice(tmp_path: Path) -> None:
 def test_a_rejected_push_while_master_stood_still_fails_the_step(tmp_path: Path) -> None:
     origin, seed = _seed_remote(tmp_path)
     _measurement(tmp_path, seed)
-    (origin / "hooks" / "pre-receive").write_text("#!/bin/sh\nexit 1\n",
-                                                  encoding="utf-8")
+    (origin / "hooks" / "pre-receive").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
     (origin / "hooks" / "pre-receive").chmod(0o755)
     result = _run_push_step(tmp_path)
     assert result.returncode == 1
