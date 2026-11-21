@@ -14,8 +14,7 @@ _REQUIRED = ("aggregate",)
 def _check(name: str, conclusion: str | None = "success",
            status: str = "completed",
            html_url: str | None = None) -> dict[str, str | None]:
-    return {"name": name, "status": status, "conclusion": conclusion,
-            "html_url": html_url}
+    return {"name": name, "status": status, "conclusion": conclusion, "html_url": html_url}
 
 
 def _run(run_id: int, event: str) -> dict[str, str | int]:
@@ -99,9 +98,7 @@ def test_missing_required_check_waits_until_deadline(tmp_path: Path, missing: st
 
 @pytest.mark.parametrize("conclusion", ["skipped", "failure", "cancelled", "timed_out", "neutral"])
 def test_required_check_must_succeed(tmp_path: Path, conclusion: str):
-    result = _run_waiter(tmp_path, [
-        _check(name, conclusion) for name in _REQUIRED
-    ])
+    result = _run_waiter(tmp_path, [_check(name, conclusion) for name in _REQUIRED])
     assert result.returncode == 1, result.stdout + result.stderr
     assert "Refusing to tag" in result.stderr
 
