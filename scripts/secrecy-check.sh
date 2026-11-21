@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fails if a forbidden literal appears in the tree or in committed history.
 # Literals come from .secrecy-literals (gitignored, one per line) and from
-# .env's DOCS_HUB_DATABASE_URL_AUTH (legacy fallback: DATABASE_URL_AUTH).
+# .env's DOCS_HUB_DATABASE_URL_AUTH (legacy fallback: DATABASE_URL_AUTH),
+# in this worktree and, from a linked one, in the main worktree too.
 # Findings name commits and files, never the value.
 #
 #   scripts/secrecy-check.sh          tree + history
@@ -16,28 +17,37 @@ FAIL=0
 declare -a NEEDLES=()
 declare -a LABELS=()
 
-if [ -f .secrecy-literals ]; then
-  while IFS= read -r line; do
-    line="${line%%#*}"
-    line="$(printf '%s' "$line" | tr -d '[:space:]')"
-    [ -n "$line" ] || continue
-    NEEDLES+=("$line")
-    LABELS+=("a listed literal (${#line} chars)")
-  done < .secrecy-literals
-fi
+collect() {
+  local dir="$1" line AUTH_DB
+  if [ -f "$dir/.secrecy-literals" ]; then
+    while IFS= read -r line; do
+      line="${line%%#*}"
+      line="$(printf '%s' "$line" | tr -d '[:space:]')"
+      [ -n "$line" ] || continue
+      NEEDLES+=("$line")
+      LABELS+=("a listed literal (${#line} chars)")
+    done < "$dir/.secrecy-literals"
+  fi
 
-if [ -f .env ]; then
-  AUTH_DB="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?DOCS_HUB_DATABASE_URL_AUTH[[:space:]]*=[[:space:]]*//p' .env \
-    | head -n1 | tr -d '"'"'"'' | tr -d '[:space:]')"
-  if [ -z "$AUTH_DB" ]; then
-    AUTH_DB="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?DATABASE_URL_AUTH[[:space:]]*=[[:space:]]*//p' .env \
+  if [ -f "$dir/.env" ]; then
+    AUTH_DB="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?DOCS_HUB_DATABASE_URL_AUTH[[:space:]]*=[[:space:]]*//p' "$dir/.env" \
       | head -n1 | tr -d '"'"'"'' | tr -d '[:space:]')"
+    if [ -z "$AUTH_DB" ]; then
+      AUTH_DB="$(sed -n 's/^[[:space:]]*\(export[[:space:]]\+\)\?DATABASE_URL_AUTH[[:space:]]*=[[:space:]]*//p' "$dir/.env" \
+        | head -n1 | tr -d '"'"'"'' | tr -d '[:space:]')"
+    fi
+    AUTH_DB="$(printf '%s' "$AUTH_DB" | sed 's/?.*$//' | sed 's#.*/##')"
+    if [ -n "${AUTH_DB:-}" ] && [ "${#AUTH_DB}" -ge 4 ]; then
+      NEEDLES+=("$AUTH_DB")
+      LABELS+=("the auth-DB name")
+    fi
   fi
-  AUTH_DB="$(printf '%s' "$AUTH_DB" | sed 's/?.*$//' | sed 's#.*/##')"
-  if [ -n "${AUTH_DB:-}" ] && [ "${#AUTH_DB}" -ge 4 ]; then
-    NEEDLES+=("$AUTH_DB")
-    LABELS+=("the auth-DB name")
-  fi
+}
+
+collect .
+MAIN="$(git worktree list --porcelain | awk '/^$/ { exit } /^worktree / { p = substr($0, 10) } /^bare$/ { p = "" } END { print p }')"
+if [ -n "$MAIN" ] && [ ! "$MAIN" -ef . ]; then
+  collect "$MAIN"
 fi
 
 # Nothing to check must not look like nothing found.
