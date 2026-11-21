@@ -206,16 +206,14 @@ def _gate_row(name: str, run_id: int) -> dict[str, str | None]:
 
 
 def test_push_produced_checks_are_judged(tmp_path: Path):
-    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED],
-                         runs=[_run(1, "push")])
+    result = _run_waiter(tmp_path, [_check(name) for name in _REQUIRED], runs=[_run(1, "push")])
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("event,name", [("push", "security-review"),
                                         ("pull_request", "security-review"),
                                         ("push", "aggregate")])
-def test_failed_push_and_pull_request_checks_refuse(tmp_path: Path, event: str,
-                                                    name: str):
+def test_failed_push_and_pull_request_checks_refuse(tmp_path: Path, event: str, name: str):
     checks = [_check(required) for required in _REQUIRED if name != "aggregate"]
     checks.append(_gate_row(name, 2))
     result = _run_waiter(tmp_path, checks, runs=[_run(1, "push"), _run(2, event)])
@@ -225,8 +223,7 @@ def test_failed_push_and_pull_request_checks_refuse(tmp_path: Path, event: str,
 
 @pytest.mark.parametrize("conclusion,status", [("failure", "completed"),
                                                (None, "in_progress")])
-def test_issue_comment_rows_are_skipped(tmp_path: Path, conclusion: str | None,
-                                        status: str):
+def test_issue_comment_rows_are_skipped(tmp_path: Path, conclusion: str | None, status: str):
     checks = [_check(name) for name in _REQUIRED] + [
         _check("claim", conclusion, status,
                html_url="https://github.com/example/repository/actions/runs/11/job/1")]
