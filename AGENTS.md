@@ -83,9 +83,9 @@ requests and `master` pushes run it too; of its callees only `size-baseline`
 also has its own `pull_request` trigger and a `push` trigger on `main` and
 `master`.
 It folds ten gates: `tests` (Postgres 16 and 17, plus the `portable`
-tests on Windows, macOS and Linux with 3.14 and 3.15, both through
-`Nitjsefnie-Actions/test-ratchet` with coverage measured, plus the
-`public/app.js` test in jsdom),
+tests on Windows, macOS and Linux with 3.14 and 3.15, and the
+`public/app.js` test in jsdom, all through
+`Nitjsefnie-Actions/test-ratchet` with coverage measured),
 `lint` (pycodestyle, pylint), `types` (pyright over `backend/`), `eslint`
 (over `public/` and the JavaScript tests in `tests/`), `audit`
 (pip-audit, npm audit), `codeql`, `size-baseline` (the tracked-file
