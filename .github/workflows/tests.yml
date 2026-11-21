@@ -72,7 +72,7 @@ jobs:
         with:
           persist-credentials: false
       - id: plan
-        uses: Nitjsefnie-Actions/test-ratchet/plan@474b984eea45d7029e8aaa659441e68174bad3d4 # v1.3.0
+        uses: Nitjsefnie-Actions/test-ratchet/plan@14fd30c0cbdf5403b4fabcb99762c72b85f8f88c # v2.0.0
         with:
           tests: tests/**/test_*.py
           times: .github/test-times.json
@@ -163,7 +163,7 @@ jobs:
           PYTHONDONTWRITEBYTECODE: "1"
           # An intermittent shutdown segfault leaves no stack without this.
           PYTHONFAULTHANDLER: "1"
-        uses: Nitjsefnie-Actions/test-ratchet/run@474b984eea45d7029e8aaa659441e68174bad3d4 # v1.3.0
+        uses: Nitjsefnie-Actions/test-ratchet/run@14fd30c0cbdf5403b4fabcb99762c72b85f8f88c # v2.0.0
         with:
           runner: pytest
           tests: tests/**/test_*.py
@@ -204,7 +204,7 @@ jobs:
 
       - name: Run the portable tests
         # Unsharded: no test selected exits 5, so an emptied marker fails the job.
-        uses: Nitjsefnie-Actions/test-ratchet/run@474b984eea45d7029e8aaa659441e68174bad3d4 # v1.3.0
+        uses: Nitjsefnie-Actions/test-ratchet/run@14fd30c0cbdf5403b4fabcb99762c72b85f8f88c # v2.0.0
         with:
           runner: pytest
           tests: tests/**/test_*.py
@@ -233,7 +233,7 @@ jobs:
           npm ci
 
       - name: Run the app.js test
-        uses: Nitjsefnie-Actions/test-ratchet/run@474b984eea45d7029e8aaa659441e68174bad3d4 # v1.3.0
+        uses: Nitjsefnie-Actions/test-ratchet/run@14fd30c0cbdf5403b4fabcb99762c72b85f8f88c # v2.0.0
         with:
           runner: node
           tests: tests/app_js.test.mjs
