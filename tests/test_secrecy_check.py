@@ -69,6 +69,8 @@ def test_auth_database_name_prefers_prefix_and_accepts_legacy(tmp_path: Path, se
     ({"main/.env": "DOCS_HUB_DATABASE_URL_AUTH=postgresql:///main_auth_fixture\n",
       "linked/.secrecy-literals": "own_list_fixture\n"},
      ["main_auth_fixture", "own_list_fixture"], ["the auth-DB name", "a listed literal"]),
+    ({"main/.secrecy-literals": "same_fixture\n", "linked/.secrecy-literals": "same_fixture\n"},
+     ["same_fixture"], ["a listed literal"]),
 ])
 def test_a_linked_worktree_checks_the_main_worktrees_and_its_own_literals(
         tmp_path: Path, files: dict[str, str], literals: list[str], labels: list[str]):
@@ -90,8 +92,8 @@ def test_a_linked_worktree_checks_the_main_worktrees_and_its_own_literals(
 
 
 @pytest.mark.parametrize("bare,source,run_in,flags,expected", [
-    (False, "main", "main", ["--tree"], (0, "secrecy-check: tree clean (1 literal(s))\n", "")),
-    (False, "main", "main", [], (0, "secrecy-check: clean (tree + history, 1 literal(s))\n", "")),
+    (False, "main", "main", ["--tree"], (0, "secrecy-check: tree clean (2 literal(s))\n", "")),
+    (False, "main", "main", [], (0, "secrecy-check: clean (tree + history, 2 literal(s))\n", "")),
     (False, None, "linked", ["--tree"], (1, "", _ERROR)),
     (True, "bare", "linked", ["--tree"], (1, "", _ERROR)),  # read only if `bare` is not skipped
 ])
@@ -100,6 +102,6 @@ def test_the_main_checkout_reads_its_literals_once_and_none_anywhere_is_an_error
         expected: tuple[int, str, str]):
     _make_repos(tmp_path, bare)
     if source:
-        (tmp_path / source / ".secrecy-literals").write_text("listed_fixture\n", encoding="utf-8")
+        (tmp_path / source / ".secrecy-literals").write_text("fixture\n" * 2, encoding="utf-8")
     result = _check(tmp_path / run_in, *flags)
     assert (result.returncode, result.stdout, result.stderr) == expected
