@@ -427,14 +427,16 @@
         9.5
       ],
       "tests/test_budget_raise_chains.py": [
-        27.18
+        27.18,
+        35.93
       ],
       "tests/test_budget_raise_matrix.py": [
         7.9,
         11.79
       ],
       "tests/test_budget_raise_push.py": [
-        2.61
+        2.61,
+        4.22
       ],
       "tests/test_budget_raise_rebaseline.py": [
         14.37,
@@ -445,7 +447,8 @@
         15.43
       ],
       "tests/test_ci_gate.py": [
-        2.34
+        2.34,
+        3.36
       ],
       "tests/test_cli.py": [
         2.54,
