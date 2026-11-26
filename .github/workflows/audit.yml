@@ -8,19 +8,21 @@ name: audit
 # uvicorn and psycopg drag in dependency trees of their own, and that is where
 # an advisory lands.
 #
-# WHY THE CRON IS THE IMPORTANT TRIGGER. Every other gate here answers "did
-# this commit break something", so push is the natural trigger. This one
-# answers "is a version we froze months ago still safe", and that answer
-# changes when a stranger publishes an advisory, with no commit here to hang
-# it on. A push-only audit would report clean forever on a quiet branch. The
-# push trigger is the lesser half: it catches a bad pin at the moment it is
-# introduced, while the diff is on screen.
+# WHY THE CRON IS THE IMPORTANT TRIGGER. Every other gate answers "did this
+# commit break something"; this one answers "is a version we froze months
+# ago still safe", which changes when a stranger publishes an advisory, with
+# no commit here to hang it on. The gate's run catches a bad pin while the
+# diff is on screen.
 #
-# This gate FAILS the build rather than filing an advisory, which is the same
-# stance as lint and types: a red gate a human must look at beats a
-# notification that accumulates unread. When a fix genuinely is not available
-# yet, add the advisory to --ignore-vuln WITH a comment saying why and what
-# would clear it — never silence the whole gate.
+# The ci gate calls it, as its required context needs this leg on every
+# commit. Each hand-listed manifest gets its own pip-audit run, and npm
+# audit covers the CI tooling's JavaScript tree.
+#
+# This gate FAILS the build rather than filing an advisory, as lint and
+# types do: a red gate a human must look at beats a notification that
+# accumulates unread. When no fix is available yet, add the advisory to
+# --ignore-vuln WITH a comment saying why and what would clear it — never
+# silence the whole gate.
 
 on:
   workflow_call:
