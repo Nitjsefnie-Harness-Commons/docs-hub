@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: lint-${{ github.event_name }}-${{ github.ref }}
+  group: lint-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
