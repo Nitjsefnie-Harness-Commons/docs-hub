@@ -304,7 +304,7 @@ def test_the_push_step_lands_its_commit(tmp_path: Path) -> None:
     result = _run_push_step(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
     assert _git(origin, "log", "--format=%s", "refs/heads/master").splitlines() == [
-        "chore(ratchet): Tighten the speed budget (automated)", "seed"]
+        "chore(ratchet): Tighten the speed budget", "seed"]
     assert _git(origin, "diff-tree", "--no-commit-id", "--name-only", "-r",
                 "refs/heads/master").splitlines() == [".github/speed-budget.json"]
     assert _git(origin, "rev-parse", "refs/heads/master") == subprocess.run(

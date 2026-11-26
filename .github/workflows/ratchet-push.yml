@@ -17,7 +17,7 @@ permissions: {}
 
 concurrency:
   # Never cancel in progress: a cancelled run can stop between the commit
-  # and the push. queue: max keeps up to 100 pending runs.
+  # and the push. queue: max lets up to 100 runs wait.
   group: ratchet-push-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
   queue: max
@@ -110,7 +110,7 @@ jobs:
             echo "No tighten is justified by this run: nothing to commit."
             exit 0
           fi
-          git -C "$RUNNER_TEMP/raise-repo" commit -m 'chore(ratchet): Tighten the speed budget (automated)' -- .github/speed-budget.json
+          git -C "$RUNNER_TEMP/raise-repo" commit -m 'chore(ratchet): Tighten the speed budget' -- .github/speed-budget.json
           if ! git -C "$RUNNER_TEMP/raise-repo" push origin HEAD:master; then
             git -C "$RUNNER_TEMP/raise-repo" fetch --quiet origin master
             if [ "$(git -C "$RUNNER_TEMP/raise-repo" rev-parse FETCH_HEAD)" = "$base" ]; then
