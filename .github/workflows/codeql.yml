@@ -27,6 +27,8 @@ on:
     - cron: '47 3 * * 3'
   workflow_dispatch:
 
+permissions: {}
+
 concurrency:
   group: codeql-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true

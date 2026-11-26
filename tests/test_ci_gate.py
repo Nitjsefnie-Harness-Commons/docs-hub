@@ -113,7 +113,7 @@ def test_size_baseline_runs_standalone_in_a_group_no_called_run_shares() -> None
 
 def _assert_read_only_permissions(name: str, workflow: dict[str, Any]) -> None:
     if name == "codeql":
-        assert "permissions" not in workflow
+        assert workflow["permissions"] == {}
     elif "permissions" in workflow:
         assert workflow["permissions"] == {"contents": "read"}
     for job_name, job in workflow["jobs"].items():
