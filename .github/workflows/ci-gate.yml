@@ -7,10 +7,11 @@ name: ci gate
 # Callees leave push and pull_request to this file, except size-baseline;
 # the rest keep only workflow_call, their crons and workflow_dispatch.
 #
-# The fold fails closed on failed, cancelled, skipped or missing results and
-# reports every offending leg. Its one narrowing is base-freshness: that job
-# is PR-only by design, so its skipped result is accepted only when the event
-# is not a pull_request; an unset event refuses.
+# The fold fails closed on any result but success and names every offending
+# leg. Its one narrowing: base-freshness is PR-only by design, so its skip
+# passes only when the event is set and is not pull_request.
+#
+# No leg checks commit scopes: CONTRIBUTING.md sets no scope rule.
 
 on:
   pull_request:
