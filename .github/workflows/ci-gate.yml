@@ -15,8 +15,7 @@ name: ci gate
 
 on:
   pull_request:
-  # A branch push is covered by its pull request's run, so only master
-  # pushes keep a run of their own.
+  # Only master: a branch push is covered by its pull request's run.
   push:
     branches: [master]
   workflow_dispatch:
@@ -35,7 +34,8 @@ jobs:
   report:
     # test-ratchet's report, here and not in the tests callee: an environment
     # secret reads empty inside a workflow_call callee. It runs nothing from
-    # the proposed tree.
+    # the proposed tree. Its JavaScript floor tracks measured coverage and
+    # only rises; other repos' levels need SPA tests.
     needs: tests
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -102,9 +102,8 @@ jobs:
         # A marker in Markdown can look like prose to the other gates, so
         # check every tracked file even on docs-only pushes.
         run: |
-          # git grep exits 1 for "no match" and above 1 for an error it could
-          # not run, and a guard that reads its own error as a clean tree is
-          # the false green this step exists to prevent.
+          # git grep exits 1 for no match and above 1 for an error; reading
+          # an error as a clean tree would be this step's false green.
           found=0
           git grep -nI -E '^(<{7}( |$)|>{7}( |$)|={7}$)' -- . || found=$?
           if [ "$found" -gt 1 ]; then
@@ -125,9 +124,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The PR head itself, not the synthetic merge: the merge already
-          # contains base changes, so a head missing a gate-input commit
-          # would pass there. Full depth keeps the head's ancestry local.
+          # The PR head, not the synthetic merge: the merge contains base
+          # changes, so a head missing a gate-input commit would pass there.
+          # Full depth keeps the head's ancestry local.
           fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
