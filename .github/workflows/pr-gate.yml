@@ -1,7 +1,7 @@
 name: pr gate
 # A fork PR's own token cannot comment.
-on:
-  pull_request_target:  # zizmor: ignore[dangerous-triggers]
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 permissions:
   contents: read
