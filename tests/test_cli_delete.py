@@ -49,6 +49,21 @@ def test_no_filter_is_a_usage_error_without_a_request(run, argv):
     assert "docs-hub delete: error: at least one filter" in err
 
 
+def test_help_renders_the_wildcard_note_for_q(run):
+    code, out, _, calls = run("--help")
+    assert (code, calls) == (0, [])
+    # An unescaped % in a help string is a format directive that dumps the action's repr.
+    assert "(% and _ are wildcards)" in " ".join(out.split())
+    assert "option_strings" not in out
+
+
+@pytest.mark.parametrize("token", ["", "  "])
+def test_blank_confirm_is_a_usage_error_without_a_request(run, token):
+    code, out, err, calls = run("--slug", "a", "--confirm", token)
+    assert (code, out, calls) == (2, "", [])
+    assert "docs-hub delete: error: --confirm needs the token" in err
+
+
 @pytest.mark.parametrize("option, key", [
     ("--slug", "slug"), ("--project", "project"), ("--author", "author"), ("--tag", "tag"),
     ("--q", "q"), ("--updated-before", "updated_before"),
@@ -101,8 +116,9 @@ def test_zero_matches_still_print_the_count_and_the_token(run):
      "deleted 2 document(s), but failed to remove a/b, c; those documents still exist: "
      "a new preview and confirm retries them"),
 ])
-def test_error_replies_are_one_error_line_on_stderr(run, status, payload, line):
-    code, out, err, calls = run("--slug", "a", "--confirm", "t", reply=(status, payload))
+@pytest.mark.parametrize("step", [(), ("--confirm", "t")], ids=["preview", "confirm"])
+def test_error_replies_are_one_error_line_on_stderr(run, step, status, payload, line):
+    code, out, err, calls = run("--slug", "a", *step, reply=(status, payload))
     assert (code, out, err) == (1, "", f"ERROR: {line}\n")
     assert len(calls) == 1
 

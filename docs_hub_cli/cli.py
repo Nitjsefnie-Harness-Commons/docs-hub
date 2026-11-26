@@ -366,6 +366,9 @@ def cmd_delete(args: argparse.Namespace) -> int:
                           "(--slug, --project, --author, --tag, --q, "
                           "--updated-before, --updated-after)")
     if args.confirm is not None:
+        # A blank token would make the server preview again, not delete.
+        if not args.confirm.strip():
+            args.parser.error("--confirm needs the token a preview printed")
         body["confirm_token"] = args.confirm
     status, raw, _ = _request("POST", "/api/delete", data=json.dumps(body).encode(),
                               headers={"Content-Type": "application/json"})
@@ -461,14 +464,14 @@ def main() -> int:
     p.add_argument("--project", default="")
     p.set_defaults(func=cmd_tags)
 
-    p = sub.add_parser("delete",
-                       help="delete the documents matching a filter, in two steps: "
-                            "a preview prints a confirm token, --confirm TOKEN deletes")
+    p = sub.add_parser("delete")
     p.add_argument("--slug", default="", help="the document with exactly this slug")
     p.add_argument("--project", default="", help="documents of this project")
     p.add_argument("--author", default="", help="documents whose latest version this agent posted")
     p.add_argument("--tag", default="", help="documents carrying this tag")
-    p.add_argument("--q", default="", help="documents whose slug or title contains this text")
+    p.add_argument("--q", default="",
+                   help="documents whose slug or title contains this text, any case "
+                        "(%% and _ are wildcards)")
     p.add_argument("--updated-before", default="",
                    help="documents last updated before this timestamp (e.g. 2026-01-31)")
     p.add_argument("--updated-after", default="",
