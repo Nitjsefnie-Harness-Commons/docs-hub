@@ -56,4 +56,4 @@ def test_the_repository_reaches_the_push_remote(
     result = f._run_push_step(tmp_path, repo_env)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f._git(origin, "log", "--format=%s", "refs/heads/master").splitlines() == [
-        "chore(ratchet): Tighten the speed budget (automated)", "seed"]
+        "chore(ratchet): Tighten the speed budget", "seed"]

@@ -173,7 +173,7 @@ count, only with a matching toolchain and no failed workloads; a smaller
 drop keeps the recorded count, so run-to-run spread under that margin
 commits nothing. It keeps the toolchain and tolerance; when the budget
 changes and `master` has not moved, the speed arm commits
-"chore(ratchet): Tighten the speed budget (automated)". A raise is never
+"chore(ratchet): Tighten the speed budget". A raise is never
 automatic: each raised workload count or `tolerance_pct` needs exactly
 one matching line in a commit message:
 
