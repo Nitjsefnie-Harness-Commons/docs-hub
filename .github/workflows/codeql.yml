@@ -15,9 +15,9 @@ name: codeql
 # pull_request_target misuse, untrusted input interpolated through ${{ }}
 # into run: scripts, and over-privileged jobs.
 #
-# Push analysis includes unchanged code. The weekly cron also scans when no
-# pushes occur, so updated CodeQL queries can check the existing codebase
-# without waiting for another commit.
+# The ci gate owns push and pull_request: the required aggregate needs this
+# leg on every PR and master push, and the config's paths-ignore replaces a
+# trigger filter. The weekly cron runs new queries over unchanged code.
 
 on:
   workflow_call:
