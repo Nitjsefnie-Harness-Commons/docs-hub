@@ -198,9 +198,9 @@ def test_postgres_dockerfile_holds_one_from_line_of_its_major(major: int):
 
 def test_release_publish_has_only_the_writer_permissions():
     publish = _workflow("release.yml")["jobs"]["publish"]
-    assert publish["needs"] == "build"
-    assert publish["permissions"] == {"contents": "write"}
-    assert publish["timeout-minutes"] == 10
+    assert (publish["needs"], publish["timeout-minutes"]) == ("build", 10)
+    assert publish["permissions"] == {"contents": "write", "id-token": "write",
+                                      "attestations": "write"}
     assert "services" not in publish and "env" not in publish
     _assert_minimal_writer(publish)
 
