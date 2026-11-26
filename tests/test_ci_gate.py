@@ -90,10 +90,11 @@ def test_callees_leave_push_and_pull_request_to_the_gate(name: str) -> None:
         expected.add("schedule")
         assert triggers["schedule"]
     assert set(triggers) == expected
-    # `github.ref` inside a called workflow is the caller's ref, so without
-    # the event name a callee's own schedule/dispatch run shares the gate's
-    # called-leg group on that ref and cancels an in-flight push leg.
-    assert "github.event_name" in workflow["concurrency"]["group"]
+    # `github.ref` inside a called workflow is the caller's ref: the event name
+    # keeps a callee's own schedule/dispatch run out of the gate's leg group,
+    # and a push leg groups by its commit, so no other push's leg cancels it.
+    assert workflow["concurrency"]["group"] == f"{name}-${{{{ github.event_name }}}}-" + (
+        "${{ github.event_name == 'push' && github.sha || github.ref }}")
     _assert_read_only_permissions(name, workflow)
 
 
@@ -131,8 +132,7 @@ def _assert_read_only_permissions(name: str, workflow: dict[str, Any]) -> None:
 
 def test_aggregate_always_folds_exactly_its_legs_without_checkout() -> None:
     job = _workflow()["jobs"]["aggregate"]
-    assert set(job["needs"]) == set(_LEGS)
-    assert len(job["needs"]) == len(_LEGS)
+    assert sorted(job["needs"]) == sorted(_LEGS)
     assert job["if"] in ("${{ always() }}", "always()")
     assert "name" not in job
     assert job["permissions"] == {"contents": "read"}

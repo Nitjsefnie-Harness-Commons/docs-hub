@@ -38,7 +38,7 @@ concurrency:
   # runs from its legs called by the ci gate: github.ref inside a called
   # workflow is the caller's ref, so both would otherwise share one group and
   # a cron firing mid-push could cancel that push leg.
-  group: audit-${{ github.event_name }}-${{ github.ref }}
+  group: audit-${{ github.event_name }}-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
