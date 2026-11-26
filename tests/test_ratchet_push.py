@@ -19,8 +19,7 @@ import yaml
 _REPO = Path(__file__).resolve().parent.parent
 
 _GIT_IDENTITY = {"GIT_AUTHOR_NAME": "seed", "GIT_AUTHOR_EMAIL": "seed@example.com",
-                 "GIT_COMMITTER_NAME": "seed",
-                 "GIT_COMMITTER_EMAIL": "seed@example.com"}
+                 "GIT_COMMITTER_NAME": "seed", "GIT_COMMITTER_EMAIL": "seed@example.com"}
 
 
 def _workflow() -> dict[str, Any]:
@@ -65,6 +64,7 @@ def test_the_push_job_admits_only_green_master_pushes() -> None:
     assert _conjuncts(_push_job()["if"]) == {
         "github.event.workflow_run.event == 'push'",
         "github.event.workflow_run.head_branch == 'master'",
+        "github.event.workflow_run.head_repository.full_name == github.repository",
         "github.event.workflow_run.conclusion == 'success'",
     }
 
@@ -82,7 +82,7 @@ def test_the_push_never_cancels_a_run_mid_push() -> None:
     # pending master tighten.
     for field in ("event", "head_branch"):
         assert f"github.event.workflow_run.{field}" in concurrency["group"]
-    assert concurrency["cancel-in-progress"] is False
+    assert (concurrency["cancel-in-progress"], concurrency["queue"]) == (False, "max")
 
 
 def test_the_listing_step_sets_only_the_prefixed_run_id_variable() -> None:
