@@ -193,12 +193,15 @@ def test_cli_delete_previews_then_confirms_against_the_real_endpoint(tmp_path, c
     assert "cli/gone" not in _run("list").stdout
 
 
-def test_cli_delete_preview_states_the_backend_token_lifetime(cli_server):
-    """The CLI's "5 minutes" is a literal shared with the backend's token TTL."""
+def test_cli_delete_states_the_backend_token_lifetime(cli_server):
+    """The CLI's token lifetime is a constant shared with the backend's token TTL,
+    stated in the preview's token line and in the --confirm help."""
     from backend.session import DELETE_TOKEN_TTL
+    stated = f"valid for {DELETE_TOKEN_TTL // 60} minutes"
     preview = _run("delete", "--slug", "cli/nothing-matches")
     assert preview.returncode == 0, preview.stderr
-    assert f"valid for {DELETE_TOKEN_TTL // 60} minutes" in preview.stdout
+    assert stated in preview.stdout
+    assert stated in " ".join(_run("delete", "--help").stdout.split())
 
 
 def test_cli_delete_options_send_exactly_the_endpoint_filter_keys(monkeypatch):
