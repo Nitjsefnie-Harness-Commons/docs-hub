@@ -248,13 +248,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           DOCS_HUB_TAG: ${{ needs.release-readiness.outputs.tag }}
           DOCS_HUB_REPO: ${{ github.repository }}
-        # release.yml also triggers on `push: tags: v*`, and that trigger
-        # is what fires for a tag a HUMAN pushes. It does not fire for the
-        # tag the step above just pushed, because that push was
-        # authenticated with GITHUB_TOKEN. Dispatching is the documented
-        # way through, and it composes safely with the push trigger:
-        # release.yml replaces the assets on a release that already exists
-        # rather than failing, so firing twice is not a problem.
+        # release.yml's `push: tags: v*` trigger fires for a tag a HUMAN
+        # pushes, not for the one the step above pushed with GITHUB_TOKEN,
+        # so this dispatch is that tag's publish path. A second run on a
+        # release that already has assets fails loudly unless dispatched
+        # with `replace: true`; that is the guard, since assets already
+        # published are what consumers verified.
         run: |
           gh workflow run release.yml --repo "${DOCS_HUB_REPO:-${REPO}}" --ref "${DOCS_HUB_TAG:-${TAG}}"
           echo "Dispatched release.yml against ${DOCS_HUB_TAG:-${TAG}}."
