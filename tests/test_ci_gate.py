@@ -56,9 +56,9 @@ def test_ci_gate_runs_on_every_pull_request_and_pushes_to_master() -> None:
     assert triggers["push"] == {"branches": ["master"]}
     assert not filters.intersection(triggers["pull_request"] or {})
     assert workflow["permissions"] == {"contents": "read"}
-    concurrency = workflow["concurrency"]
-    assert "${{github.ref}}" in "".join(concurrency["group"].split())
-    assert concurrency["cancel-in-progress"] is True
+    assert workflow["concurrency"] == {
+        "group": "ci-gate-${{ github.event_name == 'push' && github.sha || github.ref }}",
+        "cancel-in-progress": True}
 
 
 def test_ci_gate_calls_all_ten_gates_with_minimal_permissions() -> None:
