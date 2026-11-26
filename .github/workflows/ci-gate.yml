@@ -1,8 +1,8 @@
 name: ci gate
 
 # One workflow owns the required context: rulesets require one context per
-# name. The paths-ignore gates disappeared on docs-only pushes, leaving no
-# check that could be required on every commit.
+# name, and a path-filtered gate never starts on a docs-only change. No
+# classify job: every leg runs on every commit by choice.
 #
 # Callees leave push and pull_request to this file, except size-baseline;
 # the rest keep only workflow_call, their crons and workflow_dispatch.
@@ -24,7 +24,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-gate-${{ github.ref }}
+  group: ci-gate-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
