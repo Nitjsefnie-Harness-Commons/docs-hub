@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""docs-hub CLI — publish documents to docs.nitjsefni.eu and read them.
+"""docs-hub CLI — publish documents to docs.nitjsefni.eu, read them and delete them.
 
 Auth: DOCS_HUB_API_KEY from the environment; if absent, falls back to
 reading env.DOCS_HUB_API_KEY out of ~/.agent-bundle/settings.json directly.
@@ -344,6 +344,66 @@ def cmd_tags(args: argparse.Namespace) -> int:
     return 0
 
 
+_DELETE_FILTERS = ("slug", "project", "author", "tag", "q",
+                   "updated_before", "updated_after")
+
+
+def _deleted_count(payload: dict) -> int:
+    count = payload["deleted"]
+    if isinstance(count, bool) or not isinstance(count, int):  # a bool is no count
+        raise TypeError
+    return count
+
+
+def cmd_delete(args: argparse.Namespace) -> int:
+    """Bulk-delete documents by filter through the endpoint's two steps: no
+    --confirm previews and prints a token; --confirm TOKEN, with the same
+    filters, deletes. One request per run, so a delete is never one call."""
+    # A blank filter is no filter, as for the server, which ignores it too.
+    body = {k: getattr(args, k) for k in _DELETE_FILTERS if getattr(args, k).strip()}
+    if not body:
+        args.parser.error("at least one filter is required "
+                          "(--slug, --project, --author, --tag, --q, "
+                          "--updated-before, --updated-after)")
+    if args.confirm is not None:
+        body["confirm_token"] = args.confirm
+    status, raw, _ = _request("POST", "/api/delete", data=json.dumps(body).encode(),
+                              headers={"Content-Type": "application/json"})
+    try:
+        payload = json.loads(raw)
+        if status != 200:
+            error = payload["error"]
+            if not isinstance(error, str):
+                raise TypeError
+            if status == 500 and "failed" in payload:
+                failed = payload["failed"]
+                if not isinstance(failed, list):
+                    raise TypeError
+                error = (f"deleted {_deleted_count(payload)} document(s), but failed to "
+                         f"remove {', '.join(failed)}; those documents still "
+                         "exist: a new preview and confirm retries them")
+            print(f"ERROR: {error}", file=sys.stderr)
+            return 1
+        if args.confirm is not None:
+            lines = [f"deleted {_deleted_count(payload)} document(s)"]
+        else:
+            matched = _response_rows(raw, "matched")
+            token = payload["confirm_token"]
+            if not isinstance(token, str):
+                raise TypeError
+            lines = [f"{len(matched)} document(s) match; nothing is deleted yet"]
+            lines += [f"{m['slug']:<40} v{m['latest_version']:<3} {m['title']}"
+                      for m in matched]
+            lines.append(f"confirm token: {token} (valid for 5 minutes, and only with "
+                         f"the same filter values; to delete, re-run with "
+                         f"--confirm {token} and the same filters)")
+    except (ValueError, KeyError, TypeError):
+        return _invalid_response(status, raw)
+    for line in lines:
+        print(line)
+    return 0
+
+
 def main() -> int:
     for _stream in (sys.stdout, sys.stderr):
         # getattr rather than a bare call inside try/except AttributeError:
@@ -400,6 +460,23 @@ def main() -> int:
     p = sub.add_parser("tags")
     p.add_argument("--project", default="")
     p.set_defaults(func=cmd_tags)
+
+    p = sub.add_parser("delete",
+                       help="delete the documents matching a filter, in two steps: "
+                            "a preview prints a confirm token, --confirm TOKEN deletes")
+    p.add_argument("--slug", default="", help="the document with exactly this slug")
+    p.add_argument("--project", default="", help="documents of this project")
+    p.add_argument("--author", default="", help="documents whose latest version this agent posted")
+    p.add_argument("--tag", default="", help="documents carrying this tag")
+    p.add_argument("--q", default="", help="documents whose slug or title contains this text")
+    p.add_argument("--updated-before", default="",
+                   help="documents last updated before this timestamp (e.g. 2026-01-31)")
+    p.add_argument("--updated-after", default="",
+                   help="documents last updated after this timestamp (e.g. 2026-01-31)")
+    p.add_argument("--confirm", metavar="TOKEN", default=None,
+                   help="delete for real: the token a preview printed, valid for "
+                        "5 minutes and only with the same filter values")
+    p.set_defaults(func=cmd_delete, parser=p)
 
     args = ap.parse_args()
     return args.func(args)
