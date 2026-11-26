@@ -111,6 +111,9 @@ def test_zero_matches_still_print_the_count_and_the_token(run):
      "at least one filter required"),
     (401, {"ok": False, "error": "unauthorized"}, "unauthorized"),
     (500, {"ok": False, "error": "boom"}, "boom"),
+    # Only a 500 is the partial-failure reply, whatever else the body carries.
+    (409, {"ok": False, "error": "confirm token invalid or expired", "deleted": 2,
+           "failed": ["a/b"]}, "confirm token invalid or expired"),
     (500, {"ok": False, "error": "failed to remove stored files", "deleted": 2,
            "failed": ["a/b", "c"]},
      "deleted 2 document(s), but failed to remove a/b, c; those documents still exist: "

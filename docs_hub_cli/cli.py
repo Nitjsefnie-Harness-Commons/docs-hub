@@ -344,6 +344,9 @@ def cmd_tags(args: argparse.Namespace) -> int:
     return 0
 
 
+# Mirrors the server's delete-token lifetime (backend/session.py DELETE_TOKEN_TTL);
+# the CLI ships alone and cannot import it, tests/test_cli.py spans the two.
+_TOKEN_MINUTES = 5
 _DELETE_FILTERS = ("slug", "project", "author", "tag", "q",
                    "updated_before", "updated_after")
 
@@ -397,8 +400,8 @@ def cmd_delete(args: argparse.Namespace) -> int:
             lines = [f"{len(matched)} document(s) match; nothing is deleted yet"]
             lines += [f"{m['slug']:<40} v{m['latest_version']:<3} {m['title']}"
                       for m in matched]
-            lines.append(f"confirm token: {token} (valid for 5 minutes, and only with "
-                         f"the same filter values; to delete, re-run with "
+            lines.append(f"confirm token: {token} (valid for {_TOKEN_MINUTES} minutes, "
+                         f"and only with the same filter values; to delete, re-run with "
                          f"--confirm {token} and the same filters)")
     except (ValueError, KeyError, TypeError):
         return _invalid_response(status, raw)
@@ -478,7 +481,7 @@ def main() -> int:
                    help="documents last updated after this timestamp (e.g. 2026-01-31)")
     p.add_argument("--confirm", metavar="TOKEN", default=None,
                    help="delete for real: the token a preview printed, valid for "
-                        "5 minutes and only with the same filter values")
+                        f"{_TOKEN_MINUTES} minutes and only with the same filter values")
     p.set_defaults(func=cmd_delete, parser=p)
 
     args = ap.parse_args()
