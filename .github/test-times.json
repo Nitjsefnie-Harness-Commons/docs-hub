@@ -511,7 +511,8 @@
         0.04
       ],
       "tests/test_settings.py": [
-        0.47
+        0.47,
+        1.59
       ],
       "tests/test_speed_base.py": [
         4.81,
