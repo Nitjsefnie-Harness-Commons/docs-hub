@@ -510,7 +510,8 @@
         4.94
       ],
       "tests/test_release_chain.py": [
-        3.57
+        3.57,
+        2.56
       ],
       "tests/test_render.py": [
         0.11
