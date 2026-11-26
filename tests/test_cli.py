@@ -173,3 +173,28 @@ def test_cli_rejects_a_missing_api_key(tmp_path, cli_server):
                          env=env, cwd=str(_REPO), check=False)
     assert got.returncode == 2
     assert "DOCS_HUB_API_KEY not set" in got.stderr
+
+
+def test_cli_delete_previews_then_confirms_against_the_real_endpoint(tmp_path, cli_server):
+    """The endpoint accepts the CLI's body keys and the token it printed."""
+    doc = tmp_path / "d.html"
+    doc.write_text("<h1>gone</h1>", encoding="utf-8")
+    _run("publish", str(doc), "--slug", "cli/gone", "--title", "Gone",
+         "--from", "analyst", check=True)
+    preview = _run("delete", "--slug", "cli/gone")
+    assert preview.returncode == 0, preview.stderr
+    assert "cli/gone" in preview.stdout
+    assert "cli/gone" in _run("list").stdout, "a preview deletes nothing"
+    token = preview.stdout.split("confirm token: ")[1].split()[0]
+    confirm = _run("delete", "--slug", "cli/gone", "--confirm", token)
+    assert confirm.returncode == 0, confirm.stderr
+    assert confirm.stdout == "deleted 1 document(s)\n"
+    assert "cli/gone" not in _run("list").stdout
+
+
+def test_cli_delete_preview_states_the_backend_token_lifetime(cli_server):
+    """The CLI's "5 minutes" is a literal shared with the backend's token TTL."""
+    from backend.session import DELETE_TOKEN_TTL
+    preview = _run("delete", "--slug", "cli/nothing-matches")
+    assert preview.returncode == 0, preview.stderr
+    assert f"valid for {DELETE_TOKEN_TTL // 60} minutes" in preview.stdout

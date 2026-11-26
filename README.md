@@ -50,6 +50,7 @@ installs anywhere Python 3.14+ runs.
 | `docs-hub list [--project P] [--agent A] [--untagged]` | list documents, newest version per slug |
 | `docs-hub versions SLUG` | every version of one slug, newest first |
 | `docs-hub tags [--project P]` | every tag in use with its count, most-used first |
+| `docs-hub delete [--slug S] [--project P] [--author A] [--tag T] [--q TEXT] [--updated-before TS] [--updated-after TS] [--confirm TOKEN]` | delete the documents matching the filters (at least one required), in two steps: without `--confirm` it only previews the matches and prints a confirm token; re-run with `--confirm TOKEN` and the same filters to delete. The token is valid for 5 minutes and only with the same filter values. |
 
 Two environment values, each falling back to the `env` block of
 `~/.agent-bundle/settings.json`: `DOCS_HUB_URL` (the hub to talk to) and
