@@ -11,6 +11,7 @@ context, so `from ._settings import setting` resolves.
 """
 # Pytest requests fixtures by parameter name; cli_server is used for its lifecycle.
 # pylint: disable=redefined-outer-name,unused-argument
+import json
 import os
 import subprocess
 import sys
@@ -198,3 +199,21 @@ def test_cli_delete_preview_states_the_backend_token_lifetime(cli_server):
     preview = _run("delete", "--slug", "cli/nothing-matches")
     assert preview.returncode == 0, preview.stderr
     assert f"valid for {DELETE_TOKEN_TTL // 60} minutes" in preview.stdout
+
+
+def test_cli_delete_options_send_exactly_the_endpoint_filter_keys(monkeypatch):
+    """The server ignores an unknown key, so a drift on either side would
+    drop a filter and widen the delete: compare what the CLI sends."""
+    from backend.api import _FILTER_KEYS
+    from docs_hub_cli import cli
+    sent = []
+
+    def request(_method, _path, *, data, headers):
+        sent.append(json.loads(data))
+        return 200, b'{"matched": [], "confirm_token": "t"}', headers["Content-Type"]
+
+    monkeypatch.setattr(cli, "_request", request)
+    argv = ["docs-hub", "delete"] + [f"--{key.replace('_', '-')}=x" for key in _FILTER_KEYS]
+    monkeypatch.setattr(sys, "argv", argv)
+    assert cli.main() == 0
+    assert len(sent) == 1 and set(sent[0]) == set(_FILTER_KEYS)
