@@ -256,8 +256,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ steps.tag.outputs.tag }}
-          REPLACE: ${{ inputs.replace }}
+          DOCS_HUB_TAG: ${{ steps.tag.outputs.tag }}
+          DOCS_HUB_REPLACE: ${{ inputs.replace }}
         # Every refusal fires here, before the attestation below records a
         # wheel this run would then not publish.
         #
@@ -269,11 +269,11 @@ jobs:
         # draft, which gets its assets and is then published.
         run: |
           error="$RUNNER_TEMP/release-view.err"
-          if ! found="$(gh release view "$TAG" \
+          if ! found="$(gh release view "$DOCS_HUB_TAG" \
               --json isDraft,isImmutable,assets \
               --jq '"\(.isDraft) \(.isImmutable) \(.assets | length)"' 2>"$error")"; then
             if [ "$(cat "$error")" != "release not found" ]; then
-              echo "Could not read release $TAG:" >&2
+              echo "Could not read release $DOCS_HUB_TAG:" >&2
               cat "$error" >&2
               exit 1
             fi
@@ -282,14 +282,14 @@ jobs:
           fi
 
           read -r draft immutable assets <<< "$found"
-          if [ "$assets" != 0 ] && [ "$REPLACE" != true ]; then
-            echo "Release $TAG already has $assets asset(s); not replacing them." >&2
-            echo "Dispatch release.yml against $TAG with replace: true to" >&2
+          if [ "$assets" != 0 ] && [ "$DOCS_HUB_REPLACE" != true ]; then
+            echo "Release $DOCS_HUB_TAG already has $assets asset(s); not replacing them." >&2
+            echo "Dispatch release.yml against $DOCS_HUB_TAG with replace: true to" >&2
             echo "replace them; a published immutable release refuses even that." >&2
             exit 1
           fi
           if [ "$draft" = false ] && [ "$immutable" = true ]; then
-            echo "Release $TAG is published and immutable: GitHub takes no new" >&2
+            echo "Release $DOCS_HUB_TAG is published and immutable: GitHub takes no new" >&2
             echo "or replaced asset on it, and its tag cannot be reused." >&2
             echo "Release the next version instead." >&2
             exit 1
@@ -309,27 +309,27 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ steps.tag.outputs.tag }}
-          ACTION: ${{ steps.plan.outputs.action }}
-          DRAFT: ${{ steps.plan.outputs.draft }}
+          DOCS_HUB_TAG: ${{ steps.tag.outputs.tag }}
+          DOCS_HUB_ACTION: ${{ steps.plan.outputs.action }}
+          DOCS_HUB_DRAFT: ${{ steps.plan.outputs.draft }}
         # `gh`, not a third-party action: it is preinstalled and maintained
         # by GitHub, and this job holds contents: write. The one action
         # here besides the artifact download is GitHub's own attester,
         # pinned to a commit.
         run: |
-          case "$ACTION" in
+          case "$DOCS_HUB_ACTION" in
             create)
-              gh release create "$TAG" --title "$TAG" --generate-notes \
+              gh release create "$DOCS_HUB_TAG" --title "$DOCS_HUB_TAG" --generate-notes \
                 dist/*.whl dist/SHA256SUMS ;;
-            upload) gh release upload "$TAG" dist/*.whl dist/SHA256SUMS ;;
+            upload) gh release upload "$DOCS_HUB_TAG" dist/*.whl dist/SHA256SUMS ;;
             clobber)
-              echo "Release $TAG has assets; replacing them, as asked."
-              gh release upload "$TAG" dist/*.whl dist/SHA256SUMS --clobber ;;
+              echo "Release $DOCS_HUB_TAG has assets; replacing them, as asked."
+              gh release upload "$DOCS_HUB_TAG" dist/*.whl dist/SHA256SUMS --clobber ;;
             *)
-              echo "No publishing action decided for $TAG ('$ACTION')." >&2
+              echo "No publishing action decided for $DOCS_HUB_TAG ('$DOCS_HUB_ACTION')." >&2
               exit 1 ;;
           esac
-          if [ "$DRAFT" = true ]; then
-            gh release edit "$TAG" --draft=false
+          if [ "$DOCS_HUB_DRAFT" = true ]; then
+            gh release edit "$DOCS_HUB_TAG" --draft=false
           fi
-          echo "Published $TAG."
+          echo "Published $DOCS_HUB_TAG."
