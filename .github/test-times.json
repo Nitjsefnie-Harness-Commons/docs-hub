@@ -462,7 +462,8 @@
       ],
       "tests/test_cli.py": [
         2.54,
-        4.06
+        4.06,
+        5.09
       ],
       "tests/test_cli_delete.py": [
         0.07
@@ -611,7 +612,8 @@
         2.56
       ],
       "tests/test_cli.py": [
-        2.93
+        2.93,
+        4.34
       ],
       "tests/test_cli_delete.py": [
         0.06
