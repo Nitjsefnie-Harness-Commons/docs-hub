@@ -7,9 +7,9 @@ name: ratchet push
 
 on:
   workflow_run:  # zizmor: ignore[dangerous-triggers]
-    # The job's own if re-checks event, branch and conclusion; it downloads
-    # only this repository's artifacts and fetched-master code, runs only that
-    # under python3 -I, pushes by deploy key, checks out nothing.
+    # The job's own if re-checks event, branch, repository and conclusion; it
+    # downloads only this repository's artifacts and fetched-master code, runs
+    # only that under python3 -I, pushes by deploy key, checks out nothing.
     workflows: [ci gate]
     types: [completed]
 
@@ -17,15 +17,17 @@ permissions: {}
 
 concurrency:
   # Never cancel in progress: a cancelled run can stop between the commit
-  # and the push.
+  # and the push. queue: max keeps up to 100 pending runs.
   group: ratchet-push-${{ github.event.workflow_run.event }}-${{ github.event.workflow_run.head_branch }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   push:
     if: >-
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'master' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.conclusion == 'success'
     environment: master-push
     runs-on: ubuntu-latest
