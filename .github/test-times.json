@@ -44,6 +44,9 @@
       "tests/test_cli.py": [
         0.0
       ],
+      "tests/test_cli_delete.py": [
+        0.07
+      ],
       "tests/test_cli_errors.py": [
         0.2
       ],
@@ -177,6 +180,9 @@
       ],
       "tests/test_cli.py": [
         0.0
+      ],
+      "tests/test_cli_delete.py": [
+        0.06
       ],
       "tests/test_cli_errors.py": [
         0.15
@@ -312,6 +318,9 @@
       "tests/test_cli.py": [
         0.0
       ],
+      "tests/test_cli_delete.py": [
+        0.1
+      ],
       "tests/test_cli_errors.py": [
         0.17
       ],
@@ -408,7 +417,8 @@
         0.42
       ],
       "tests/test_app.py": [
-        0.78
+        0.78,
+        2.59
       ],
       "tests/test_apt_workflow.py": [
         0.5
@@ -453,6 +463,9 @@
       "tests/test_cli.py": [
         2.54,
         4.06
+      ],
+      "tests/test_cli_delete.py": [
+        0.07
       ],
       "tests/test_cli_errors.py": [
         0.09
@@ -600,6 +613,9 @@
       "tests/test_cli.py": [
         2.93
       ],
+      "tests/test_cli_delete.py": [
+        0.06
+      ],
       "tests/test_cli_errors.py": [
         0.08
       ],
@@ -738,6 +754,9 @@
       "tests/test_cli.py": [
         0.0
       ],
+      "tests/test_cli_delete.py": [
+        0.06
+      ],
       "tests/test_cli_errors.py": [
         0.16
       ],
@@ -872,6 +891,9 @@
       "tests/test_cli.py": [
         0.0
       ],
+      "tests/test_cli_delete.py": [
+        0.11
+      ],
       "tests/test_cli_errors.py": [
         0.18
       ],
@@ -1005,6 +1027,9 @@
       ],
       "tests/test_cli.py": [
         0.0
+      ],
+      "tests/test_cli_delete.py": [
+        0.11
       ],
       "tests/test_cli_errors.py": [
         0.19
