@@ -62,9 +62,6 @@
       "tests/test_docs_repo.py": [
         0.0
       ],
-      "tests/test_gate_base_freshness.py": [
-        0.0
-      ],
       "tests/test_login_rate_limit.py": [
         0.0
       ],
@@ -199,9 +196,6 @@
       "tests/test_docs_repo.py": [
         0.0
       ],
-      "tests/test_gate_base_freshness.py": [
-        0.0
-      ],
       "tests/test_login_rate_limit.py": [
         0.0
       ],
@@ -334,9 +328,6 @@
         0.0
       ],
       "tests/test_docs_repo.py": [
-        0.0
-      ],
-      "tests/test_gate_base_freshness.py": [
         0.0
       ],
       "tests/test_login_rate_limit.py": [
@@ -485,11 +476,6 @@
       ],
       "tests/test_docs_repo.py": [
         1.39
-      ],
-      "tests/test_gate_base_freshness.py": [
-        9.1,
-        11.82,
-        17.0
       ],
       "tests/test_login_rate_limit.py": [
         0.35
@@ -641,9 +627,6 @@
       "tests/test_docs_repo.py": [
         1.07
       ],
-      "tests/test_gate_base_freshness.py": [
-        13.11
-      ],
       "tests/test_login_rate_limit.py": [
         0.38
       ],
@@ -782,9 +765,6 @@
       "tests/test_docs_repo.py": [
         0.0
       ],
-      "tests/test_gate_base_freshness.py": [
-        0.0
-      ],
       "tests/test_login_rate_limit.py": [
         0.0
       ],
@@ -919,9 +899,6 @@
       "tests/test_docs_repo.py": [
         0.0
       ],
-      "tests/test_gate_base_freshness.py": [
-        0.0
-      ],
       "tests/test_login_rate_limit.py": [
         0.0
       ],
@@ -1054,9 +1031,6 @@
         0.0
       ],
       "tests/test_docs_repo.py": [
-        0.0
-      ],
-      "tests/test_gate_base_freshness.py": [
         0.0
       ],
       "tests/test_login_rate_limit.py": [
