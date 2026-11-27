@@ -35,8 +35,8 @@ jobs:
   images:
     # Single source of the Postgres service images: the one-line Dockerfiles
     # under docker/postgres/<major>/, updated by Dependabot's docker
-    # ecosystem. The run step names both paths literally so
-    # gate_base_freshness.py watches them.
+    # ecosystem. The run step names both paths literally so the
+    # freshness leg watches them.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:

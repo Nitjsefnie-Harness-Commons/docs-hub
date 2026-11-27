@@ -80,7 +80,7 @@ def _needs(job: dict[str, Any]) -> set[str]:
 def test_images_job_reads_both_postgres_dockerfiles():
     # Both workflows resolve their Postgres service image from the images job,
     # whose reading step spells both Dockerfiles literally — that spelling is
-    # what puts them in gate_base_freshness.py's derived watch set, so a
+    # what puts them in the base-freshness leg's derived watch set, so a
     # digest bump landing on master demands a rebase before any PR merges.
     for filename in ("tests.yml", "release.yml"):
         job = _workflow(filename)["jobs"]["images"]
