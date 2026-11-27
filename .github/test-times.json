@@ -539,7 +539,8 @@
         0.08
       ],
       "tests/test_speed_tree.py": [
-        4.78
+        4.78,
+        3.42
       ],
       "tests/test_speed_workflow.py": [
         1.05
