@@ -101,7 +101,7 @@ taken outside that image do not compare with CI's). Its `aggregate` job
 folds every leg and fails closed, with test-ratchet's `report` (the
 coverage floor), `conflict-markers` on every pull
 request and every push to `master`, and PR-only `base-freshness`, which runs
-pr-gate's `freshness` action: it fails a pull request whose head lacks a
+the `Nitjsefnie-Actions/freshness` action: it fails a pull request whose head lacks a
 commit of `master` that touches a file a required check reads.
 CONTRIBUTING.md's table gives the local commands; CodeQL runs on GitHub.
 Run the applicable local checks before pushing rather than using CI as

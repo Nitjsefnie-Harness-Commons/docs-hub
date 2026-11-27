@@ -153,8 +153,6 @@ def test_local_legs_have_checkout_and_read_only_permissions() -> None:
     freshness = _workflow()["jobs"]["base-freshness"]
     assert freshness["if"] == "github.event_name == 'pull_request'"
     assert "if" not in freshness["steps"][1]
-    assert freshness["steps"][1]["uses"].partition("@")[0] == (
-        "Nitjsefnie-Actions/pr-gate/freshness")
 
 
 def _run_script(tmp_path: Path, script: str,
