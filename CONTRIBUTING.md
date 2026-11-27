@@ -145,9 +145,9 @@ commands are listed below; CodeQL runs on GitHub:
 
 The `aggregate` job folds every leg and fails closed, with three local legs
 of its own: `report` (below), `conflict-markers` on every pull request and
-every push to `master`, and `base-freshness` on PRs, which runs pr-gate's
-`freshness` action: it fails a pull request whose head lacks a commit of
-`master` that touches a file a required check reads.
+every push to `master`, and `base-freshness` on PRs, which runs the
+`Nitjsefnie-Actions/freshness` action: it fails a pull request whose head
+lacks a commit of `master` that touches a file a required check reads.
 
 The coverage floor is a ratchet, not a fixed number.
 `.github/ci-thresholds.json` records a measurement and a floor;
