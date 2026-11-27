@@ -434,7 +434,8 @@
       ],
       "tests/test_budget_raise.py": [
         7.01,
-        9.5
+        9.5,
+        12.79
       ],
       "tests/test_budget_raise_chains.py": [
         27.18,
@@ -446,7 +447,8 @@
       ],
       "tests/test_budget_raise_push.py": [
         2.61,
-        4.22
+        4.22,
+        6.45
       ],
       "tests/test_budget_raise_rebaseline.py": [
         14.37,
@@ -458,7 +460,8 @@
       ],
       "tests/test_ci_gate.py": [
         2.34,
-        3.36
+        3.36,
+        5.17
       ],
       "tests/test_cli.py": [
         2.54,
@@ -501,7 +504,8 @@
         0.41
       ],
       "tests/test_ratchet_push.py": [
-        1.23
+        1.23,
+        3.12
       ],
       "tests/test_ratchet_push_repo.py": [
         1.18
@@ -511,7 +515,8 @@
       ],
       "tests/test_release_chain.py": [
         3.57,
-        2.56
+        2.56,
+        4.66
       ],
       "tests/test_render.py": [
         0.11
@@ -535,7 +540,8 @@
         3.52
       ],
       "tests/test_speed_gate.py": [
-        0.88
+        0.88,
+        1.98
       ],
       "tests/test_speed_image.py": [
         0.17
