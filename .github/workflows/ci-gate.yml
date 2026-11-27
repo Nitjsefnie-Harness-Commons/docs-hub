@@ -126,13 +126,10 @@ jobs:
         with:
           # The PR head, not the synthetic merge: the merge contains base
           # changes, so a head missing a gate-input commit would pass there.
-          # Full depth keeps the head's ancestry local.
-          fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Check the PR contains the target branch's gate definitions
-        run: python3 scripts/ci/gate_base_freshness.py --head ${{ github.event.pull_request.head.sha }}
+      - uses: Nitjsefnie-Actions/pr-gate/freshness@eb4991d7f92be7d2e55bb8b47aaaa24f09e98ca2 # v3.3.0
 
   aggregate:
     needs: [tests, lint, types, eslint, audit, actionlint, codeql, secrets,
