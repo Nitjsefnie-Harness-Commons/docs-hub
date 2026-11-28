@@ -582,7 +582,8 @@
         9.75
       ],
       "tests/test_budget_raise.py": [
-        8.95
+        8.95,
+        6.64
       ],
       "tests/test_budget_raise_chains.py": [
         24.51,
@@ -593,10 +594,12 @@
         10.28
       ],
       "tests/test_budget_raise_push.py": [
-        3.58
+        3.58,
+        2.48
       ],
       "tests/test_budget_raise_rebaseline.py": [
-        18.59
+        18.59,
+        13.55
       ],
       "tests/test_budget_raise_transitions.py": [
         9.11,
